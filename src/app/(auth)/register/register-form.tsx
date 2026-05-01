@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert } from "@/components/ui/alert";
+import { PasswordInput } from "@/components/ui/password-input";
 import { registerAction, type AuthState } from "../actions";
 
 export function RegisterForm() {
@@ -42,10 +43,9 @@ export function RegisterForm() {
 
       <div className="space-y-1.5">
         <Label htmlFor="password">Contraseña</Label>
-        <Input
+        <PasswordInput
           id="password"
           name="password"
-          type="password"
           autoComplete="new-password"
           required
           minLength={8}

@@ -8,14 +8,16 @@ export const Select = React.forwardRef<
   <select
     ref={ref}
     className={cn(
-      "flex h-10 w-full appearance-none rounded-md border border-input bg-card px-3 py-2 text-[14px] text-foreground",
-      "shadow-[inset_0_1px_0_hsl(220_13%_96%/0.6)]",
-      "transition-[box-shadow,border-color,background-color] duration-150",
-      "hover:border-foreground/25",
-      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/10 focus-visible:border-foreground/40",
+      "flex h-12 w-full appearance-none rounded-sm bg-steel-950 px-4 py-2",
+      "text-[15px] font-medium text-foreground",
+      "border-2 border-steel-700",
+      "shadow-control-inset",
+      "transition-[border-color,box-shadow] duration-100",
+      "hover:border-steel-500",
+      "focus:outline-none focus:border-safety-500 focus-visible:ring-2 focus-visible:ring-safety-500/40",
       "disabled:cursor-not-allowed disabled:opacity-60",
-      "bg-[length:14px] bg-no-repeat bg-[right_0.85rem_center]",
-      "bg-[url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' viewBox='0 0 24 24'><polyline points='6 9 12 15 18 9'/></svg>\")] pr-9",
+      "bg-no-repeat bg-[right_0.85rem_center] bg-[length:14px] pr-10",
+      "bg-[url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' fill='none' stroke='%23FFC107' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round' viewBox='0 0 24 24'><polyline points='6 9 12 15 18 9'/></svg>\")]",
       className
     )}
     {...props}

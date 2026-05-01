@@ -71,8 +71,7 @@ export async function registerAction(
 
   if (loginErr) {
     return {
-      error:
-        "Tu cuenta fue creada. Revisa tu correo para confirmar y luego inicia sesión.",
+      error: mapAuthError(loginErr.message),
     };
   }
 

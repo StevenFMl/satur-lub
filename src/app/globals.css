@@ -4,36 +4,35 @@
 
 @layer base {
   :root {
-    /* Surfaces */
-    --background: 0 0% 100%;
-    --foreground: 222 32% 8%;
+    /* Superficies oscuras por defecto (asfalto / carbón) */
+    --background: 218 25% 5%;        /* steel-950 */
+    --foreground: 220 14% 92%;       /* near-white para máxima legibilidad */
 
-    --card: 0 0% 100%;
-    --card-foreground: 222 32% 8%;
+    --card: 218 23% 8%;              /* steel-900 */
+    --card-foreground: 220 14% 92%;
 
-    /* Muted / borders */
-    --muted: 220 16% 96%;
-    --muted-foreground: 220 9% 42%;
+    --muted: 218 19% 11%;            /* steel-800 */
+    --muted-foreground: 218 10% 62%; /* steel-300/400 */
 
-    --border: 220 13% 91%;
-    --input: 220 13% 88%;
-    --ring: 222 32% 8%;
+    --border: 218 17% 17%;           /* steel-700 */
+    --input: 218 17% 17%;
+    --ring: 45 100% 51%;             /* safety-500 amarillo CAT */
 
-    /* Primary = near-black for premium B2B look */
-    --primary: 222 32% 8%;
-    --primary-foreground: 0 0% 100%;
+    /* Primario = AMARILLO SEGURIDAD (CTA) */
+    --primary: 45 100% 51%;
+    --primary-foreground: 218 25% 5%; /* texto oscuro sobre amarillo */
 
-    --secondary: 220 16% 96%;
-    --secondary-foreground: 222 32% 8%;
+    --secondary: 218 19% 11%;
+    --secondary-foreground: 220 14% 92%;
 
-    /* Accent = deep teal / petroleum, used sparingly */
-    --accent: 188 60% 18%;
-    --accent-foreground: 0 0% 100%;
+    --accent: 18 82% 51%;            /* rust-500 naranja óxido */
+    --accent-foreground: 220 14% 95%;
 
-    --destructive: 0 65% 42%;
+    --destructive: 0 73% 50%;        /* hazard-500 */
     --destructive-foreground: 0 0% 100%;
 
-    --radius: 0.625rem;
+    /* Bordes duros */
+    --radius: 0.25rem;
   }
 
   * {
@@ -43,6 +42,7 @@
   html {
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
+    color-scheme: dark;
   }
 
   body {
@@ -50,26 +50,44 @@
     font-feature-settings: "ss01", "cv11";
   }
 
-  /* Refined autofill so inputs don't turn yellow on Chrome */
+  /* Autofill: que no se vuelva amarillo en Chrome */
   input:-webkit-autofill,
   input:-webkit-autofill:hover,
   input:-webkit-autofill:focus,
   input:-webkit-autofill:active {
     -webkit-text-fill-color: hsl(var(--foreground));
     transition: background-color 9999s ease-in-out 0s;
-    box-shadow: 0 0 0 1000px hsl(var(--background)) inset;
+    box-shadow: 0 0 0 1000px hsl(var(--card)) inset;
   }
 }
 
 @layer utilities {
-  /* Very subtle dotted backdrop, used only on the auth shell */
-  .auth-backdrop {
-    background-color: hsl(var(--background));
-    background-image: radial-gradient(
-      hsl(var(--foreground) / 0.045) 1px,
-      transparent 1px
+  /* Placa de identificación industrial: label uppercase con tracking ancho */
+  .industrial-label {
+    @apply text-[11px] font-semibold uppercase tracking-industrial text-muted-foreground;
+  }
+
+  /* Stripe diagonal hazard — usar como acento puntual */
+  .hazard-stripe {
+    background-image: repeating-linear-gradient(
+      45deg,
+      hsl(var(--primary)) 0 10px,
+      hsl(var(--background)) 10px 20px
     );
-    background-size: 22px 22px;
-    background-position: -1px -1px;
+  }
+
+  /* Patrón de "metal cepillado" muy sutil para superficies grandes */
+  .brushed-steel {
+    background-color: hsl(var(--background));
+    background-image: linear-gradient(
+        180deg,
+        rgba(255, 255, 255, 0.015) 0%,
+        rgba(0, 0, 0, 0.15) 100%
+      ),
+      repeating-linear-gradient(
+        90deg,
+        rgba(255, 255, 255, 0.012) 0 1px,
+        transparent 1px 3px
+      );
   }
 }

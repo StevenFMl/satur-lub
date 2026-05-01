@@ -1,8 +1,15 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
-type Variant = "primary" | "secondary" | "ghost" | "destructive" | "outline";
-type Size = "sm" | "md" | "lg";
+type Variant =
+  | "primary"   // Amarillo seguridad — CTA principal
+  | "secondary" // Acero — acción secundaria
+  | "outline"   // Solo borde — terciaria
+  | "ghost"     // Sin fondo — utilitaria
+  | "danger"    // Rojo hazard — destructiva
+  | "rust";     // Naranja óxido — acción operativa
+
+type Size = "sm" | "md" | "lg" | "xl";
 
 export interface ButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement> {
@@ -12,21 +19,44 @@ export interface ButtonProps
 }
 
 const variantClasses: Record<Variant, string> = {
-  primary:
-    "bg-foreground text-background hover:bg-foreground/90 active:bg-foreground/85 shadow-[inset_0_1px_0_hsl(0_0%_100%/0.06)]",
-  secondary:
-    "bg-secondary text-secondary-foreground hover:bg-secondary/80",
-  ghost: "text-foreground hover:bg-muted",
-  destructive:
-    "bg-destructive text-destructive-foreground hover:bg-destructive/90",
-  outline:
-    "border border-input bg-background hover:bg-muted text-foreground",
+  primary: cn(
+    "bg-primary text-primary-foreground border border-black/40",
+    "hover:bg-safety-400 active:bg-safety-600",
+    "shadow-industrial active:shadow-industrial-pressed",
+    "active:translate-y-[2px]"
+  ),
+  secondary: cn(
+    "bg-steel-700 text-foreground border border-steel-600",
+    "hover:bg-steel-600 active:bg-steel-800",
+    "shadow-industrial-sm active:shadow-industrial-pressed",
+    "active:translate-y-[1px]"
+  ),
+  outline: cn(
+    "bg-transparent text-foreground border-2 border-steel-600",
+    "hover:bg-steel-800 hover:border-steel-500",
+    "active:bg-steel-900"
+  ),
+  ghost: "bg-transparent text-foreground hover:bg-steel-800",
+  danger: cn(
+    "bg-destructive text-destructive-foreground border border-black/40",
+    "hover:bg-hazard-600 active:bg-hazard-700",
+    "shadow-industrial active:shadow-industrial-pressed",
+    "active:translate-y-[2px]"
+  ),
+  rust: cn(
+    "bg-rust-500 text-white border border-black/40",
+    "hover:bg-rust-400 active:bg-rust-600",
+    "shadow-industrial active:shadow-industrial-pressed",
+    "active:translate-y-[2px]"
+  ),
 };
 
 const sizeClasses: Record<Size, string> = {
-  sm: "h-9 px-3 text-sm rounded-md",
-  md: "h-10 px-4 text-sm rounded-md",
-  lg: "h-11 px-5 text-[15px] rounded-md",
+  // Pensados para POS / guantes: target táctil grande
+  sm: "h-10 px-3.5 text-[12px] tracking-wide rounded-sm",
+  md: "h-11 px-4 text-[13px] tracking-wide rounded-sm",
+  lg: "h-12 px-5 text-[14px] tracking-wider rounded-sm",
+  xl: "h-14 px-6 text-[15px] tracking-wider rounded-sm",
 };
 
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
@@ -48,10 +78,11 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         disabled={disabled || loading}
         aria-busy={loading || undefined}
         className={cn(
-          "inline-flex select-none items-center justify-center gap-2 font-medium",
-          "transition-[background-color,color,box-shadow,transform] duration-150",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/15 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-          "disabled:pointer-events-none disabled:opacity-60",
+          "inline-flex select-none items-center justify-center gap-2",
+          "font-bold uppercase",
+          "transition-[background-color,transform,box-shadow] duration-100 ease-out",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+          "disabled:pointer-events-none disabled:opacity-50",
           variantClasses[variant],
           sizeClasses[size],
           className
@@ -61,7 +92,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         {loading ? (
           <span
             aria-hidden
-            className="inline-block h-4 w-4 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent opacity-90"
+            className="inline-block h-4 w-4 shrink-0 animate-spin rounded-full border-[2px] border-current border-t-transparent"
           />
         ) : null}
         <span className="truncate">{children}</span>

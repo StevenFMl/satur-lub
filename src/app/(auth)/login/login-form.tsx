@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert } from "@/components/ui/alert";
+import { PasswordInput } from "@/components/ui/password-input";
 import { loginAction, type AuthState } from "../actions";
 
 export function LoginForm({ redirectTo }: { redirectTo?: string }) {
@@ -18,46 +19,54 @@ export function LoginForm({ redirectTo }: { redirectTo?: string }) {
     <form action={formAction} className="space-y-5" noValidate>
       <input type="hidden" name="redirectTo" value={redirectTo ?? ""} />
 
-      <div className="space-y-1.5">
-        <Label htmlFor="email">Correo electrónico</Label>
+      <Field>
+        <Label htmlFor="email">Correo / usuario</Label>
         <Input
           id="email"
           name="email"
           type="email"
           autoComplete="email"
           required
-          placeholder="tu@empresa.com"
+          placeholder="operador@empresa.com"
           autoFocus
         />
-      </div>
+      </Field>
 
-      <div className="space-y-1.5">
+      <Field>
         <div className="flex items-baseline justify-between gap-3">
           <Label htmlFor="password">Contraseña</Label>
           <Link
             href="/login"
             tabIndex={-1}
-            className="text-[12px] text-muted-foreground transition-colors hover:text-foreground"
+            className="text-[11px] font-semibold uppercase tracking-wider text-rust-400 underline-offset-4 transition-colors hover:text-rust-500 hover:underline"
           >
-            ¿Olvidaste tu contraseña?
+            Recuperar
           </Link>
         </div>
-        <Input
+        <PasswordInput
           id="password"
           name="password"
-          type="password"
           autoComplete="current-password"
           required
           minLength={8}
           placeholder="••••••••"
         />
-      </div>
+      </Field>
 
       {state?.error ? <Alert tone="error">{state.error}</Alert> : null}
 
-      <Button type="submit" size="lg" loading={pending} className="w-full">
-        {pending ? "Ingresando" : "Ingresar"}
+      <Button
+        type="submit"
+        size="xl"
+        loading={pending}
+        className="w-full"
+      >
+        {pending ? "Conectando" : "Acceder al sistema"}
       </Button>
     </form>
   );
+}
+
+function Field({ children }: { children: React.ReactNode }) {
+  return <div className="space-y-2">{children}</div>;
 }

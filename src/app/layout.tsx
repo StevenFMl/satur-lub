@@ -1,5 +1,13 @@
 import type { Metadata } from "next";
+import { Inter } from "next/font/google";
 import "./globals.css";
+
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-sans",
+  display: "swap",
+  weight: ["400", "500", "600", "700", "800"],
+});
 
 export const metadata: Metadata = {
   title: {
@@ -7,7 +15,7 @@ export const metadata: Metadata = {
     template: "%s · SaturnLub",
   },
   description:
-    "Plataforma de gestión operativa para lubricentros y talleres modernos.",
+    "Sistema operativo para lubricentros, talleres y ferreterías. Trabajo pesado.",
 };
 
 export default function RootLayout({
@@ -16,7 +24,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="es" suppressHydrationWarning>
+    <html lang="es" className={inter.variable} suppressHydrationWarning>
       <body className="min-h-dvh bg-background text-foreground antialiased">
         {children}
       </body>

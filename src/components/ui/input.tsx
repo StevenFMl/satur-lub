@@ -14,14 +14,18 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
         type={type}
         aria-invalid={invalid || undefined}
         className={cn(
-          "flex h-10 w-full rounded-md border bg-card px-3 py-2 text-[14px] text-foreground",
-          "placeholder:text-muted-foreground/80",
-          "shadow-[inset_0_1px_0_hsl(220_13%_96%/0.6)]",
-          "transition-[box-shadow,border-color,background-color] duration-150",
-          invalid
-            ? "border-destructive/50"
-            : "border-input hover:border-foreground/25",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/10 focus-visible:border-foreground/40",
+          // Tamaño POS: 48px de alto, fácil de tocar con guantes
+          "flex h-12 w-full rounded-sm bg-steel-950 px-4 py-2",
+          "text-[15px] font-medium text-foreground",
+          "border-2",
+          invalid ? "border-hazard-500/70" : "border-steel-700",
+          "placeholder:text-muted-foreground placeholder:font-normal",
+          "shadow-control-inset",
+          "transition-[border-color,box-shadow] duration-100",
+          "hover:border-steel-500",
+          // Focus = anillo amarillo seguridad
+          "focus:outline-none focus:border-safety-500",
+          "focus-visible:ring-2 focus-visible:ring-safety-500/40",
           "disabled:cursor-not-allowed disabled:opacity-60",
           className
         )}

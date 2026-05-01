@@ -3,35 +3,50 @@ import { cn } from "@/lib/utils";
 export function Logo({
   className,
   showText = true,
+  tone = "default",
 }: {
   className?: string;
   showText?: boolean;
+  tone?: "default" | "safety";
 }) {
+  const markBg =
+    tone === "safety"
+      ? "bg-safety-500 text-steel-950 border-black/40"
+      : "bg-steel-800 text-safety-500 border-steel-600";
+
   return (
-    <div className={cn("flex items-center gap-2", className)}>
+    <div className={cn("flex items-center gap-2.5", className)}>
       <div
         aria-hidden
-        className="grid h-8 w-8 place-items-center rounded-md bg-foreground text-background shadow-sm"
+        className={cn(
+          "grid h-9 w-9 place-items-center rounded-sm border shadow-industrial-sm",
+          markBg
+        )}
       >
+        {/* Engranaje robusto (placa industrial) */}
         <svg
-          width="18"
-          height="18"
+          width="20"
+          height="20"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
-          strokeWidth="2.2"
+          strokeWidth="2.4"
           strokeLinecap="round"
           strokeLinejoin="round"
         >
-          <ellipse cx="12" cy="12" rx="10" ry="4" />
-          <path d="M2 12c0 2.5 4.5 4.5 10 4.5S22 14.5 22 12" />
-          <path d="M12 8v8" />
+          <circle cx="12" cy="12" r="3" />
+          <path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.6 4.6l2.1 2.1M17.3 17.3l2.1 2.1M4.6 19.4l2.1-2.1M17.3 6.7l2.1-2.1" />
         </svg>
       </div>
       {showText ? (
-        <span className="text-lg font-semibold tracking-tight">
-          Saturn<span className="text-muted-foreground">Lub</span>
-        </span>
+        <div className="leading-tight">
+          <span className="block text-[15px] font-extrabold uppercase tracking-wider">
+            Saturn<span className="text-safety-500">Lub</span>
+          </span>
+          <span className="block text-[9px] font-semibold uppercase tracking-industrial text-muted-foreground">
+            Heavy-Duty OS
+          </span>
+        </div>
       ) : null}
     </div>
   );
