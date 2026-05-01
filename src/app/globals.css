@@ -1,0 +1,75 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Surfaces */
+    --background: 0 0% 100%;
+    --foreground: 222 32% 8%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 32% 8%;
+
+    /* Muted / borders */
+    --muted: 220 16% 96%;
+    --muted-foreground: 220 9% 42%;
+
+    --border: 220 13% 91%;
+    --input: 220 13% 88%;
+    --ring: 222 32% 8%;
+
+    /* Primary = near-black for premium B2B look */
+    --primary: 222 32% 8%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 220 16% 96%;
+    --secondary-foreground: 222 32% 8%;
+
+    /* Accent = deep teal / petroleum, used sparingly */
+    --accent: 188 60% 18%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 65% 42%;
+    --destructive-foreground: 0 0% 100%;
+
+    --radius: 0.625rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans;
+    font-feature-settings: "ss01", "cv11";
+  }
+
+  /* Refined autofill so inputs don't turn yellow on Chrome */
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus,
+  input:-webkit-autofill:active {
+    -webkit-text-fill-color: hsl(var(--foreground));
+    transition: background-color 9999s ease-in-out 0s;
+    box-shadow: 0 0 0 1000px hsl(var(--background)) inset;
+  }
+}
+
+@layer utilities {
+  /* Very subtle dotted backdrop, used only on the auth shell */
+  .auth-backdrop {
+    background-color: hsl(var(--background));
+    background-image: radial-gradient(
+      hsl(var(--foreground) / 0.045) 1px,
+      transparent 1px
+    );
+    background-size: 22px 22px;
+    background-position: -1px -1px;
+  }
+}

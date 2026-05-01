@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm --version)",
+      "Bash(npm install *)",
+      "Bash(npx tsc *)",
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(npx next *)",
+      "Bash(echo \"PID=$!\")",
+      "Read(//tmp/**)",
+      "Bash(curl -sS -o /dev/null -w \"HTTP %{http_code}\\\\n\" http://localhost:3000/)",
+      "Bash(curl -sS -o /dev/null -w \"HTTP %{http_code} /login\\\\n\" http://localhost:3000/login)",
+      "Bash(curl -sS -o /dev/null -w \"HTTP %{http_code} /register\\\\n\" http://localhost:3000/register)",
+      "Bash(curl -sS -o /dev/null -w \"HTTP %{http_code} /dashboard\\\\n\" -L http://localhost:3000/dashboard)",
+      "Bash(kill 978)",
+      "Bash(awk '{print $2}')",
+      "Bash(xargs -r kill)",
+      "Bash(curl -sS -o /dev/null -w \"HTTP %{http_code}  /\\\\n\"          http://localhost:3100/)",
+      "Bash(curl -sS -o /dev/null -w \"HTTP %{http_code}  /login\\\\n\"     http://localhost:3100/login)",
+      "Bash(curl -sS -o /dev/null -w \"HTTP %{http_code}  /register\\\\n\"  http://localhost:3100/register)",
+      "Bash(curl -sS -o /dev/null -w \"HTTP %{http_code}  /dashboard \\(no auth → expect redirect to /login\\)\\\\n\" -L --max-redirs 0 http://localhost:3100/dashboard)",
+      "Bash(curl -sS -o /dev/null -w \"HTTP %{http_code}  /onboarding \\(no auth → expect redirect to /login\\)\\\\n\" -L --max-redirs 0 http://localhost:3100/onboarding)",
+      "Bash(kill 2454)"
+    ]
+  }
+}
