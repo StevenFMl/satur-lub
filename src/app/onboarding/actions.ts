@@ -3,49 +3,40 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import type { BusinessType } from "@/lib/supabase/types";
+import {
+  onboardingSchema,
+  type OnboardingFieldErrors,
+} from "@/lib/validations/onboarding";
 
 export type OnboardingState = {
   error?: string;
-  fieldErrors?: Partial<Record<
-    "business_name" | "slug" | "business_type",
-    string
-  >>;
+  fieldErrors?: OnboardingFieldErrors;
 } | null;
-
-const VALID_BUSINESS_TYPES: BusinessType[] = [
-  "lubricentro",
-  "taller",
-  "autoservicio",
-  "otro",
-];
 
 export async function createTenantAction(
   _prev: OnboardingState,
   formData: FormData
 ): Promise<OnboardingState> {
-  const business_name = String(formData.get("business_name") ?? "").trim();
-  const slug = String(formData.get("slug") ?? "")
-    .trim()
-    .toLowerCase();
-  const legal_name = String(formData.get("legal_name") ?? "").trim() || null;
-  const ruc = String(formData.get("ruc") ?? "").trim() || null;
-  const business_type = String(
-    formData.get("business_type") ?? ""
-  ) as BusinessType;
+  const parsed = onboardingSchema.safeParse({
+    business_name: formData.get("business_name"),
+    slug: formData.get("slug"),
+    business_type: formData.get("business_type"),
+    legal_name: formData.get("legal_name"),
+    ruc: formData.get("ruc"),
+  });
 
-  const fieldErrors: NonNullable<OnboardingState>["fieldErrors"] = {};
-  if (!business_name) fieldErrors.business_name = "Ingresa el nombre del negocio.";
-  if (!slug) fieldErrors.slug = "Ingresa un identificador.";
-  else if (!/^[a-z0-9](?:[a-z0-9-]{1,58}[a-z0-9])?$/.test(slug))
-    fieldErrors.slug =
-      "Solo minúsculas, números y guiones (3 a 60 caracteres).";
-  if (!VALID_BUSINESS_TYPES.includes(business_type))
-    fieldErrors.business_type = "Selecciona un tipo de negocio.";
-
-  if (Object.keys(fieldErrors).length > 0) {
+  if (!parsed.success) {
+    const fieldErrors: OnboardingFieldErrors = {};
+    for (const issue of parsed.error.issues) {
+      const key = issue.path[0];
+      if (typeof key === "string" && !(key in fieldErrors)) {
+        (fieldErrors as Record<string, string>)[key] = issue.message;
+      }
+    }
     return { fieldErrors, error: "Revisa los campos marcados." };
   }
+
+  const { business_name, slug, business_type, legal_name, ruc } = parsed.data;
 
   const supabase = await createClient();
 

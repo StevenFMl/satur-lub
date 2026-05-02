@@ -3,22 +3,36 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import {
+  loginSchema,
+  registerSchema,
+  type LoginFieldErrors,
+  type RegisterFieldErrors,
+} from "@/lib/validations/auth";
 
 export type AuthState = {
   error?: string;
+  fieldErrors?: LoginFieldErrors | RegisterFieldErrors;
 } | null;
 
 export async function loginAction(
   _prev: AuthState,
   formData: FormData
 ): Promise<AuthState> {
-  const email = String(formData.get("email") ?? "").trim();
-  const password = String(formData.get("password") ?? "");
-  const redirectTo = String(formData.get("redirectTo") ?? "");
+  const parsed = loginSchema.safeParse({
+    email: formData.get("email"),
+    password: formData.get("password"),
+    redirectTo: formData.get("redirectTo") ?? undefined,
+  });
 
-  if (!email || !password) {
-    return { error: "Ingresa tu correo y contraseña." };
+  if (!parsed.success) {
+    return {
+      fieldErrors: flattenErrors<LoginFieldErrors>(parsed.error),
+      error: "Revisa los campos marcados.",
+    };
   }
+
+  const { email, password, redirectTo } = parsed.data;
 
   const supabase = await createClient();
   const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -27,8 +41,7 @@ export async function loginAction(
     return { error: mapAuthError(error.message) };
   }
 
-  // Decide destination based on tenant membership.
-  const target = await resolvePostAuthRoute(redirectTo);
+  const target = await resolvePostAuthRoute(redirectTo ?? "");
   revalidatePath("/", "layout");
   redirect(target);
 }
@@ -37,23 +50,30 @@ export async function registerAction(
   _prev: AuthState,
   formData: FormData
 ): Promise<AuthState> {
-  const fullName = String(formData.get("full_name") ?? "").trim();
-  const email = String(formData.get("email") ?? "").trim();
-  const password = String(formData.get("password") ?? "");
+  const parsed = registerSchema.safeParse({
+    full_name: formData.get("full_name"),
+    email: formData.get("email"),
+    password: formData.get("password"),
+  });
 
-  if (!fullName || !email || !password) {
-    return { error: "Completa todos los campos." };
+  if (!parsed.success) {
+    return {
+      fieldErrors: flattenErrors<RegisterFieldErrors>(parsed.error),
+      error: "Revisa los campos marcados.",
+    };
   }
-  if (password.length < 8) {
-    return { error: "La contraseña debe tener al menos 8 caracteres." };
-  }
+
+  const { full_name, email, password } = parsed.data;
 
   const supabase = await createClient();
-  const { error } = await supabase.auth.signUp({
+
+  // Supabase está configurado con auto-confirm: signUp devuelve sesión activa
+  // y el cliente queda autenticado en la misma request — sin paso de email.
+  const { data, error } = await supabase.auth.signUp({
     email,
     password,
     options: {
-      data: { full_name: fullName },
+      data: { full_name },
     },
   });
 
@@ -61,17 +81,12 @@ export async function registerAction(
     return { error: mapAuthError(error.message) };
   }
 
-  // If email confirmations are enabled, the user is not yet authenticated.
-  // Try sign-in immediately — if it fails with "Email not confirmed",
-  // surface that as a notice instead of a hard error.
-  const { error: loginErr } = await supabase.auth.signInWithPassword({
-    email,
-    password,
-  });
-
-  if (loginErr) {
+  if (!data.session) {
+    // Defensa: si por configuración no llega sesión, no dejamos al usuario
+    // colgado pidiéndole que "revise el correo" — lo mandamos a login.
     return {
-      error: mapAuthError(loginErr.message),
+      error:
+        "Cuenta creada, pero no pudimos iniciar sesión automáticamente. Inicia sesión.",
     };
   }
 
@@ -107,13 +122,24 @@ async function resolvePostAuthRoute(requested: string): Promise<string> {
   return "/dashboard";
 }
 
+function flattenErrors<T extends Record<string, string | undefined>>(
+  err: import("zod").ZodError
+): T {
+  const out = {} as Record<string, string>;
+  for (const issue of err.issues) {
+    const key = issue.path[0];
+    if (typeof key === "string" && !(key in out)) {
+      out[key] = issue.message;
+    }
+  }
+  return out as T;
+}
+
 function mapAuthError(message: string): string {
   const m = message.toLowerCase();
   if (m.includes("invalid login")) return "Correo o contraseña incorrectos.";
   if (m.includes("user already registered"))
     return "Ya existe una cuenta con ese correo.";
-  if (m.includes("email not confirmed"))
-    return "Confirma tu correo electrónico para iniciar sesión.";
   if (m.includes("password"))
     return "La contraseña no cumple los requisitos mínimos.";
   return message || "No pudimos completar la operación. Intenta nuevamente.";

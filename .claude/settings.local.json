@@ -20,7 +20,9 @@
       "Bash(curl -sS -o /dev/null -w \"HTTP %{http_code}  /register\\\\n\"  http://localhost:3100/register)",
       "Bash(curl -sS -o /dev/null -w \"HTTP %{http_code}  /dashboard \\(no auth → expect redirect to /login\\)\\\\n\" -L --max-redirs 0 http://localhost:3100/dashboard)",
       "Bash(curl -sS -o /dev/null -w \"HTTP %{http_code}  /onboarding \\(no auth → expect redirect to /login\\)\\\\n\" -L --max-redirs 0 http://localhost:3100/onboarding)",
-      "Bash(kill 2454)"
+      "Bash(kill 2454)",
+      "Bash(npm run *)",
+      "Bash(node -p \"require\\('./node_modules/zod/package.json'\\).version\")"
     ]
   }
 }

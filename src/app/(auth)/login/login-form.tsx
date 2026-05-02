@@ -1,13 +1,16 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
+import type * as React from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert } from "@/components/ui/alert";
+import { FieldError } from "@/components/ui/field-error";
 import { PasswordInput } from "@/components/ui/password-input";
 import { loginAction, type AuthState } from "../actions";
+import { loginSchema, type LoginFieldErrors } from "@/lib/validations/auth";
 
 export function LoginForm({ redirectTo }: { redirectTo?: string }) {
   const [state, formAction, pending] = useActionState<AuthState, FormData>(
@@ -15,24 +18,73 @@ export function LoginForm({ redirectTo }: { redirectTo?: string }) {
     null
   );
 
+  const [clientErrors, setClientErrors] = useState<LoginFieldErrors>({});
+
+  const errors: LoginFieldErrors = {
+    ...(state?.fieldErrors as LoginFieldErrors | undefined),
+    ...clientErrors,
+  };
+
+  function clearError(field: keyof LoginFieldErrors) {
+    if (clientErrors[field]) {
+      setClientErrors((prev) => {
+        const next = { ...prev };
+        delete next[field];
+        return next;
+      });
+    }
+  }
+
+  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    const formData = new FormData(event.currentTarget);
+    const result = loginSchema.safeParse({
+      email: formData.get("email"),
+      password: formData.get("password"),
+      redirectTo: formData.get("redirectTo") ?? undefined,
+    });
+
+    if (!result.success) {
+      event.preventDefault();
+      const flat: LoginFieldErrors = {};
+      for (const issue of result.error.issues) {
+        const key = issue.path[0];
+        if (typeof key === "string" && !(key in flat)) {
+          (flat as Record<string, string>)[key] = issue.message;
+        }
+      }
+      setClientErrors(flat);
+      return;
+    }
+
+    setClientErrors({});
+  }
+
   return (
-    <form action={formAction} className="space-y-5" noValidate>
+    <form
+      action={formAction}
+      onSubmit={handleSubmit}
+      className="space-y-5"
+      noValidate
+    >
       <input type="hidden" name="redirectTo" value={redirectTo ?? ""} />
 
-      <Field>
+      <div className="space-y-2">
         <Label htmlFor="email">Correo / usuario</Label>
         <Input
           id="email"
           name="email"
           type="email"
           autoComplete="email"
-          required
           placeholder="operador@empresa.com"
           autoFocus
+          aria-describedby={errors.email ? "email-error" : undefined}
+          invalid={Boolean(errors.email)}
+          onChange={() => clearError("email")}
         />
-      </Field>
+        <FieldError fieldId="email" message={errors.email} />
+      </div>
 
-      <Field>
+      <div className="space-y-2">
         <div className="flex items-baseline justify-between gap-3">
           <Label htmlFor="password">Contraseña</Label>
           <Link
@@ -47,26 +99,21 @@ export function LoginForm({ redirectTo }: { redirectTo?: string }) {
           id="password"
           name="password"
           autoComplete="current-password"
-          required
-          minLength={8}
           placeholder="••••••••"
+          aria-describedby={errors.password ? "password-error" : undefined}
+          invalid={Boolean(errors.password)}
+          onChange={() => clearError("password")}
         />
-      </Field>
+        <FieldError fieldId="password" message={errors.password} />
+      </div>
 
-      {state?.error ? <Alert tone="error">{state.error}</Alert> : null}
+      {state?.error && !state.fieldErrors ? (
+        <Alert tone="error">{state.error}</Alert>
+      ) : null}
 
-      <Button
-        type="submit"
-        size="xl"
-        loading={pending}
-        className="w-full"
-      >
+      <Button type="submit" size="xl" loading={pending} className="w-full">
         {pending ? "Conectando" : "Acceder al sistema"}
       </Button>
     </form>
   );
-}
-
-function Field({ children }: { children: React.ReactNode }) {
-  return <div className="space-y-2">{children}</div>;
 }
