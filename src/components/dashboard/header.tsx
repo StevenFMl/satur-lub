@@ -40,14 +40,14 @@ export function DashboardHeader({
         </div>
         <div
           aria-hidden
-          className="grid h-10 w-10 place-items-center rounded-sm border border-steel-700 bg-steel-800 font-mono text-[13px] font-bold text-safety-500 shadow-bevel-sm"
+          className="grid h-11 w-11 place-items-center rounded-sm border border-steel-700 bg-steel-800 font-mono text-[13px] font-bold text-safety-500 shadow-bevel-sm"
         >
           {initials || "·"}
         </div>
         <form action={logoutAction}>
           <button
             type="submit"
-            className="border border-steel-700 bg-steel-800 px-3 py-2 font-mono text-[11px] font-bold uppercase tracking-[0.16em] text-foreground transition-colors hover:border-rust-500 hover:text-rust-400"
+            className="rounded-sm border border-steel-700 bg-steel-800 px-3 py-2 font-mono text-[11px] font-bold uppercase tracking-[0.16em] text-foreground transition-all duration-150 ease-out hover:border-rust-500 hover:text-rust-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-safety-500 focus-visible:ring-offset-2 focus-visible:ring-offset-steel-900"
           >
             Cerrar sesión
           </button>

@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { daysBetween, formatDate } from "@/lib/utils";
 
 export const metadata: Metadata = {
-  title: "Dashboard",
+  title: "Panel de control",
 };
 
 export default async function DashboardPage() {
@@ -49,7 +49,7 @@ export default async function DashboardPage() {
   const fullName =
     (user.user_metadata?.full_name as string | undefined) ?? user.email ?? "—";
 
-  const planName = tenant?.subscription_plans?.name ?? "Trial";
+  const planName = tenant?.subscription_plans?.name ?? "Prueba";
   const trialEndsAt = tenant?.trial_ends_at ?? null;
   const trialDaysLeft = trialEndsAt
     ? daysBetween(new Date(), new Date(trialEndsAt))
@@ -89,11 +89,11 @@ export default async function DashboardPage() {
           hint={`Estado · ${tenant?.status ?? "trial"}`}
         />
         <Tile
-          label="Trial"
+          label="Periodo de prueba"
           value={
             trialDaysLeft !== null
               ? `${trialDaysLeft} día${trialDaysLeft === 1 ? "" : "s"}`
-              : "Sin trial"
+              : "Sin prueba"
           }
           hint={
             trialEndsAt ? `Vence ${formatDate(trialEndsAt)}` : "Sin vencimiento"
@@ -108,7 +108,7 @@ export default async function DashboardPage() {
             <h3 className="font-display text-[18px] leading-none tracking-[0.04em] text-foreground">
               PRÓXIMOS PASOS
             </h3>
-            <span className="hud-readout">Setup · 4 pasos</span>
+            <span className="hud-readout">Configuración · 4 pasos</span>
           </div>
           <div className="space-y-2 px-5 py-5">
             <Step
@@ -140,10 +140,11 @@ export default async function DashboardPage() {
           </div>
           <div className="space-y-3 px-5 py-5">
             <Row label="Nombre" value={fullName} />
-            <Row label="Correo" value={user.email ?? "—"} />
+            <Row label="Correo" value={user.email ?? "—"} mono />
             <Row
               label="Rol"
               value={(membership.role ?? "owner").toUpperCase()}
+              mono
             />
           </div>
         </div>
@@ -162,7 +163,7 @@ function Tile({
   hint: string;
 }) {
   return (
-    <div className="panel rounded-sm p-5">
+    <div className="panel rounded-sm p-5 transition-colors duration-150 hover:border-steel-500">
       <p className="hud-readout">{label}</p>
       <p className="mt-2 truncate font-display text-[24px] leading-none tracking-[0.02em] text-foreground">
         {value}
@@ -221,13 +222,27 @@ function Step({
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({
+  label,
+  value,
+  mono,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+}) {
   return (
     <div className="flex items-center justify-between gap-3 border-b border-steel-700/60 pb-2 last:border-0 last:pb-0">
       <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
         {label}
       </span>
-      <span className="truncate text-[13px] font-semibold text-foreground">
+      <span
+        className={
+          mono
+            ? "truncate font-mono text-[12.5px] font-semibold tracking-[0.02em] text-foreground"
+            : "truncate text-[13px] font-semibold text-foreground"
+        }
+      >
         {value}
       </span>
     </div>

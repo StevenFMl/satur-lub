@@ -24,7 +24,7 @@ export default async function LoginPage({
           />
           <span className="hud-readout">Acceso · Operador</span>
         </div>
-        <span className="hud-readout !text-muted-foreground">ID-001</span>
+        <span className="hud-readout !text-muted-foreground">ID·001</span>
       </div>
 
       {/* Chasis del formulario: panel con tornillos */}
@@ -36,14 +36,15 @@ export default async function LoginPage({
           <h1 className="font-display text-[22px] leading-none tracking-[0.04em] text-foreground">
             INICIAR SESIÓN
           </h1>
-          <span className="hud-readout">Auth · v1</span>
+          <span className="hud-readout">Acceso · v1</span>
         </header>
 
-        <div className="px-6 py-7 sm:px-7 sm:py-8">
+        <div className="px-6 py-7 sm:px-8 sm:py-8">
           <p className="mb-7 text-[13px] leading-6 text-muted-foreground">
             Acceso unificado para dueños, administradores y personal de
-            taller. Ingresa tu <strong className="text-foreground">cédula</strong>{" "}
-            o tu correo registrado.
+            taller. Ingresa tu{" "}
+            <strong className="text-foreground">cédula</strong> o tu correo
+            registrado.
           </p>
           <LoginForm redirectTo={redirectTo} />
         </div>
@@ -52,7 +53,7 @@ export default async function LoginPage({
           <span className="industrial-label">¿Sin cuenta?</span>
           <Link
             href="/register"
-            className="font-mono text-[12px] font-bold uppercase tracking-[0.16em] text-safety-500 underline-offset-4 hover:underline"
+            className="font-mono text-[12px] font-bold uppercase tracking-[0.16em] text-safety-500 underline-offset-4 transition-colors duration-150 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-safety-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           >
             Solicitar registro →
           </Link>

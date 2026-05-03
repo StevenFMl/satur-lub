@@ -209,6 +209,7 @@
     @apply mt-1.5 flex items-start gap-2 border-l-2 border-hazard-500
            bg-hazard-700/10 px-2 py-1.5
            text-[11.5px] font-semibold uppercase tracking-wider text-red-300;
+    animation: field-error-in 160ms ease-out both;
   }
 
   .field-error::before {
@@ -220,5 +221,39 @@
     flex-shrink: 0;
     background-repeat: no-repeat;
     background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' stroke='%23F87171' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round' viewBox='0 0 24 24'><path d='M12 3 2 21h20L12 3z'/><path d='M12 10v5'/><path d='M12 18h.01'/></svg>");
+  }
+
+  /* Marcador de campo requerido: asterisco rojo industrial */
+  .req-mark {
+    @apply ml-1 inline-block align-middle text-hazard-500;
+    line-height: 0;
+    font-size: 0.8em;
+  }
+
+  /* Hint debajo de un input — uppercase, tracked, neutral */
+  .field-hint {
+    @apply mt-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground;
+  }
+}
+
+/* ===== Keyframes utilitarios ===== */
+@keyframes field-error-in {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Reduce motion: respeto de preferencia del sistema */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
   }
 }

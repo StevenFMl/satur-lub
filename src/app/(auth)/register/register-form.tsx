@@ -22,8 +22,7 @@ export function RegisterForm() {
 
   const [clientErrors, setClientErrors] = useState<RegisterFieldErrors>({});
 
-  // Client-side errors take precedence; server-side errors fill any gaps
-  // (e.g. "Ya existe una cuenta con ese correo.").
+  // Cliente prevalece; servidor llena huecos (p. ej. "Ya existe una cuenta…").
   const errors: RegisterFieldErrors = {
     ...(state?.fieldErrors as RegisterFieldErrors | undefined),
     ...clientErrors,
@@ -67,11 +66,13 @@ export function RegisterForm() {
     <form
       action={formAction}
       onSubmit={handleSubmit}
-      className="space-y-5"
+      className="space-y-6"
       noValidate
     >
       <div className="space-y-2">
-        <Label htmlFor="full_name">Nombre completo</Label>
+        <Label htmlFor="full_name" required>
+          Nombre completo
+        </Label>
         <Input
           id="full_name"
           name="full_name"
@@ -87,12 +88,15 @@ export function RegisterForm() {
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="email">Correo electrónico</Label>
+        <Label htmlFor="email" required>
+          Correo electrónico
+        </Label>
         <Input
           id="email"
           name="email"
           type="email"
           autoComplete="email"
+          mono
           placeholder="tu@empresa.com"
           aria-describedby={errors.email ? "email-error" : undefined}
           invalid={Boolean(errors.email)}
@@ -102,7 +106,9 @@ export function RegisterForm() {
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="password">Contraseña</Label>
+        <Label htmlFor="password" required>
+          Contraseña
+        </Label>
         <PasswordInput
           id="password"
           name="password"
@@ -113,8 +119,8 @@ export function RegisterForm() {
           onChange={() => clearError("password")}
         />
         {!errors.password ? (
-          <p className="text-[11.5px] font-medium uppercase tracking-wider text-muted-foreground">
-            Mínimo 8 caracteres · 1 letra · 1 número
+          <p className="field-hint">
+            Mínimo 8 caracteres · al menos 1 letra y 1 número
           </p>
         ) : (
           <FieldError fieldId="password" message={errors.password} />
@@ -126,16 +132,22 @@ export function RegisterForm() {
       ) : null}
 
       <Button type="submit" size="xl" loading={pending} className="w-full">
-        {pending ? "Creando cuenta" : "Crear cuenta y continuar"}
+        {pending ? "Creando cuenta…" : "Crear cuenta y continuar"}
       </Button>
 
       <p className="text-[11.5px] leading-5 text-muted-foreground">
         Al continuar aceptas los{" "}
-        <a href="#" className="font-semibold text-safety-500 underline-offset-4 hover:underline">
+        <a
+          href="#"
+          className="font-semibold text-safety-500 underline-offset-4 transition-colors duration-150 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-safety-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        >
           Términos
         </a>{" "}
         y la{" "}
-        <a href="#" className="font-semibold text-safety-500 underline-offset-4 hover:underline">
+        <a
+          href="#"
+          className="font-semibold text-safety-500 underline-offset-4 transition-colors duration-150 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-safety-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        >
           Política de privacidad
         </a>
         .

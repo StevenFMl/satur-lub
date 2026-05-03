@@ -40,14 +40,14 @@ export default async function OnboardingPage() {
           <Link
             href="/"
             aria-label="Inicio"
-            className="inline-flex rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-safety-500"
+            className="inline-flex rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-safety-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           >
             <Logo />
           </Link>
           <form action={logoutAction}>
             <button
               type="submit"
-              className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground transition-colors hover:text-foreground"
+              className="rounded-sm font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground transition-colors duration-150 hover:text-rust-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-safety-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             >
               Cerrar sesión
             </button>
@@ -89,10 +89,10 @@ export default async function OnboardingPage() {
             <h2 className="font-display text-[18px] leading-none tracking-[0.04em] text-foreground">
               FICHA TÉCNICA DEL NEGOCIO
             </h2>
-            <span className="hud-readout">Setup · v1</span>
+            <span className="hud-readout">Configuración · v1</span>
           </header>
 
-          <div className="px-6 py-7 sm:px-7">
+          <div className="px-6 py-7 sm:px-8 sm:py-8">
             <OnboardingForm />
           </div>
         </div>
@@ -101,7 +101,7 @@ export default async function OnboardingPage() {
       <footer className="relative z-10 border-t border-steel-700/80 bg-steel-900/50">
         <div className="mx-auto w-full max-w-3xl px-6 py-3">
           <p className="industrial-label !text-[10px]">
-            © {new Date().getFullYear()} SATURNLUB · HEAVY-DUTY OS
+            © {new Date().getFullYear()} SATURNLUB · SISTEMA OPERATIVO INDUSTRIAL
           </p>
         </div>
       </footer>

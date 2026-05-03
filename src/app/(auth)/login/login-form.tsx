@@ -63,44 +63,48 @@ export function LoginForm({ redirectTo }: { redirectTo?: string }) {
     <form
       action={formAction}
       onSubmit={handleSubmit}
-      className="space-y-5"
+      className="space-y-6"
       noValidate
     >
       <input type="hidden" name="redirectTo" value={redirectTo ?? ""} />
 
       <div className="space-y-2">
-        <Label htmlFor="identifier">Cédula o correo</Label>
+        <Label htmlFor="identifier" required>
+          Cédula o correo
+        </Label>
         <Input
           id="identifier"
           name="identifier"
           type="text"
           inputMode="text"
           autoComplete="username"
-          placeholder="12345678 o operador@empresa.com"
+          mono
+          placeholder="12345678  ·  operador@empresa.com"
           autoFocus
-          aria-describedby={errors.identifier ? "identifier-error" : "identifier-hint"}
+          aria-describedby={
+            errors.identifier ? "identifier-error" : "identifier-hint"
+          }
           invalid={Boolean(errors.identifier)}
           onChange={() => clearError("identifier")}
         />
         {errors.identifier ? (
           <FieldError fieldId="identifier" message={errors.identifier} />
         ) : (
-          <p
-            id="identifier-hint"
-            className="text-[11.5px] font-medium uppercase tracking-wider text-muted-foreground"
-          >
-            Ingresa tu cédula (8–11 dígitos) o tu correo registrado
+          <p id="identifier-hint" className="field-hint">
+            Cédula de 8 a 11 dígitos · o tu correo registrado
           </p>
         )}
       </div>
 
       <div className="space-y-2">
         <div className="flex items-baseline justify-between gap-3">
-          <Label htmlFor="password">Contraseña</Label>
+          <Label htmlFor="password" required>
+            Contraseña
+          </Label>
           <Link
             href="/forgot-password"
             tabIndex={-1}
-            className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-rust-400 underline-offset-4 transition-colors hover:text-rust-500 hover:underline"
+            className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-rust-400 underline-offset-4 transition-colors duration-150 hover:text-rust-500 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-safety-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           >
             Recuperar
           </Link>
@@ -122,7 +126,7 @@ export function LoginForm({ redirectTo }: { redirectTo?: string }) {
       ) : null}
 
       <Button type="submit" size="xl" loading={pending} className="w-full">
-        {pending ? "Conectando" : "Acceder al sistema"}
+        {pending ? "Conectando…" : "Acceder al sistema"}
       </Button>
     </form>
   );

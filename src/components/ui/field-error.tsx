@@ -17,7 +17,7 @@ export function FieldError({
     <div
       id={fieldId ? `${fieldId}-error` : undefined}
       role="alert"
-      aria-live="polite"
+      aria-live="assertive"
       className={cn("field-error", className)}
       {...props}
     >

@@ -64,23 +64,32 @@ export function ForgotPasswordForm() {
     <form
       action={formAction}
       onSubmit={handleSubmit}
-      className="space-y-5"
+      className="space-y-6"
       noValidate
     >
       <div className="space-y-2">
-        <Label htmlFor="email">Correo electrónico</Label>
+        <Label htmlFor="email" required>
+          Correo electrónico
+        </Label>
         <Input
           id="email"
           name="email"
           type="email"
           autoComplete="email"
+          mono
           placeholder="tu@empresa.com"
           autoFocus
-          aria-describedby={errors.email ? "email-error" : undefined}
+          aria-describedby={errors.email ? "email-error" : "email-hint"}
           invalid={Boolean(errors.email)}
           onChange={() => clearError("email")}
         />
-        <FieldError fieldId="email" message={errors.email} />
+        {errors.email ? (
+          <FieldError fieldId="email" message={errors.email} />
+        ) : (
+          <p id="email-hint" className="field-hint">
+            Te enviaremos un enlace seguro válido por 1 hora
+          </p>
+        )}
       </div>
 
       {state?.notice ? (
@@ -92,7 +101,7 @@ export function ForgotPasswordForm() {
       ) : null}
 
       <Button type="submit" size="xl" loading={pending} className="w-full">
-        {pending ? "Enviando" : "Enviar enlace de recuperación"}
+        {pending ? "Enviando…" : "Enviar enlace de recuperación"}
       </Button>
     </form>
   );

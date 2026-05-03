@@ -18,7 +18,7 @@ export default function ForgotPasswordPage() {
           />
           <span className="hud-readout">Recuperación · Acceso</span>
         </div>
-        <span className="hud-readout !text-muted-foreground">ID-RST</span>
+        <span className="hud-readout !text-muted-foreground">ID·RST</span>
       </div>
 
       {/* Chasis del formulario */}
@@ -30,10 +30,10 @@ export default function ForgotPasswordPage() {
           <h1 className="font-display text-[22px] leading-none tracking-[0.04em] text-foreground">
             RECUPERAR CONTRASEÑA
           </h1>
-          <span className="hud-readout">Auth · v1</span>
+          <span className="hud-readout">Recuperación · v1</span>
         </header>
 
-        <div className="px-6 py-7 sm:px-7 sm:py-8">
+        <div className="px-6 py-7 sm:px-8 sm:py-8">
           <p className="mb-7 text-[13px] leading-6 text-muted-foreground">
             Ingresa el correo registrado de tu cuenta. Te enviaremos un enlace
             seguro para restablecer tu contraseña.
@@ -45,9 +45,9 @@ export default function ForgotPasswordPage() {
           <span className="industrial-label">¿La recuerdas?</span>
           <Link
             href="/login"
-            className="font-mono text-[12px] font-bold uppercase tracking-[0.16em] text-safety-500 underline-offset-4 hover:underline"
+            className="font-mono text-[12px] font-bold uppercase tracking-[0.16em] text-safety-500 underline-offset-4 transition-colors duration-150 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-safety-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           >
-            ← Volver al login
+            ← Volver al ingreso
           </Link>
         </footer>
       </div>

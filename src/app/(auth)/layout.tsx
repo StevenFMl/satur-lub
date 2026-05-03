@@ -48,16 +48,25 @@ export default function AuthLayout({
       <footer className="relative z-10 border-t border-steel-700/80 bg-steel-900/50">
         <div className="mx-auto flex w-full max-w-6xl flex-col items-start justify-between gap-2 px-6 py-3 sm:flex-row sm:items-center">
           <p className="industrial-label !text-[10px]">
-            © {new Date().getFullYear()} SATURNLUB · HEAVY-DUTY OS
+            © {new Date().getFullYear()} SATURNLUB · SISTEMA OPERATIVO INDUSTRIAL
           </p>
           <nav className="flex items-center gap-5 text-[11px] uppercase tracking-wider text-muted-foreground">
-            <a href="#" className="hover:text-foreground">
+            <a
+              href="#"
+              className="transition-colors duration-150 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-safety-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            >
               Términos
             </a>
-            <a href="#" className="hover:text-foreground">
+            <a
+              href="#"
+              className="transition-colors duration-150 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-safety-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            >
               Privacidad
             </a>
-            <a href="#" className="hover:text-foreground">
+            <a
+              href="#"
+              className="transition-colors duration-150 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-safety-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            >
               Soporte
             </a>
           </nav>
@@ -121,11 +130,11 @@ function BrandVisual() {
 
 function SpecTile({ label, value }: { label: string; value: string }) {
   return (
-    <div className="border border-steel-700 bg-steel-900/60 p-3 backdrop-blur-sm">
+    <div className="border border-steel-700 bg-steel-900/60 p-3 backdrop-blur-sm transition-colors duration-150 hover:border-steel-500">
       <div className="font-mono text-[9px] uppercase tracking-[0.2em] text-muted-foreground">
         {label}
       </div>
-      <div className="mt-1 font-display text-[28px] leading-none tracking-[0.02em] text-foreground">
+      <div className="mt-1 font-display text-[28px] leading-none tracking-[0.02em] text-foreground tabular-nums">
         {value}
       </div>
     </div>

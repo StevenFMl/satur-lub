@@ -112,16 +112,25 @@ export default function HomePage() {
       <footer className="relative z-10 border-t border-steel-700 bg-steel-900/60">
         <div className="mx-auto flex w-full max-w-6xl flex-col items-start justify-between gap-2 px-6 py-4 sm:flex-row sm:items-center">
           <p className="industrial-label !text-[10px]">
-            © {new Date().getFullYear()} SATURNLUB · HEAVY-DUTY OS
+            © {new Date().getFullYear()} SATURNLUB · SISTEMA OPERATIVO INDUSTRIAL
           </p>
           <nav className="flex items-center gap-5 text-[11px] uppercase tracking-wider text-muted-foreground">
-            <a href="#" className="hover:text-foreground">
+            <a
+              href="#"
+              className="rounded-sm transition-colors duration-150 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-safety-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            >
               Términos
             </a>
-            <a href="#" className="hover:text-foreground">
+            <a
+              href="#"
+              className="rounded-sm transition-colors duration-150 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-safety-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            >
               Privacidad
             </a>
-            <a href="#" className="hover:text-foreground">
+            <a
+              href="#"
+              className="rounded-sm transition-colors duration-150 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-safety-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            >
               Soporte
             </a>
           </nav>
@@ -207,10 +216,10 @@ function DashboardMock() {
 
       {/* Strip inferior */}
       <div className="mt-5 flex items-center justify-between border-t border-steel-700 pt-3">
-        <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-          ID-OS-001 · v1.0
+        <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground tabular-nums">
+          ID·OP·001 · v1.0
         </span>
-        <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+        <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground tabular-nums">
           14:32
         </span>
       </div>

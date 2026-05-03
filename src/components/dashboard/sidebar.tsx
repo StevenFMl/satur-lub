@@ -91,8 +91,11 @@ export function Sidebar({ activePath }: { activePath: string }) {
             <Link
               key={item.href}
               href={item.href}
+              aria-current={isActive ? "page" : undefined}
               className={cn(
-                "group/nav flex items-center gap-3 rounded-sm border-l-2 px-3 py-2.5 font-mono text-[12px] font-semibold uppercase tracking-[0.14em] transition-colors",
+                "group/nav flex items-center gap-3 rounded-sm border-l-2 px-3 py-2.5 font-mono text-[12px] font-semibold uppercase tracking-[0.14em]",
+                "transition-all duration-150 ease-out",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-safety-500 focus-visible:ring-offset-2 focus-visible:ring-offset-steel-900",
                 isActive
                   ? "border-safety-500 bg-steel-800 text-safety-500"
                   : "border-transparent text-muted-foreground hover:border-steel-600 hover:bg-steel-800/60 hover:text-foreground"
@@ -100,8 +103,10 @@ export function Sidebar({ activePath }: { activePath: string }) {
             >
               <span
                 className={cn(
-                  "transition-colors",
-                  isActive ? "text-safety-500" : "text-muted-foreground group-hover/nav:text-foreground"
+                  "transition-colors duration-150",
+                  isActive
+                    ? "text-safety-500"
+                    : "text-muted-foreground group-hover/nav:text-foreground"
                 )}
               >
                 {item.icon}
@@ -114,7 +119,7 @@ export function Sidebar({ activePath }: { activePath: string }) {
 
       <div className="border-t border-steel-700 px-5 py-3">
         <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-          Heavy-Duty OS · v0.1
+          S.O. Industrial · v0.1
         </p>
       </div>
     </aside>
