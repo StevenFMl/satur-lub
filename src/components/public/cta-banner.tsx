@@ -1,11 +1,12 @@
 import Link from "next/link";
+import { ArrowRight, Clock, Mail, MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export function CtaBanner() {
   return (
     <section
       id="contacto"
-      className="relative w-full overflow-hidden bg-steel-900 py-20 sm:py-24 lg:py-28"
+      className="relative w-full overflow-hidden bg-zinc-900 py-20 sm:py-24 lg:py-28"
     >
       {/* Backdrop industrial */}
       <div aria-hidden className="absolute inset-0 brushed-steel opacity-90" />
@@ -18,13 +19,13 @@ export function CtaBanner() {
         <div className="grid items-center gap-12 lg:grid-cols-[1.5fr_1fr]">
           {/* Copy */}
           <div>
-            <span className="font-mono text-[11px] font-bold uppercase tracking-[0.22em] text-safety-500">
+            <span className="text-[12px] font-bold uppercase tracking-[0.22em] text-safety-500">
               Pon en marcha tu taller
             </span>
-            <h2 className="mt-4 font-display text-[44px] leading-[0.94] tracking-[0.01em] text-foreground sm:text-[58px] lg:text-[72px]">
-              ENCIENDE EL MOTOR.
+            <h2 className="mt-4 font-display text-[44px] leading-[0.94] tracking-[0.01em] text-white sm:text-[58px] lg:text-[68px]">
+              Empieza hoy.
               <br />
-              <span className="text-safety-500">EMPIEZA HOY.</span>
+              <span className="text-safety-500">Decide en 14 días.</span>
             </h2>
             <p className="mt-5 max-w-xl text-[15px] leading-7 text-zinc-300 sm:text-[16px] sm:leading-8">
               Crea tu cuenta en menos de un minuto. Sin tarjeta, sin
@@ -34,8 +35,9 @@ export function CtaBanner() {
 
             <div className="mt-8 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
               <Link href="/register" className="sm:min-w-[240px]">
-                <Button size="xl" className="w-full">
+                <Button size="xl" className="group/cta w-full">
                   Crear cuenta ahora
+                  <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover/cta:translate-x-1" />
                 </Button>
               </Link>
               <Link href="/login" className="sm:min-w-[180px]">
@@ -47,61 +49,69 @@ export function CtaBanner() {
           </div>
 
           {/* Caja lateral con datos de contacto */}
-          <div className="panel panel-bolts relative overflow-hidden rounded-sm">
-            <span aria-hidden className="bolt-bl" />
-            <span aria-hidden className="bolt-br" />
+          <aside className="relative overflow-hidden border border-zinc-800 bg-zinc-950/80 backdrop-blur">
+            <div aria-hidden className="h-1 w-full bg-safety-500" />
 
-            <div className="top-highlight border-b border-steel-700 bg-steel-900/70 px-5 py-4">
-              <span className="hud-readout">Soporte directo</span>
-              <h3 className="mt-2 font-display text-[20px] leading-none tracking-[0.04em] text-foreground">
-                ¿PREFIERES HABLAR PRIMERO?
+            <div className="border-b border-zinc-800 px-6 py-5">
+              <span className="text-[11px] font-bold uppercase tracking-[0.22em] text-safety-500">
+                Soporte directo
+              </span>
+              <h3 className="mt-2 font-display text-[24px] leading-tight tracking-[0.02em] text-white">
+                ¿Prefieres hablar primero?
               </h3>
             </div>
 
-            <ul className="space-y-4 px-5 py-5">
+            <ul className="space-y-1 px-3 py-3">
               <ContactRow
+                icon={<MessageCircle className="h-4 w-4" />}
                 label="WhatsApp"
                 value="+593 99 000 0000"
                 href="https://wa.me/593990000000"
               />
               <ContactRow
+                icon={<Mail className="h-4 w-4" />}
                 label="Correo"
                 value="hola@saturnlub.app"
                 href="mailto:hola@saturnlub.app"
               />
               <ContactRow
+                icon={<Clock className="h-4 w-4" />}
                 label="Atención"
                 value="Lun a Sáb · 8:00 – 19:00"
               />
             </ul>
-          </div>
+          </aside>
         </div>
       </div>
-
-      {/* Hazard stripe inferior — remate visual de cierre */}
-      <div aria-hidden className="hazard-stripe absolute inset-x-0 bottom-0 h-1.5 opacity-95" />
     </section>
   );
 }
 
 function ContactRow({
+  icon,
   label,
   value,
   href,
 }: {
+  icon: React.ReactNode;
   label: string;
   value: string;
   href?: string;
 }) {
   const Inner = (
-    <>
-      <span className="font-mono text-[10px] font-bold uppercase tracking-[0.22em] text-muted-foreground">
-        {label}
-      </span>
-      <span className="mt-1 block font-mono text-[14px] font-bold tracking-[0.02em] text-foreground tabular-nums">
-        {value}
-      </span>
-    </>
+    <div className="flex items-center gap-4 px-4 py-3">
+      <div className="grid h-10 w-10 shrink-0 place-items-center border border-safety-500/30 bg-safety-500/10 text-safety-500">
+        {icon}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="text-[10.5px] font-bold uppercase tracking-[0.22em] text-zinc-500">
+          {label}
+        </div>
+        <div className="mt-0.5 truncate font-mono text-[13.5px] font-semibold tracking-[0.02em] text-white tabular-nums">
+          {value}
+        </div>
+      </div>
+    </div>
   );
 
   if (!href) return <li>{Inner}</li>;
@@ -110,7 +120,7 @@ function ContactRow({
     <li>
       <a
         href={href}
-        className="block rounded-sm border-l-2 border-transparent pl-3 transition-all duration-150 hover:border-safety-500 hover:bg-steel-800/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-safety-500 focus-visible:ring-offset-2 focus-visible:ring-offset-steel-900"
+        className="block rounded-sm transition-colors duration-150 hover:bg-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-safety-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950"
       >
         {Inner}
       </a>
