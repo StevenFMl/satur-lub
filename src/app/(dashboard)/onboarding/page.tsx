@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Logo } from "@/components/brand/logo";
 import { createClient } from "@/lib/supabase/server";
 import { OnboardingForm } from "./onboarding-form";
-import { logoutAction } from "../(auth)/actions";
+import { logoutAction } from "@/actions/auth";
 
 export const metadata: Metadata = {
   title: "Configura tu negocio",

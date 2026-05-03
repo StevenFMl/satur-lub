@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Alert } from "@/components/ui/alert";
 import { FieldError } from "@/components/ui/field-error";
 import { PasswordInput } from "@/components/ui/password-input";
-import { registerAction, type AuthState } from "../actions";
+import { registerAction, type AuthState } from "@/actions/auth";
 import {
   registerSchema,
   type RegisterFieldErrors,

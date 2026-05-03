@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/server";
 import { daysBetween, formatDate } from "@/lib/utils";
 
@@ -58,80 +57,68 @@ export default async function DashboardPage() {
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-8">
-      <section className="flex flex-col gap-1">
-        <p className="text-sm text-muted-foreground">Bienvenido</p>
-        <h2 className="text-2xl font-semibold tracking-tight">
-          Hola, {fullName}
-        </h2>
-        <p className="text-sm text-muted-foreground">
-          Este es el centro operativo de{" "}
-          <span className="font-medium text-foreground">
-            {tenant?.business_name ?? "tu negocio"}
+      {/* Hero */}
+      <section className="space-y-3">
+        <span className="hud-readout">Centro de operación</span>
+        <h2 className="font-display text-[40px] leading-[0.95] tracking-[0.02em] text-foreground sm:text-[48px]">
+          HOLA,{" "}
+          <span className="text-safety-500">
+            {fullName.split(" ")[0]?.toUpperCase()}
           </span>
           .
+        </h2>
+        <p className="max-w-2xl text-[14px] leading-7 text-muted-foreground">
+          Este es el panel operativo de{" "}
+          <span className="font-semibold text-foreground">
+            {tenant?.business_name ?? "tu negocio"}
+          </span>
+          . Desde aquí gestionas órdenes, vehículos, inventario y cobranza.
         </p>
       </section>
 
+      {/* KPIs principales */}
       <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <Card>
-          <CardHeader>
-            <CardDescription>Negocio</CardDescription>
-            <CardTitle className="truncate">
-              {tenant?.business_name ?? "—"}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">
-            saturnlub.app/{tenant?.slug ?? "tu-negocio"}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardDescription>Plan actual</CardDescription>
-            <CardTitle>{planName}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">
-            Estado:{" "}
-            <span className="font-medium capitalize text-foreground">
-              {tenant?.status ?? "trial"}
-            </span>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardDescription>Trial</CardDescription>
-            <CardTitle>
-              {trialDaysLeft !== null
-                ? `${trialDaysLeft} día${trialDaysLeft === 1 ? "" : "s"} restantes`
-                : "Sin trial activo"}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">
-            {trialEndsAt
-              ? `Vence el ${formatDate(trialEndsAt)}`
-              : "Tu plan no tiene periodo de prueba."}
-          </CardContent>
-        </Card>
+        <Tile
+          label="Negocio"
+          value={tenant?.business_name ?? "—"}
+          hint={`saturnlub.app/${tenant?.slug ?? "tu-negocio"}`}
+        />
+        <Tile
+          label="Plan"
+          value={planName}
+          hint={`Estado · ${tenant?.status ?? "trial"}`}
+        />
+        <Tile
+          label="Trial"
+          value={
+            trialDaysLeft !== null
+              ? `${trialDaysLeft} día${trialDaysLeft === 1 ? "" : "s"}`
+              : "Sin trial"
+          }
+          hint={
+            trialEndsAt ? `Vence ${formatDate(trialEndsAt)}` : "Sin vencimiento"
+          }
+        />
       </section>
 
+      {/* Próximos pasos + cuenta */}
       <section className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle>Próximos pasos</CardTitle>
-            <CardDescription>
-              Configura tu operación para empezar a registrar trabajos.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
+        <div className="panel rounded-sm lg:col-span-2">
+          <div className="top-highlight flex items-center justify-between border-b border-steel-700 bg-steel-900/70 px-5 py-4">
+            <h3 className="font-display text-[18px] leading-none tracking-[0.04em] text-foreground">
+              PRÓXIMOS PASOS
+            </h3>
+            <span className="hud-readout">Setup · 4 pasos</span>
+          </div>
+          <div className="space-y-2 px-5 py-5">
             <Step
               done
-              title="Crear tu cuenta y negocio"
-              description="Listo. Ya tienes un workspace en SaturnLub."
+              title="Crear cuenta y negocio"
+              description="Listo. Tu workspace en SaturnLub está activo."
             />
             <Step
               title="Invita a tu equipo"
-              description="Agrega técnicos y administradores para colaborar."
+              description="Agrega mecánicos, cobradores y administradores."
             />
             <Step
               title="Carga tu inventario inicial"
@@ -141,21 +128,48 @@ export default async function DashboardPage() {
               title="Crea tu primera orden"
               description="Atiende un vehículo y emite el comprobante asociado."
             />
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Tu cuenta</CardTitle>
-            <CardDescription>Datos de acceso a SaturnLub.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2 text-sm">
+        <div className="panel rounded-sm">
+          <div className="top-highlight flex items-center justify-between border-b border-steel-700 bg-steel-900/70 px-5 py-4">
+            <h3 className="font-display text-[18px] leading-none tracking-[0.04em] text-foreground">
+              TU CUENTA
+            </h3>
+            <span className="hud-readout">{membership.role ?? "owner"}</span>
+          </div>
+          <div className="space-y-3 px-5 py-5">
             <Row label="Nombre" value={fullName} />
             <Row label="Correo" value={user.email ?? "—"} />
-            <Row label="Rol" value={membership.role ?? "owner"} />
-          </CardContent>
-        </Card>
+            <Row
+              label="Rol"
+              value={(membership.role ?? "owner").toUpperCase()}
+            />
+          </div>
+        </div>
       </section>
+    </div>
+  );
+}
+
+function Tile({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint: string;
+}) {
+  return (
+    <div className="panel rounded-sm p-5">
+      <p className="hud-readout">{label}</p>
+      <p className="mt-2 truncate font-display text-[24px] leading-none tracking-[0.02em] text-foreground">
+        {value}
+      </p>
+      <p className="mt-2 truncate font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
+        {hint}
+      </p>
     </div>
   );
 }
@@ -170,24 +184,38 @@ function Step({
   done?: boolean;
 }) {
   return (
-    <div className="flex items-start gap-3 rounded-lg border border-border p-3">
+    <div className="flex items-start gap-3 border border-steel-700 bg-steel-950 p-3">
       <span
         className={
           done
-            ? "mt-0.5 grid h-5 w-5 place-items-center rounded-full bg-emerald-100 text-emerald-700"
-            : "mt-0.5 grid h-5 w-5 place-items-center rounded-full border border-border text-muted-foreground"
+            ? "mt-0.5 grid h-5 w-5 place-items-center rounded-sm bg-safety-500 text-steel-950"
+            : "mt-0.5 grid h-5 w-5 place-items-center rounded-sm border border-steel-700 bg-steel-800 font-mono text-[10px] text-muted-foreground"
         }
         aria-hidden
       >
         {done ? (
-          <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+          <svg
+            viewBox="0 0 24 24"
+            className="h-3 w-3"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="3.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <polyline points="20 6 9 17 4 12" />
           </svg>
-        ) : null}
+        ) : (
+          "·"
+        )}
       </span>
       <div className="min-w-0">
-        <p className="text-sm font-medium">{title}</p>
-        <p className="text-xs text-muted-foreground">{description}</p>
+        <p className="font-mono text-[12px] font-bold uppercase tracking-[0.14em] text-foreground">
+          {title}
+        </p>
+        <p className="mt-0.5 text-[12px] leading-5 text-muted-foreground">
+          {description}
+        </p>
       </div>
     </div>
   );
@@ -195,9 +223,13 @@ function Step({
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center justify-between gap-3">
-      <span className="text-xs text-muted-foreground">{label}</span>
-      <span className="truncate text-sm font-medium">{value}</span>
+    <div className="flex items-center justify-between gap-3 border-b border-steel-700/60 pb-2 last:border-0 last:pb-0">
+      <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+        {label}
+      </span>
+      <span className="truncate text-[13px] font-semibold text-foreground">
+        {value}
+      </span>
     </div>
   );
 }

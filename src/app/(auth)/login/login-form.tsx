@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Alert } from "@/components/ui/alert";
 import { FieldError } from "@/components/ui/field-error";
 import { PasswordInput } from "@/components/ui/password-input";
-import { loginAction, type AuthState } from "../actions";
+import { loginAction, type AuthState } from "@/actions/auth";
 import { loginSchema, type LoginFieldErrors } from "@/lib/validations/auth";
 
 export function LoginForm({ redirectTo }: { redirectTo?: string }) {
@@ -20,10 +20,10 @@ export function LoginForm({ redirectTo }: { redirectTo?: string }) {
 
   const [clientErrors, setClientErrors] = useState<LoginFieldErrors>({});
 
-  const errors: LoginFieldErrors = {
-    ...(state?.fieldErrors as LoginFieldErrors | undefined),
-    ...clientErrors,
-  };
+  // Server fieldErrors es una unión que incluye Login/Register/Forgot.
+  // Nos quedamos con las claves que aplican al login.
+  const serverFieldErrors = (state?.fieldErrors as LoginFieldErrors | undefined) ?? {};
+  const errors: LoginFieldErrors = { ...serverFieldErrors, ...clientErrors };
 
   function clearError(field: keyof LoginFieldErrors) {
     if (clientErrors[field]) {
@@ -38,7 +38,7 @@ export function LoginForm({ redirectTo }: { redirectTo?: string }) {
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     const formData = new FormData(event.currentTarget);
     const result = loginSchema.safeParse({
-      email: formData.get("email"),
+      identifier: formData.get("identifier"),
       password: formData.get("password"),
       redirectTo: formData.get("redirectTo") ?? undefined,
     });
@@ -69,28 +69,38 @@ export function LoginForm({ redirectTo }: { redirectTo?: string }) {
       <input type="hidden" name="redirectTo" value={redirectTo ?? ""} />
 
       <div className="space-y-2">
-        <Label htmlFor="email">Correo / usuario</Label>
+        <Label htmlFor="identifier">Cédula o correo</Label>
         <Input
-          id="email"
-          name="email"
-          type="email"
-          autoComplete="email"
-          placeholder="operador@empresa.com"
+          id="identifier"
+          name="identifier"
+          type="text"
+          inputMode="text"
+          autoComplete="username"
+          placeholder="12345678 o operador@empresa.com"
           autoFocus
-          aria-describedby={errors.email ? "email-error" : undefined}
-          invalid={Boolean(errors.email)}
-          onChange={() => clearError("email")}
+          aria-describedby={errors.identifier ? "identifier-error" : "identifier-hint"}
+          invalid={Boolean(errors.identifier)}
+          onChange={() => clearError("identifier")}
         />
-        <FieldError fieldId="email" message={errors.email} />
+        {errors.identifier ? (
+          <FieldError fieldId="identifier" message={errors.identifier} />
+        ) : (
+          <p
+            id="identifier-hint"
+            className="text-[11.5px] font-medium uppercase tracking-wider text-muted-foreground"
+          >
+            Ingresa tu cédula (8–11 dígitos) o tu correo registrado
+          </p>
+        )}
       </div>
 
       <div className="space-y-2">
         <div className="flex items-baseline justify-between gap-3">
           <Label htmlFor="password">Contraseña</Label>
           <Link
-            href="/login"
+            href="/forgot-password"
             tabIndex={-1}
-            className="text-[11px] font-semibold uppercase tracking-wider text-rust-400 underline-offset-4 transition-colors hover:text-rust-500 hover:underline"
+            className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-rust-400 underline-offset-4 transition-colors hover:text-rust-500 hover:underline"
           >
             Recuperar
           </Link>

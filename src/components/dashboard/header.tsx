@@ -1,13 +1,15 @@
-import { logoutAction } from "@/app/(auth)/actions";
+import { logoutAction } from "@/actions/auth";
 
 export function DashboardHeader({
   businessName,
   userName,
   userEmail,
+  role,
 }: {
   businessName: string;
   userName: string;
   userEmail: string;
+  role?: string;
 }) {
   const initials = (userName || userEmail)
     .split(" ")
@@ -18,29 +20,34 @@ export function DashboardHeader({
     .toUpperCase();
 
   return (
-    <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b border-border bg-background/80 px-6 backdrop-blur">
+    <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b border-steel-700 bg-steel-900/80 px-6 backdrop-blur top-highlight">
       <div className="min-w-0">
-        <p className="text-xs uppercase tracking-wide text-muted-foreground">
-          Negocio
-        </p>
-        <h1 className="truncate text-sm font-semibold">{businessName}</h1>
+        <p className="hud-readout">Negocio · activo</p>
+        <h1 className="truncate font-display text-[18px] leading-none tracking-[0.04em] text-foreground">
+          {businessName}
+        </h1>
       </div>
 
       <div className="flex items-center gap-4">
-        <div className="hidden text-right sm:block">
-          <p className="text-sm font-medium">{userName}</p>
-          <p className="text-xs text-muted-foreground">{userEmail}</p>
+        <div className="hidden min-w-0 text-right sm:block">
+          <p className="truncate text-[13px] font-semibold text-foreground">
+            {userName}
+          </p>
+          <p className="truncate font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
+            {role ? `${role} · ` : ""}
+            {userEmail}
+          </p>
         </div>
         <div
           aria-hidden
-          className="grid h-9 w-9 place-items-center rounded-full bg-foreground text-sm font-semibold text-background"
+          className="grid h-10 w-10 place-items-center rounded-sm border border-steel-700 bg-steel-800 font-mono text-[13px] font-bold text-safety-500 shadow-bevel-sm"
         >
           {initials || "·"}
         </div>
         <form action={logoutAction}>
           <button
             type="submit"
-            className="rounded-md border border-input px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
+            className="border border-steel-700 bg-steel-800 px-3 py-2 font-mono text-[11px] font-bold uppercase tracking-[0.16em] text-foreground transition-colors hover:border-rust-500 hover:text-rust-400"
           >
             Cerrar sesión
           </button>

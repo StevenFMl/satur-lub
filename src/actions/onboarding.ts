@@ -13,6 +13,11 @@ export type OnboardingState = {
   fieldErrors?: OnboardingFieldErrors;
 } | null;
 
+/**
+ * Crea el tenant del owner recién registrado.
+ * Solo se ejecuta una vez — si ya hay membership activa, el layout redirige
+ * a `/dashboard` antes de llegar aquí.
+ */
 export async function createTenantAction(
   _prev: OnboardingState,
   formData: FormData

@@ -9,7 +9,7 @@ import { Select } from "@/components/ui/select";
 import { Alert } from "@/components/ui/alert";
 import { FieldError } from "@/components/ui/field-error";
 import { slugify, cn } from "@/lib/utils";
-import { createTenantAction, type OnboardingState } from "./actions";
+import { createTenantAction, type OnboardingState } from "@/actions/onboarding";
 import {
   onboardingSchema,
   type OnboardingFieldErrors,

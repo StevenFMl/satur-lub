@@ -44,6 +44,12 @@ export interface UserRow {
   email: string;
   full_name: string | null;
   avatar_url: string | null;
+  /**
+   * Cédula de identidad. Único por usuario (índice parcial: solo cuando NO NULL).
+   * Permite que cobradores/mecánicos se autentiquen tipeando su cédula en el login
+   * en lugar del correo (ver flujo en README, sección 4).
+   */
+  cedula: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -101,6 +107,15 @@ export interface Database {
           p_ruc?: string | null;
         };
         Returns: string; // returns the new tenant_id (uuid)
+      };
+      /**
+       * SECURITY DEFINER: bypassea RLS para resolver email a partir de cédula
+       * en el primer paso del login. No retorna password ni hash.
+       * Migración SQL en README.md sección 3.
+       */
+      find_email_by_cedula: {
+        Args: { p_cedula: string };
+        Returns: string | null;
       };
     };
     Enums: {

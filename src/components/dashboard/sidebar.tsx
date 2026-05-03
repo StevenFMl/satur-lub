@@ -24,7 +24,7 @@ const NAV: NavItem[] = [
     label: "Órdenes",
     icon: (
       <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="4" y="4" width="16" height="16" rx="2" />
+        <rect x="4" y="4" width="16" height="16" rx="1" />
         <path d="M8 9h8M8 13h8M8 17h5" />
       </svg>
     ),
@@ -50,8 +50,20 @@ const NAV: NavItem[] = [
     ),
   },
   {
+    href: "/dashboard/team",
+    label: "Equipo",
+    icon: (
+      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="9" cy="8" r="3.5" />
+        <path d="M2.5 21c0-3.5 3-6 6.5-6s6.5 2.5 6.5 6" />
+        <circle cx="17" cy="9" r="3" />
+        <path d="M21.5 21c0-2.6-2-5-4.5-5" />
+      </svg>
+    ),
+  },
+  {
     href: "/dashboard/settings",
-    label: "Configuración",
+    label: "Ajustes",
     icon: (
       <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="12" cy="12" r="3" />
@@ -63,11 +75,13 @@ const NAV: NavItem[] = [
 
 export function Sidebar({ activePath }: { activePath: string }) {
   return (
-    <aside className="hidden w-60 shrink-0 border-r border-border bg-card lg:flex lg:flex-col">
-      <div className="flex h-16 items-center px-5">
-        <Logo />
+    <aside className="hidden w-64 shrink-0 border-r border-steel-700 bg-steel-900 lg:flex lg:flex-col">
+      <div className="flex h-16 items-center border-b border-steel-700 bg-steel-900/70 px-5 top-highlight">
+        <Logo size="sm" />
       </div>
-      <nav className="flex-1 space-y-0.5 px-3 py-2">
+
+      <nav className="flex-1 space-y-1 px-3 py-4">
+        <p className="px-3 pb-2 hud-readout !text-muted-foreground">Operación</p>
         {NAV.map((item) => {
           const isActive =
             item.href === "/dashboard"
@@ -78,20 +92,30 @@ export function Sidebar({ activePath }: { activePath: string }) {
               key={item.href}
               href={item.href}
               className={cn(
-                "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
+                "group/nav flex items-center gap-3 rounded-sm border-l-2 px-3 py-2.5 font-mono text-[12px] font-semibold uppercase tracking-[0.14em] transition-colors",
                 isActive
-                  ? "bg-muted font-medium text-foreground"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  ? "border-safety-500 bg-steel-800 text-safety-500"
+                  : "border-transparent text-muted-foreground hover:border-steel-600 hover:bg-steel-800/60 hover:text-foreground"
               )}
             >
-              <span className="text-muted-foreground">{item.icon}</span>
+              <span
+                className={cn(
+                  "transition-colors",
+                  isActive ? "text-safety-500" : "text-muted-foreground group-hover/nav:text-foreground"
+                )}
+              >
+                {item.icon}
+              </span>
               {item.label}
             </Link>
           );
         })}
       </nav>
-      <div className="px-5 pb-5 pt-3 text-xs text-muted-foreground">
-        v0.1 · Fase 1
+
+      <div className="border-t border-steel-700 px-5 py-3">
+        <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+          Heavy-Duty OS · v0.1
+        </p>
       </div>
     </aside>
   );
