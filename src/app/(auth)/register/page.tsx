@@ -9,41 +9,43 @@ export const metadata: Metadata = {
 export default function RegisterPage() {
   return (
     <div className="space-y-5">
-      {/* Placa de identificación de la pantalla */}
+      {/* Placa de identificación */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5">
           <span
             aria-hidden
-            className="inline-block h-3 w-3 rounded-sm bg-safety-500 shadow-[0_0_6px_1px_rgba(255,193,7,0.6)]"
+            className="inline-block h-2.5 w-2.5 rounded-sm bg-safety-500 shadow-[0_0_6px_1px_rgba(255,193,7,0.6)]"
           />
-          <span className="industrial-label !text-foreground">
-            Alta de Operador
-          </span>
+          <span className="hud-readout">Alta de Operador</span>
         </div>
-        <span className="industrial-label">ID-NEW</span>
+        <span className="hud-readout !text-muted-foreground">ID-NEW</span>
       </div>
 
-      {/* Chasis del formulario */}
-      <div className="rounded-sm border border-steel-700 bg-card shadow-industrial">
-        <header className="flex items-center justify-between border-b border-steel-700 bg-steel-800/60 px-5 py-3">
-          <h1 className="text-[15px] font-extrabold uppercase tracking-wider">
-            Registro al sistema
+      {/* Chasis del formulario: panel con tornillos */}
+      <div className="panel panel-bolts relative overflow-hidden rounded-sm">
+        <span aria-hidden className="bolt-bl" />
+        <span aria-hidden className="bolt-br" />
+
+        <header className="top-highlight flex items-center justify-between border-b border-steel-700 bg-steel-900/70 px-6 py-4">
+          <h1 className="font-display text-[22px] leading-none tracking-[0.04em] text-foreground">
+            REGISTRO AL SISTEMA
           </h1>
-          <span className="industrial-label">Auth · v1</span>
+          <span className="hud-readout">Auth · v1</span>
         </header>
 
-        <div className="px-5 py-6 sm:px-6 sm:py-7">
-          <p className="mb-6 text-[13px] leading-5 text-muted-foreground">
-            Configura tu taller, ferretería o negocio automotriz en SaturnLub.
+        <div className="px-6 py-7 sm:px-7 sm:py-8">
+          <p className="mb-7 text-[13px] leading-6 text-muted-foreground">
+            Configura tu taller, lubricentro o ferretería automotriz en
+            SaturnLub. Acceso inmediato sin pasos extra.
           </p>
           <RegisterForm />
         </div>
 
-        <footer className="flex items-center justify-between border-t border-steel-700 bg-steel-800/40 px-5 py-3">
+        <footer className="flex items-center justify-between border-t border-steel-700 bg-steel-900/40 px-6 py-3">
           <span className="industrial-label">¿Ya operando?</span>
           <Link
             href="/login"
-            className="text-[12px] font-bold uppercase tracking-wider text-safety-500 underline-offset-4 hover:underline"
+            className="font-mono text-[12px] font-bold uppercase tracking-[0.16em] text-safety-500 underline-offset-4 hover:underline"
           >
             Iniciar sesión →
           </Link>
@@ -51,7 +53,7 @@ export default function RegisterPage() {
       </div>
 
       <p className="industrial-label text-center !text-[10px]">
-        Plataforma operativa para lubricentros · talleres · ferreterías
+        Plataforma operativa · Lubricentros · Talleres · Ferreterías
       </p>
     </div>
   );

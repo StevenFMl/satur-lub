@@ -1,19 +1,29 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
-export function Card({
-  className,
-  ...props
-}: React.HTMLAttributes<HTMLDivElement>) {
+export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
+  /** Si true, agrega 4 tornillos decorativos en las esquinas. */
+  bolts?: boolean;
+}
+
+export function Card({ className, bolts, children, ...props }: CardProps) {
   return (
     <div
       className={cn(
-        "rounded-sm border border-steel-700 bg-card text-card-foreground",
-        "shadow-industrial-inset",
+        "panel rounded-sm",
+        bolts && "panel-bolts",
         className
       )}
       {...props}
-    />
+    >
+      {bolts ? (
+        <>
+          <span aria-hidden className="bolt-bl" />
+          <span aria-hidden className="bolt-br" />
+        </>
+      ) : null}
+      {children}
+    </div>
   );
 }
 
@@ -24,7 +34,8 @@ export function CardHeader({
   return (
     <div
       className={cn(
-        "flex flex-col space-y-1.5 border-b border-steel-700 px-5 py-4",
+        "flex items-start justify-between gap-3 border-b border-steel-700 bg-steel-900/60 px-5 py-4",
+        "top-highlight",
         className
       )}
       {...props}
@@ -39,7 +50,7 @@ export function CardTitle({
   return (
     <h3
       className={cn(
-        "text-[15px] font-bold uppercase tracking-wider leading-none",
+        "font-display text-[18px] tracking-[0.04em] leading-none text-foreground",
         className
       )}
       {...props}
@@ -63,7 +74,7 @@ export function CardContent({
   className,
   ...props
 }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("px-5 py-4", className)} {...props} />;
+  return <div className={cn("px-5 py-5", className)} {...props} />;
 }
 
 export function CardFooter({
@@ -73,7 +84,7 @@ export function CardFooter({
   return (
     <div
       className={cn(
-        "flex items-center border-t border-steel-700 px-5 py-3",
+        "flex items-center border-t border-steel-700 bg-steel-900/40 px-5 py-3",
         className
       )}
       {...props}

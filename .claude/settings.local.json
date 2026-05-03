@@ -22,7 +22,11 @@
       "Bash(curl -sS -o /dev/null -w \"HTTP %{http_code}  /onboarding \\(no auth → expect redirect to /login\\)\\\\n\" -L --max-redirs 0 http://localhost:3100/onboarding)",
       "Bash(kill 2454)",
       "Bash(npm run *)",
-      "Bash(node -p \"require\\('./node_modules/zod/package.json'\\).version\")"
+      "Bash(node -p \"require\\('./node_modules/zod/package.json'\\).version\")",
+      "Bash(curl -s -o /dev/null -w \"HTTP: %{http_code}\\\\n\" http://localhost:3000/)",
+      "Bash(curl -s -o /dev/null -w \"login: %{http_code}\\\\n\" http://localhost:3000/login)",
+      "Bash(curl -s -o /dev/null -w \"register: %{http_code}\\\\n\" http://localhost:3000/register)",
+      "Bash(pkill -f \"next dev\")"
     ]
   }
 }

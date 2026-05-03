@@ -111,7 +111,10 @@ const config: Config = {
         sm: "2px",
       },
 
-      // Tipografía robusta. Inter (cargada via next/font) por defecto.
+      // Tipografía:
+      //  - sans (Inter): texto general, formularios, datos
+      //  - display (Bebas Neue): titulares grandes tipo poster automotriz
+      //  - mono (JetBrains Mono): IDs, seriales, badges tipo HUD
       fontFamily: {
         sans: [
           "var(--font-sans)",
@@ -119,6 +122,21 @@ const config: Config = {
           "ui-sans-serif",
           "system-ui",
           "sans-serif",
+        ],
+        display: [
+          "var(--font-display)",
+          "Bebas Neue",
+          "Impact",
+          "ui-sans-serif",
+          "sans-serif",
+        ],
+        mono: [
+          "var(--font-mono)",
+          "JetBrains Mono",
+          "ui-monospace",
+          "SFMono-Regular",
+          "Menlo",
+          "monospace",
         ],
       },
 
@@ -134,9 +152,17 @@ const config: Config = {
         "industrial-pressed": "0 1px 0 0 rgba(0,0,0,0.55)",
         // Highlight superior tipo metal cepillado
         "industrial-inset": "inset 0 1px 0 0 rgba(255,255,255,0.06)",
+        // Bevel completo tipo panel mecanizado: highlight arriba + sombra abajo
+        bevel:
+          "inset 0 1px 0 0 rgba(255,255,255,0.08), inset 0 -1px 0 0 rgba(0,0,0,0.5), 0 4px 0 0 rgba(0,0,0,0.45), 0 8px 18px -6px rgba(0,0,0,0.6)",
+        "bevel-sm":
+          "inset 0 1px 0 0 rgba(255,255,255,0.08), inset 0 -1px 0 0 rgba(0,0,0,0.4), 0 2px 0 0 rgba(0,0,0,0.45)",
         // Para inputs sobre superficies oscuras
         "control-inset":
           "inset 0 1px 2px 0 rgba(0,0,0,0.55), inset 0 0 0 1px rgba(255,255,255,0.02)",
+        // Brillo amarillo sutil para CTAs (gauge glow)
+        "safety-glow":
+          "0 0 0 1px rgba(255,193,7,0.15), 0 8px 24px -8px rgba(255,193,7,0.35)",
       },
 
       // Patrón de barras de hazard para badges/header strips
