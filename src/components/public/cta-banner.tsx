@@ -1,0 +1,119 @@
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+
+export function CtaBanner() {
+  return (
+    <section
+      id="contacto"
+      className="relative w-full overflow-hidden bg-steel-900 py-20 sm:py-24 lg:py-28"
+    >
+      {/* Backdrop industrial */}
+      <div aria-hidden className="absolute inset-0 brushed-steel opacity-90" />
+      <div
+        aria-hidden
+        className="absolute -bottom-32 right-[-10%] h-[420px] w-[420px] rounded-full bg-safety-500/15 blur-[140px]"
+      />
+
+      <div className="relative mx-auto w-full max-w-7xl px-6 lg:px-10">
+        <div className="grid items-center gap-12 lg:grid-cols-[1.5fr_1fr]">
+          {/* Copy */}
+          <div>
+            <span className="font-mono text-[11px] font-bold uppercase tracking-[0.22em] text-safety-500">
+              Pon en marcha tu taller
+            </span>
+            <h2 className="mt-4 font-display text-[44px] leading-[0.94] tracking-[0.01em] text-foreground sm:text-[58px] lg:text-[72px]">
+              ENCIENDE EL MOTOR.
+              <br />
+              <span className="text-safety-500">EMPIEZA HOY.</span>
+            </h2>
+            <p className="mt-5 max-w-xl text-[15px] leading-7 text-zinc-300 sm:text-[16px] sm:leading-8">
+              Crea tu cuenta en menos de un minuto. Sin tarjeta, sin
+              instalaciones, sin llamadas. Empiezas a operar el mismo día y
+              decides si seguir cuando termine la prueba.
+            </p>
+
+            <div className="mt-8 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
+              <Link href="/register" className="sm:min-w-[240px]">
+                <Button size="xl" className="w-full">
+                  Crear cuenta ahora
+                </Button>
+              </Link>
+              <Link href="/login" className="sm:min-w-[180px]">
+                <Button size="xl" variant="outline" className="w-full">
+                  Ya tengo cuenta
+                </Button>
+              </Link>
+            </div>
+          </div>
+
+          {/* Caja lateral con datos de contacto */}
+          <div className="panel panel-bolts relative overflow-hidden rounded-sm">
+            <span aria-hidden className="bolt-bl" />
+            <span aria-hidden className="bolt-br" />
+
+            <div className="top-highlight border-b border-steel-700 bg-steel-900/70 px-5 py-4">
+              <span className="hud-readout">Soporte directo</span>
+              <h3 className="mt-2 font-display text-[20px] leading-none tracking-[0.04em] text-foreground">
+                ¿PREFIERES HABLAR PRIMERO?
+              </h3>
+            </div>
+
+            <ul className="space-y-4 px-5 py-5">
+              <ContactRow
+                label="WhatsApp"
+                value="+593 99 000 0000"
+                href="https://wa.me/593990000000"
+              />
+              <ContactRow
+                label="Correo"
+                value="hola@saturnlub.app"
+                href="mailto:hola@saturnlub.app"
+              />
+              <ContactRow
+                label="Atención"
+                value="Lun a Sáb · 8:00 – 19:00"
+              />
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      {/* Hazard stripe inferior — remate visual de cierre */}
+      <div aria-hidden className="hazard-stripe absolute inset-x-0 bottom-0 h-1.5 opacity-95" />
+    </section>
+  );
+}
+
+function ContactRow({
+  label,
+  value,
+  href,
+}: {
+  label: string;
+  value: string;
+  href?: string;
+}) {
+  const Inner = (
+    <>
+      <span className="font-mono text-[10px] font-bold uppercase tracking-[0.22em] text-muted-foreground">
+        {label}
+      </span>
+      <span className="mt-1 block font-mono text-[14px] font-bold tracking-[0.02em] text-foreground tabular-nums">
+        {value}
+      </span>
+    </>
+  );
+
+  if (!href) return <li>{Inner}</li>;
+
+  return (
+    <li>
+      <a
+        href={href}
+        className="block rounded-sm border-l-2 border-transparent pl-3 transition-all duration-150 hover:border-safety-500 hover:bg-steel-800/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-safety-500 focus-visible:ring-offset-2 focus-visible:ring-offset-steel-900"
+      >
+        {Inner}
+      </a>
+    </li>
+  );
+}

@@ -18,7 +18,7 @@ export default function RegisterPage() {
           />
           <span className="hud-readout">Alta de Operador</span>
         </div>
-        <span className="hud-readout !text-muted-foreground">ID·NUEVO</span>
+        <span className="hud-readout !text-muted-foreground">Registro nuevo</span>
       </div>
 
       {/* Chasis del formulario: panel con tornillos */}

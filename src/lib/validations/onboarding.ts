@@ -49,7 +49,7 @@ export const onboardingSchema = z.object({
     optionalNullable,
     z
       .string()
-      .regex(/^[0-9]{8,11}$/, "El RUC debe tener entre 8 y 11 dígitos.")
+      .regex(/^[0-9]{13}$/, "El RUC ecuatoriano debe tener 13 dígitos.")
       .optional()
       .transform((v) => v ?? null)
   ),

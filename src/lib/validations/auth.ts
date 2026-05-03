@@ -29,13 +29,13 @@ const passwordRegisterSchema = z.preprocess(
 
 /**
  * Identificador del login: acepta correo o cédula.
- * - Cédula = 8 a 11 dígitos exactos.
+ * - Cédula ecuatoriana = 10 dígitos exactos.
  * - Correo = formato email estándar.
  *
  * El servidor decide cuál es cuál mirando si contiene `@`. La validación aquí
  * solo asegura que el campo no esté vacío y tenga formato razonable.
  */
-const cedulaRegex = /^[0-9]{8,11}$/;
+const cedulaRegex = /^[0-9]{10}$/;
 const looksLikeEmail = (v: string) => v.includes("@");
 
 const identifierSchema = z.preprocess(
@@ -47,7 +47,7 @@ const identifierSchema = z.preprocess(
     .max(254, "Identificador demasiado largo.")
     .refine(
       (v) => looksLikeEmail(v) || cedulaRegex.test(v),
-      "Ingresa una cédula válida (8–11 dígitos) o un correo."
+      "Ingresa una cédula válida (10 dígitos) o un correo."
     )
     .refine(
       (v) => !looksLikeEmail(v) || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v),

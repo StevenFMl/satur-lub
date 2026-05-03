@@ -90,7 +90,7 @@ export function Logo({
             <span className="text-safety-500">LUB</span>
           </span>
           <span className="mt-1 block font-mono text-[9px] font-medium uppercase tracking-[0.22em] text-muted-foreground">
-            S.O.&nbsp;Industrial
+            Plataforma&nbsp;industrial
           </span>
         </div>
       ) : null}

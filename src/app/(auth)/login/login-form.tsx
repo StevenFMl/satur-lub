@@ -79,7 +79,7 @@ export function LoginForm({ redirectTo }: { redirectTo?: string }) {
           inputMode="text"
           autoComplete="username"
           mono
-          placeholder="12345678  ·  operador@empresa.com"
+          placeholder="1234567890  ·  operador@empresa.com"
           autoFocus
           aria-describedby={
             errors.identifier ? "identifier-error" : "identifier-hint"
@@ -91,7 +91,7 @@ export function LoginForm({ redirectTo }: { redirectTo?: string }) {
           <FieldError fieldId="identifier" message={errors.identifier} />
         ) : (
           <p id="identifier-hint" className="field-hint">
-            Cédula de 8 a 11 dígitos · o tu correo registrado
+            Cédula ecuatoriana de 10 dígitos · o tu correo registrado
           </p>
         )}
       </div>

@@ -24,7 +24,7 @@ export function daysBetween(from: Date, to: Date): number {
 
 export function formatDate(value: string | Date): string {
   const d = typeof value === "string" ? new Date(value) : value;
-  return new Intl.DateTimeFormat("es-PE", {
+  return new Intl.DateTimeFormat("es-EC", {
     day: "2-digit",
     month: "short",
     year: "numeric",

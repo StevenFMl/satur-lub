@@ -206,9 +206,10 @@ export function OnboardingForm() {
               id="ruc"
               name="ruc"
               inputMode="numeric"
-              pattern="[0-9]{8,11}"
+              pattern="[0-9]{13}"
+              maxLength={13}
               mono
-              placeholder="20123456789"
+              placeholder="1234567890001"
               invalid={Boolean(errors.ruc)}
               aria-describedby={errors.ruc ? "ruc-error" : "ruc-hint"}
               onChange={() => clearError("ruc")}
@@ -217,7 +218,7 @@ export function OnboardingForm() {
               <FieldError fieldId="ruc" message={errors.ruc} />
             ) : (
               <p id="ruc-hint" className="field-hint">
-                8 a 11 dígitos · solo números
+                RUC ecuatoriano · 13 dígitos
               </p>
             )}
           </div>

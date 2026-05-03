@@ -119,7 +119,7 @@ export function Sidebar({ activePath }: { activePath: string }) {
 
       <div className="border-t border-steel-700 px-5 py-3">
         <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-          S.O. Industrial · v0.1
+          Plataforma · v0.1
         </p>
       </div>
     </aside>
