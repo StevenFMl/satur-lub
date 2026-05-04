@@ -13,7 +13,7 @@ export default function AuthLayout({
 
       {/* Header */}
       <header className="relative z-10 border-b border-steel-700/80 bg-steel-900/50 backdrop-blur-md">
-        <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between px-6">
+        <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between px-6 sm:px-8">
           <Link
             href="/"
             aria-label="Inicio"
@@ -31,14 +31,14 @@ export default function AuthLayout({
       </header>
 
       <main className="relative z-10 flex flex-1 items-stretch justify-center">
-        <div className="mx-auto grid w-full max-w-7xl flex-1 grid-cols-1 lg:grid-cols-[1fr_minmax(480px,520px)]">
+        <div className="mx-auto grid w-full max-w-7xl flex-1 grid-cols-1 lg:grid-cols-[1fr_minmax(480px,540px)]">
           {/* Lado izquierdo: visual de marca (oculto en móvil) */}
           <aside className="relative hidden overflow-hidden border-r border-steel-700/70 lg:block">
             <BrandVisual />
           </aside>
 
-          {/* Lado derecho: formulario */}
-          <section className="relative flex items-center justify-center px-6 py-10 sm:px-10 sm:py-14">
+          {/* Lado derecho: formulario — centrado vertical perfecto */}
+          <section className="relative flex items-center justify-center px-6 py-12 sm:px-10 sm:py-16 lg:py-20">
             {/* Textura sutil para dar profundidad */}
             <div aria-hidden className="carbon-fiber absolute inset-0 opacity-15 pointer-events-none" />
             <div
@@ -51,7 +51,7 @@ export default function AuthLayout({
       </main>
 
       <footer className="relative z-10 border-t border-steel-700/80 bg-steel-900/50">
-        <div className="mx-auto flex w-full max-w-7xl flex-col items-start justify-between gap-2 px-6 py-3 sm:flex-row sm:items-center">
+        <div className="mx-auto flex w-full max-w-7xl flex-col items-start justify-between gap-2 px-6 py-4 sm:flex-row sm:items-center sm:px-8">
           <p className="industrial-label !text-[10px]">
             © {new Date().getFullYear()} SATURNLUB
           </p>
@@ -98,9 +98,14 @@ function BrandVisual() {
         aria-hidden
         className="absolute -right-40 -top-32 h-[360px] w-[360px] rounded-full bg-safety-500/10 blur-3xl"
       />
+      {/* Secondary glow for depth */}
+      <div
+        aria-hidden
+        className="absolute -left-20 bottom-0 h-[280px] w-[280px] rounded-full bg-rust-500/5 blur-[100px]"
+      />
 
       <div className="relative space-y-8">
-        <h2 className="font-display text-[52px] leading-[0.92] tracking-[0.01em] text-foreground xl:text-[68px]">
+        <h2 className="font-display text-[48px] leading-[0.92] tracking-[0.01em] text-foreground xl:text-[64px] 2xl:text-[72px]">
           GESTIÓN TOTAL
           <br />
           <span className="text-safety-500">PARA TU TALLER.</span>
@@ -116,6 +121,13 @@ function BrandVisual() {
           <TrustPoint>14 días de prueba sin tarjeta</TrustPoint>
           <TrustPoint>Soporte por WhatsApp incluido</TrustPoint>
           <TrustPoint>Operando en menos de 5 minutos</TrustPoint>
+        </div>
+
+        {/* Subtle brand reinforcement */}
+        <div className="pt-4">
+          <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.22em] text-zinc-600">
+            +120 talleres operando en Ecuador
+          </p>
         </div>
       </div>
     </div>

@@ -8,17 +8,17 @@ export const metadata: Metadata = {
 
 export default function RegisterPage() {
   return (
-    <div className="panel panel-bolts relative overflow-hidden rounded-sm">
+    <div className="panel panel-bolts relative overflow-hidden rounded-sm shadow-[0_0_0_1px_rgba(0,0,0,0.3),0_16px_40px_-12px_rgba(0,0,0,0.5)]">
       <span aria-hidden className="bolt-bl" />
       <span aria-hidden className="bolt-br" />
 
-      <header className="top-highlight flex items-center justify-between border-b border-steel-700 bg-steel-900/70 px-6 py-4 sm:px-8">
+      <header className="top-highlight flex items-center justify-between border-b border-steel-700 bg-steel-900/70 px-6 py-5 sm:px-8">
         <h1 className="font-display text-[24px] leading-none tracking-[0.04em] text-foreground sm:text-[28px]">
           CREAR CUENTA
         </h1>
       </header>
 
-      <div className="space-y-7 px-6 py-8 sm:px-8 sm:py-10">
+      <div className="space-y-7 px-6 py-9 sm:px-8 sm:py-10">
         <p className="text-[13.5px] leading-6 text-muted-foreground">
           Configura tu taller, lubricentro o ferretería en SaturnLub.
           Acceso inmediato, sin verificación por correo.
@@ -26,7 +26,7 @@ export default function RegisterPage() {
         <RegisterForm />
       </div>
 
-      <footer className="flex items-center justify-between border-t border-steel-700 bg-steel-900/40 px-6 py-3.5 sm:px-8">
+      <footer className="flex items-center justify-between border-t border-steel-700 bg-steel-900/40 px-6 py-4 sm:px-8">
         <span className="industrial-label">¿Ya tienes cuenta?</span>
         <Link
           href="/login"

@@ -6,23 +6,28 @@ export function CtaBanner() {
   return (
     <section
       id="contacto"
-      className="relative w-full overflow-hidden bg-zinc-900 py-20 sm:py-24 lg:py-32"
+      className="relative w-full overflow-hidden bg-zinc-900 py-24 sm:py-28 lg:py-36"
     >
       {/* Backdrop industrial */}
       <div aria-hidden className="absolute inset-0 brushed-steel opacity-90" />
+      {/* Separador superior */}
+      <div
+        aria-hidden
+        className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-zinc-700/60 to-transparent"
+      />
       <div
         aria-hidden
         className="absolute -bottom-32 right-[-10%] h-[420px] w-[420px] rounded-full bg-safety-500/15 blur-[140px]"
       />
 
-      <div className="relative mx-auto w-full max-w-7xl px-6 lg:px-10">
-        <div className="grid items-center gap-12 lg:grid-cols-[1.5fr_1fr]">
+      <div className="relative mx-auto w-full max-w-7xl px-6 sm:px-8 lg:px-10 xl:px-12">
+        <div className="grid items-center gap-12 lg:grid-cols-[1.5fr_1fr] lg:gap-16">
           {/* Copy */}
           <div>
             <span className="text-[12px] font-bold uppercase tracking-[0.22em] text-safety-500">
               Pon en marcha tu taller
             </span>
-            <h2 className="mt-4 font-display text-[44px] leading-[0.94] tracking-[0.01em] text-white sm:text-[58px] lg:text-[68px]">
+            <h2 className="mt-4 font-display text-[40px] leading-[0.94] tracking-[0.01em] text-white sm:text-[52px] lg:text-[68px]">
               Empieza hoy.
               <br />
               <span className="text-safety-500">Decide en 14 días.</span>
@@ -49,14 +54,14 @@ export function CtaBanner() {
           </div>
 
           {/* Caja lateral con datos de contacto */}
-          <aside className="relative overflow-hidden border border-zinc-800 bg-zinc-950/80 backdrop-blur">
+          <aside className="relative overflow-hidden border border-zinc-800 bg-zinc-950/80 shadow-[0_8px_24px_-8px_rgba(0,0,0,0.5)] backdrop-blur">
             <div aria-hidden className="h-1 w-full bg-safety-500" />
 
-            <div className="border-b border-zinc-800 px-6 py-5">
+            <div className="border-b border-zinc-800 px-6 py-5 sm:px-7">
               <span className="text-[11px] font-bold uppercase tracking-[0.22em] text-safety-500">
                 Soporte directo
               </span>
-              <h3 className="mt-2 font-display text-[24px] leading-tight tracking-[0.02em] text-white">
+              <h3 className="mt-2 font-display text-[24px] leading-tight tracking-[0.02em] text-white sm:text-[26px]">
                 ¿Prefieres hablar primero?
               </h3>
             </div>

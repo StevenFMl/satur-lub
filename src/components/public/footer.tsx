@@ -22,9 +22,15 @@ const LEGAL_LINKS = [
 
 export function PublicFooter() {
   return (
-    <footer className="relative w-full border-t border-zinc-800 bg-zinc-950 pt-16 pb-10">
-      <div className="mx-auto w-full max-w-7xl px-6 lg:px-10">
-        <div className="grid gap-12 lg:grid-cols-[1.6fr_1fr_1fr_1fr]">
+    <footer className="relative w-full border-t border-zinc-800 bg-zinc-950 pt-20 pb-12 lg:pt-24 lg:pb-14">
+      {/* Separador sutil brushed-steel en la parte superior */}
+      <div
+        aria-hidden
+        className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-zinc-600/40 to-transparent"
+      />
+
+      <div className="mx-auto w-full max-w-7xl px-6 sm:px-8 lg:px-10 xl:px-12">
+        <div className="grid gap-12 sm:grid-cols-2 lg:grid-cols-[1.6fr_1fr_1fr_1fr] lg:gap-10">
           {/* Marca + descripción */}
           <div>
             <Logo />
@@ -41,7 +47,7 @@ export function PublicFooter() {
         </div>
 
         {/* Bottom bar */}
-        <div className="mt-14 flex flex-col items-start justify-between gap-3 border-t border-zinc-800 pt-6 sm:flex-row sm:items-center">
+        <div className="mt-16 flex flex-col items-start justify-between gap-3 border-t border-zinc-800 pt-7 sm:flex-row sm:items-center lg:mt-20">
           <p className="text-[12px] text-zinc-500">
             © {new Date().getFullYear()} SaturnLub. Todos los derechos
             reservados.

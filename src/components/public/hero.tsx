@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 
 export function HeroSection() {
   return (
-    <section className="relative isolate -mt-20 flex w-full flex-col overflow-hidden bg-zinc-950 pt-32 pb-12 sm:pt-40 sm:pb-16 lg:min-h-[88vh] lg:pt-44 lg:pb-20">
+    <section className="relative isolate -mt-20 flex w-full flex-col overflow-hidden bg-zinc-950 pt-32 pb-16 sm:pt-40 sm:pb-20 lg:min-h-[90vh] lg:pt-44 lg:pb-28">
       {/* === Capas de fondo simulando foto de taller === */}
       {/* Gradiente diagonal asfalto/carbón */}
       <div
@@ -26,14 +26,14 @@ export function HeroSection() {
         aria-hidden
         className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-zinc-600/50 to-transparent"
       />
-      {/* Vignette inferior para fundir con la siguiente sección */}
+      {/* Vignette inferior extendida para fundir suavemente con stats-strip */}
       <div
         aria-hidden
-        className="absolute inset-x-0 bottom-0 h-48 bg-gradient-to-b from-transparent to-zinc-950"
+        className="absolute inset-x-0 bottom-0 h-64 bg-gradient-to-b from-transparent via-zinc-950/70 to-zinc-950"
       />
 
       {/* === Contenido === */}
-      <div className="relative mx-auto grid w-full max-w-7xl flex-1 grid-cols-1 items-center gap-12 px-6 lg:grid-cols-[1.35fr_1fr] lg:gap-14 lg:px-10">
+      <div className="relative mx-auto grid w-full max-w-7xl flex-1 grid-cols-1 items-center gap-12 px-6 sm:px-8 lg:grid-cols-[1.35fr_1fr] lg:gap-14 lg:px-10 xl:px-12">
         {/* Columna izquierda: copy enorme */}
         <div className="space-y-7">
           <span className="inline-flex items-center gap-2 border border-safety-500/30 bg-safety-500/10 px-3 py-1.5 text-[12px] font-semibold uppercase tracking-[0.18em] text-safety-500 backdrop-blur">
@@ -44,13 +44,13 @@ export function HeroSection() {
             Software para talleres en Ecuador
           </span>
 
-          <h1 className="font-display text-[60px] leading-[0.92] tracking-[0.005em] text-white sm:text-[84px] lg:text-[104px] xl:text-[120px]">
+          <h1 className="font-display text-[52px] leading-[0.92] tracking-[0.005em] text-white sm:text-[76px] md:text-[84px] lg:text-[104px] xl:text-[120px]">
             Gestión total
             <br />
             <span className="text-safety-500">para tu taller.</span>
           </h1>
 
-          <p className="max-w-xl text-[16px] leading-7 text-zinc-300 sm:text-[17px] sm:leading-8">
+          <p className="max-w-xl text-[15px] leading-7 text-zinc-300 sm:text-[17px] sm:leading-8">
             SaturnLub digitaliza tu lubricadora, taller mecánico o ferretería
             automotriz: órdenes de trabajo, ficha por vehículo, control de
             inventario, caja diaria y facturación electrónica conectada al SRI.

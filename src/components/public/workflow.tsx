@@ -36,8 +36,13 @@ export function WorkflowSection() {
   return (
     <section
       id="como-opera"
-      className="relative w-full overflow-hidden bg-zinc-950 py-20 sm:py-24 lg:py-32"
+      className="relative w-full overflow-hidden bg-zinc-950 py-24 sm:py-28 lg:py-36"
     >
+      {/* Gradiente superior: fusión suave con la wave del services */}
+      <div
+        aria-hidden
+        className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-zinc-950 to-transparent"
+      />
       <div aria-hidden className="absolute inset-0 carbon-fiber opacity-20" />
       <div
         aria-hidden
@@ -48,14 +53,14 @@ export function WorkflowSection() {
         className="absolute -top-40 right-[-15%] h-[460px] w-[460px] rounded-full bg-safety-500/10 blur-[140px]"
       />
 
-      <div className="relative mx-auto w-full max-w-7xl px-6 lg:px-10">
+      <div className="relative mx-auto w-full max-w-7xl px-6 sm:px-8 lg:px-10 xl:px-12">
         {/* Encabezado */}
         <div className="grid gap-8 lg:grid-cols-[1fr_1.4fr] lg:items-end">
           <div>
             <span className="text-[12px] font-bold uppercase tracking-[0.22em] text-safety-500">
               Cómo funciona
             </span>
-            <h2 className="mt-4 font-display text-[44px] leading-[0.95] tracking-[0.01em] text-white sm:text-[56px] lg:text-[64px]">
+            <h2 className="mt-4 font-display text-[40px] leading-[0.95] tracking-[0.01em] text-white sm:text-[52px] lg:text-[64px]">
               Del mostrador
               <br />
               <span className="text-safety-500">a la caja,</span>
@@ -71,7 +76,7 @@ export function WorkflowSection() {
         </div>
 
         {/* Steps */}
-        <ol className="mt-16 grid gap-6 md:grid-cols-3 md:gap-8">
+        <ol className="mt-16 grid gap-6 sm:mt-20 md:grid-cols-3 md:gap-8">
           {STEPS.map((s, i) => (
             <li key={s.number} className="relative">
               <StepCard step={s} isLast={i === STEPS.length - 1} />
@@ -85,7 +90,7 @@ export function WorkflowSection() {
 
 function StepCard({ step, isLast }: { step: Step; isLast: boolean }) {
   return (
-    <div className="relative flex h-full flex-col overflow-hidden border border-zinc-800 bg-zinc-900 p-7 shadow-bevel-sm transition-all duration-200 hover:-translate-y-1 hover:border-safety-500">
+    <div className="relative flex h-full flex-col overflow-hidden border border-zinc-800 bg-zinc-900 p-7 shadow-bevel-sm transition-all duration-300 hover:-translate-y-1.5 hover:border-safety-500 hover:shadow-[0_0_0_1px_rgba(255,193,7,0.15),0_12px_28px_-8px_rgba(255,193,7,0.15)] sm:p-8">
       {/* Número gigante de fondo */}
       <span
         aria-hidden
@@ -114,10 +119,10 @@ function StepCard({ step, isLast }: { step: Step; isLast: boolean }) {
         </span>
       </div>
 
-      <h3 className="relative mt-6 font-display text-[26px] leading-tight tracking-[0.02em] text-white">
+      <h3 className="relative mt-6 font-display text-[26px] leading-tight tracking-[0.02em] text-white sm:text-[28px]">
         {step.title}
       </h3>
-      <p className="relative mt-3 text-[14px] leading-6 text-zinc-400">
+      <p className="relative mt-3 flex-1 text-[14px] leading-6 text-zinc-400">
         {step.body}
       </p>
     </div>

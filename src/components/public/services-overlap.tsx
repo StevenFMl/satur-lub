@@ -1,6 +1,4 @@
-import Link from "next/link";
 import {
-  ArrowRight,
   Boxes,
   Car,
   ClipboardList,
@@ -79,18 +77,38 @@ const FEATURES: Omit<FeatureProps, "index">[] = [
 export function ServicesOverlapSection() {
   return (
     <section id="servicios" className="relative text-zinc-900">
+      {/* ===== SVG Wave Divider: dark → light ===== */}
+      <div className="relative -mt-px w-full overflow-hidden bg-zinc-950">
+        <svg
+          aria-hidden
+          viewBox="0 0 1440 80"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+          preserveAspectRatio="none"
+          className="block h-12 w-full sm:h-16 lg:h-20"
+        >
+          <path
+            d="M0 0h1440v20c-180 40-360 60-720 60S180 60 0 20V0z"
+            fill="#09090b"
+          />
+          <path
+            d="M0 20c180 40 360 60 720 60s540-20 720-60v60H0V20z"
+            fill="#fafafa"
+          />
+        </svg>
+      </div>
 
       {/* Bloque de features con fondo neutro para que las cards blancas tengan profundidad */}
-      <div className="relative bg-zinc-50 pb-20 pt-20 sm:pb-24 sm:pt-24 lg:pb-32 lg:pt-28">
+      <div className="relative bg-zinc-50 pb-24 pt-16 sm:pb-28 sm:pt-20 lg:pb-32 lg:pt-24">
         {/* Línea de separación sutil */}
         <div
           aria-hidden
           className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-zinc-200 to-transparent"
         />
 
-        <div className="mx-auto w-full max-w-7xl px-6 lg:px-10">
+        <div className="mx-auto w-full max-w-7xl px-6 sm:px-8 lg:px-10 xl:px-12">
           {/* Header de la sección — grid 2col en desktop para aprovechar ancho */}
-          <div className="grid gap-10 lg:grid-cols-[1fr_1.1fr] lg:items-end lg:gap-14">
+          <div className="grid gap-8 sm:gap-10 lg:grid-cols-[1fr_1.1fr] lg:items-end lg:gap-14">
             <div>
               <span className="inline-flex items-center gap-2 border border-rust-500/30 bg-rust-500/10 px-3 py-1.5 text-[12px] font-bold uppercase tracking-[0.18em] text-rust-500">
                 <span
@@ -99,7 +117,7 @@ export function ServicesOverlapSection() {
                 />
                 Características principales
               </span>
-              <h2 className="mt-5 font-display text-[44px] leading-[0.95] tracking-[0.01em] text-zinc-950 sm:text-[56px] lg:text-[60px]">
+              <h2 className="mt-5 font-display text-[40px] leading-[0.95] tracking-[0.01em] text-zinc-950 sm:text-[52px] lg:text-[60px]">
                 Diseñado para quien
                 <br />
                 <span className="text-rust-500">vive en el mostrador.</span>
@@ -117,12 +135,33 @@ export function ServicesOverlapSection() {
           </div>
 
           {/* Grid de tarjetas de features */}
-          <div className="mt-14 grid gap-5 sm:grid-cols-2 sm:gap-6 lg:mt-16 lg:grid-cols-3">
+          <div className="mt-14 grid gap-5 sm:grid-cols-2 sm:gap-6 lg:mt-16 lg:grid-cols-3 lg:gap-7">
             {FEATURES.map((f, i) => (
               <FeatureCard key={f.title} {...f} index={i + 1} />
             ))}
           </div>
         </div>
+      </div>
+
+      {/* ===== SVG Wave Divider: light → dark ===== */}
+      <div className="relative -mb-px w-full overflow-hidden bg-zinc-50">
+        <svg
+          aria-hidden
+          viewBox="0 0 1440 80"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+          preserveAspectRatio="none"
+          className="block h-12 w-full sm:h-16 lg:h-20"
+        >
+          <path
+            d="M0 0h1440v20c-180 40-360 60-720 60S180 60 0 20V0z"
+            fill="#fafafa"
+          />
+          <path
+            d="M0 20c180 40 360 60 720 60s540-20 720-60v60H0V20z"
+            fill="#09090b"
+          />
+        </svg>
       </div>
     </section>
   );
@@ -137,7 +176,7 @@ type FeatureProps = {
 
 function FeatureCard({ icon, title, body, index }: FeatureProps) {
   return (
-    <article className="group/feature relative flex h-full flex-col overflow-hidden border border-zinc-200 bg-white p-7 shadow-[0_1px_0_0_rgba(0,0,0,0.04)] transition-all duration-200 ease-out hover:-translate-y-1 hover:border-safety-500 hover:shadow-bevel-sm">
+    <article className="group/feature relative flex h-full flex-col overflow-hidden border border-zinc-200 bg-white p-7 shadow-sm transition-all duration-300 ease-out hover:-translate-y-1.5 hover:border-safety-500 hover:shadow-[0_12px_28px_-8px_rgba(0,0,0,0.12)]">
       {/* Línea superior amarilla que aparece en hover */}
       <span
         aria-hidden
@@ -160,4 +199,3 @@ function FeatureCard({ icon, title, body, index }: FeatureProps) {
     </article>
   );
 }
-

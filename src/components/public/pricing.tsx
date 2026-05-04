@@ -224,21 +224,20 @@ function StandardView({ billing }: { billing: Billing }) {
     </div>
   );
 }
-
 /* ============================================================================ */
 /*                              VISTA: EMPRESAS                                 */
 /* ============================================================================ */
 
 function EnterpriseView() {
   return (
-    <div className="relative mx-auto mt-12 max-w-5xl">
+    <div className="relative mx-auto mt-14 max-w-5xl sm:mt-16">
       {/* Halo de acento detrás de la card */}
       <div
         aria-hidden
-        className="absolute -inset-6 -z-10 bg-rust-500/10 blur-3xl"
+        className="absolute -inset-8 -z-10 bg-rust-500/10 blur-[60px]"
       />
 
-      <article className="relative overflow-hidden border-2 border-rust-500/60 bg-zinc-900 shadow-bevel transition-all duration-200 hover:border-rust-500">
+      <article className="relative overflow-hidden border-2 border-rust-500/60 bg-zinc-900 shadow-[0_0_0_1px_rgba(232,93,26,0.1),0_16px_40px_-12px_rgba(232,93,26,0.2)] transition-all duration-300 hover:border-rust-500">
         {/* Top stripe rust */}
         <div aria-hidden className="h-1.5 w-full bg-rust-500" />
 
@@ -251,7 +250,7 @@ function EnterpriseView() {
                 Empresas
               </span>
 
-              <h3 className="mt-5 font-display text-[40px] leading-[0.95] tracking-[0.02em] text-white sm:text-[48px]">
+              <h3 className="mt-5 font-display text-[36px] leading-[0.95] tracking-[0.02em] text-white sm:text-[48px]">
                 Para redes y
                 <br />
                 <span className="text-rust-500">franquicias.</span>
@@ -265,7 +264,7 @@ function EnterpriseView() {
             </div>
 
             <div>
-              <span className="font-display text-[60px] leading-none tracking-[0.01em] text-rust-500">
+              <span className="font-display text-[52px] leading-none tracking-[0.01em] text-rust-500 sm:text-[60px]">
                 A medida
               </span>
               <p className="mt-3 text-[12px] font-bold uppercase tracking-[0.18em] text-zinc-500">
@@ -299,7 +298,7 @@ function EnterpriseView() {
               Incluye todo lo del plan Estándar más
             </h4>
 
-            <ul className="mt-7 grid flex-1 grid-cols-1 gap-6 sm:grid-cols-2">
+            <ul className="mt-7 grid flex-1 grid-cols-1 gap-6 sm:grid-cols-2 sm:gap-7">
               {ENTERPRISE_BENEFITS.map((b) => (
                 <EnterpriseBenefitItem key={b.title} {...b} />
               ))}
@@ -314,7 +313,7 @@ function EnterpriseView() {
 function EnterpriseBenefitItem({ icon, title, body }: EnterpriseBenefit) {
   return (
     <li className="group/eb flex items-start gap-3">
-      <div className="grid h-10 w-10 shrink-0 place-items-center border border-rust-500/30 bg-rust-500/10 text-rust-400 transition-colors duration-200 group-hover/eb:border-rust-500 group-hover/eb:bg-rust-500 group-hover/eb:text-white">
+      <div className="grid h-10 w-10 shrink-0 place-items-center border border-rust-500/30 bg-rust-500/10 text-rust-400 transition-all duration-200 group-hover/eb:border-rust-500 group-hover/eb:bg-rust-500 group-hover/eb:text-white group-hover/eb:shadow-[0_0_12px_-4px_rgba(232,93,26,0.4)]">
         {icon}
       </div>
       <div className="min-w-0 flex-1">
@@ -478,10 +477,10 @@ function PlanCard({ plan, billing }: { plan: Plan; billing: Billing }) {
   return (
     <div
       className={cn(
-        "relative flex h-full flex-col overflow-hidden border-2 bg-zinc-900 transition-all duration-200",
+        "relative flex h-full flex-col overflow-hidden border-2 bg-zinc-900 transition-all duration-300",
         highlighted
-          ? "border-safety-500 shadow-safety-glow lg:scale-[1.05]"
-          : "border-zinc-800 hover:border-zinc-600"
+          ? "z-10 border-safety-500 shadow-[0_0_0_1px_rgba(255,193,7,0.15),0_16px_40px_-12px_rgba(255,193,7,0.3)] lg:scale-[1.04]"
+          : "border-zinc-800 hover:border-zinc-600 hover:shadow-[0_8px_24px_-8px_rgba(0,0,0,0.5)]"
       )}
     >
       {/* Top stripe amarilla solo en destacado */}
@@ -492,12 +491,12 @@ function PlanCard({ plan, billing }: { plan: Plan; billing: Billing }) {
       {/* Header del plan */}
       <header
         className={cn(
-          "flex items-start justify-between gap-3 border-b border-zinc-800 px-6 py-5",
+          "flex items-start justify-between gap-3 border-b border-zinc-800 px-7 py-6",
           highlighted ? "bg-zinc-900" : "bg-zinc-900/60"
         )}
       >
         <div>
-          <h3 className="font-display text-[28px] leading-none tracking-[0.02em] text-white">
+          <h3 className="font-display text-[28px] leading-none tracking-[0.02em] text-white sm:text-[30px]">
             {plan.name}
           </h3>
           <p className="mt-2 text-[12.5px] leading-5 text-zinc-400">
@@ -505,7 +504,7 @@ function PlanCard({ plan, billing }: { plan: Plan; billing: Billing }) {
           </p>
         </div>
         {plan.badge ? (
-          <span className="inline-flex shrink-0 items-center gap-1 border border-safety-500 bg-safety-500/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.22em] text-safety-500">
+          <span className="inline-flex shrink-0 items-center gap-1 border border-safety-500 bg-safety-500/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.22em] text-safety-500 shadow-[0_0_12px_-4px_rgba(255,193,7,0.3)]">
             <Sparkles className="h-3 w-3" />
             {plan.badge}
           </span>
@@ -513,11 +512,11 @@ function PlanCard({ plan, billing }: { plan: Plan; billing: Billing }) {
       </header>
 
       {/* Precio */}
-      <div className="px-6 pt-7">
+      <div className="px-7 pt-7">
         <div className="flex items-end gap-2">
           <span
             className={cn(
-              "font-display text-[56px] leading-none tracking-[0.01em] tabular-nums",
+              "font-display text-[52px] leading-none tracking-[0.01em] tabular-nums sm:text-[56px]",
               highlighted ? "text-safety-500" : "text-white"
             )}
           >
@@ -535,7 +534,7 @@ function PlanCard({ plan, billing }: { plan: Plan; billing: Billing }) {
       </div>
 
       {/* Features */}
-      <ul className="flex-1 space-y-3 px-6 py-6">
+      <ul className="flex-1 space-y-3 px-7 py-7">
         {plan.features.map((f) => (
           <li
             key={f}
@@ -548,7 +547,7 @@ function PlanCard({ plan, billing }: { plan: Plan; billing: Billing }) {
       </ul>
 
       {/* CTA */}
-      <div className="border-t border-zinc-800 px-6 py-5">
+      <div className="border-t border-zinc-800 px-7 py-6">
         <Link href={plan.ctaHref} className="block">
           <Button size="lg" variant={plan.ctaVariant} className="w-full">
             {plan.cta}
