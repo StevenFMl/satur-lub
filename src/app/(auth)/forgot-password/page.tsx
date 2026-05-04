@@ -47,7 +47,7 @@ export default function ForgotPasswordPage() {
             href="/login"
             className="font-mono text-[12px] font-bold uppercase tracking-[0.16em] text-safety-500 underline-offset-4 transition-colors duration-150 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-safety-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           >
-            ← Volver al ingreso
+            ← Volver al acceso
           </Link>
         </footer>
       </div>

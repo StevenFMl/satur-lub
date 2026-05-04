@@ -101,7 +101,7 @@ export function ForgotPasswordForm() {
       ) : null}
 
       <Button type="submit" size="xl" loading={pending} className="w-full">
-        {pending ? "Enviando…" : "Enviar enlace de recuperación"}
+        {pending ? "Enviando…" : "Restablecer acceso"}
       </Button>
     </form>
   );

@@ -39,8 +39,14 @@ export default function AuthLayout({
           </aside>
 
           {/* Lado derecho: formulario */}
-          <section className="flex items-start justify-center px-5 py-10 sm:items-center sm:py-12">
-            <div className="w-full max-w-[440px]">{children}</div>
+          <section className="relative flex items-start justify-center px-5 py-10 sm:items-center sm:py-12">
+            {/* Textura sutil para no sentirse plano vs. el aside */}
+            <div aria-hidden className="carbon-fiber absolute inset-0 opacity-15 pointer-events-none" />
+            <div
+              aria-hidden
+              className="absolute inset-0 pointer-events-none bg-[radial-gradient(ellipse_at_center,rgba(255,193,7,0.04)_0%,transparent_70%)]"
+            />
+            <div className="relative w-full max-w-[440px]">{children}</div>
           </section>
         </div>
       </main>
