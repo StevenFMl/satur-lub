@@ -6,7 +6,7 @@ export function CtaBanner() {
   return (
     <section
       id="contacto"
-      className="relative w-full overflow-hidden bg-zinc-900 py-20 sm:py-24 lg:py-28"
+      className="relative w-full overflow-hidden bg-zinc-900 py-20 sm:py-24 lg:py-32"
     >
       {/* Backdrop industrial */}
       <div aria-hidden className="absolute inset-0 brushed-steel opacity-90" />

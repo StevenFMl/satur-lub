@@ -79,16 +79,6 @@ const FEATURES: Omit<FeatureProps, "index">[] = [
 export function ServicesOverlapSection() {
   return (
     <section id="servicios" className="relative text-zinc-900">
-      {/* Bloque superior blanco — solo para las cards superpuestas */}
-      <div className="bg-white pb-20 sm:pb-24 lg:pb-28">
-        <div className="relative z-20 mx-auto -mt-20 w-full max-w-7xl px-6 sm:-mt-24 lg:-mt-28 lg:px-10">
-          <div className="grid gap-5 md:grid-cols-3 md:gap-6">
-            {SERVICES.map((s) => (
-              <ServiceCard key={s.badge} {...s} />
-            ))}
-          </div>
-        </div>
-      </div>
 
       {/* Bloque de features con fondo neutro para que las cards blancas tengan profundidad */}
       <div className="relative bg-zinc-50 pb-20 pt-20 sm:pb-24 sm:pt-24 lg:pb-32 lg:pt-28">
@@ -135,34 +125,6 @@ export function ServicesOverlapSection() {
         </div>
       </div>
     </section>
-  );
-}
-
-function ServiceCard({ badge, title, body, href, icon }: Service) {
-  return (
-    <Link
-      href={href}
-      className="group/card relative flex h-full flex-col overflow-hidden border border-zinc-800 bg-zinc-900 p-7 shadow-bevel transition-all duration-200 ease-out hover:-translate-y-1 hover:border-safety-500 hover:shadow-safety-glow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-safety-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
-    >
-      <div className="flex items-start justify-between">
-        <div className="grid h-12 w-12 place-items-center border border-zinc-700 bg-zinc-950 text-safety-500 transition-colors duration-200 group-hover/card:border-safety-500 group-hover/card:bg-safety-500 group-hover/card:text-zinc-950">
-          {icon}
-        </div>
-        <span className="font-mono text-[12px] font-bold tracking-[0.18em] text-zinc-500">
-          {badge}
-        </span>
-      </div>
-
-      <h3 className="mt-7 font-display text-[26px] leading-tight tracking-[0.02em] text-white">
-        {title}
-      </h3>
-      <p className="mt-3 flex-1 text-[14px] leading-6 text-zinc-400">{body}</p>
-
-      <div className="mt-6 inline-flex items-center gap-2 text-[12px] font-bold uppercase tracking-[0.22em] text-safety-500">
-        Conocer más
-        <ArrowRight className="h-3.5 w-3.5 transition-transform duration-200 group-hover/card:translate-x-1" />
-      </div>
-    </Link>
   );
 }
 
