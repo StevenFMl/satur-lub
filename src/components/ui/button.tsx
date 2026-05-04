@@ -83,7 +83,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         aria-busy={loading || undefined}
         className={cn(
           "group/btn relative inline-flex select-none items-center justify-center gap-2 overflow-hidden",
-          "font-bold uppercase whitespace-nowrap",
+          "font-semibold uppercase whitespace-nowrap",
           "transition-all duration-150 ease-out",
           // Focus ring nítido estilo Apple/Stripe: ring sólido + offset desde fondo
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-safety-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
