@@ -75,99 +75,101 @@ export function OnboardingForm() {
     <form
       action={formAction}
       onSubmit={handleSubmit}
-      className="space-y-8"
+      className="space-y-10"
       noValidate
     >
       <Section
         title="Información del negocio"
         description="Cómo identificaremos tu espacio en SaturnLub."
       >
-        <div className="space-y-2">
-          <Label htmlFor="business_name" required>
-            Nombre del negocio
-          </Label>
-          <Input
-            id="business_name"
-            name="business_name"
-            placeholder="Lubricentro La Esquina"
-            value={businessName}
-            onChange={(e) => {
-              setBusinessName(e.target.value);
-              clearError("business_name");
-            }}
-            invalid={Boolean(errors.business_name)}
-            aria-describedby={
-              errors.business_name ? "business_name-error" : undefined
-            }
-            autoFocus
-          />
-          <FieldError fieldId="business_name" message={errors.business_name} />
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="slug" required>
-            Identificador único
-          </Label>
-          <div
-            className={cn(
-              "flex items-stretch overflow-hidden rounded-sm border-2 bg-steel-950",
-              "shadow-control-inset transition-all duration-150 ease-out",
-              "focus-within:ring-2",
-              errors.slug
-                ? "border-hazard-500/70 focus-within:border-hazard-500 focus-within:ring-hazard-500/45"
-                : "border-steel-700 hover:border-steel-500 focus-within:border-safety-500 focus-within:ring-safety-500/45"
-            )}
-          >
-            <span className="grid place-items-center border-r-2 border-steel-700 bg-steel-800 px-3 font-mono text-[11.5px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
-              saturnlub.app/
-            </span>
-            <input
-              id="slug"
-              name="slug"
-              value={slug}
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+          <div className="space-y-2 sm:col-span-2">
+            <Label htmlFor="business_name" required>
+              Nombre del negocio
+            </Label>
+            <Input
+              id="business_name"
+              name="business_name"
+              placeholder="Lubricentro La Esquina"
+              value={businessName}
               onChange={(e) => {
-                setSlug(e.target.value);
-                setSlugTouched(true);
-                clearError("slug");
+                setBusinessName(e.target.value);
+                clearError("business_name");
               }}
-              placeholder="lubricentro-la-esquina"
-              autoCapitalize="off"
-              autoCorrect="off"
-              spellCheck={false}
-              aria-invalid={Boolean(errors.slug) || undefined}
-              aria-describedby={errors.slug ? "slug-error" : "slug-hint"}
-              className="h-12 min-w-0 flex-1 bg-transparent px-4 font-mono text-[14.5px] tracking-[0.02em] tabular-nums text-foreground placeholder:font-normal placeholder:tracking-normal placeholder:text-muted-foreground focus:outline-none"
+              invalid={Boolean(errors.business_name)}
+              aria-describedby={
+                errors.business_name ? "business_name-error" : undefined
+              }
+              autoFocus
             />
+            <FieldError fieldId="business_name" message={errors.business_name} />
           </div>
-          {errors.slug ? (
-            <FieldError fieldId="slug" message={errors.slug} />
-          ) : (
-            <p id="slug-hint" className="field-hint">
-              Solo minúsculas, números y guiones · 3 a 60 caracteres
-            </p>
-          )}
-        </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="business_type" required>
-            Tipo de negocio
-          </Label>
-          <Select
-            id="business_type"
-            name="business_type"
-            defaultValue="lubricentro"
-            invalid={Boolean(errors.business_type)}
-            onChange={() => clearError("business_type")}
-            aria-describedby={
-              errors.business_type ? "business_type-error" : undefined
-            }
-          >
-            <option value="lubricentro">Lubricentro</option>
-            <option value="taller">Taller mecánico</option>
-            <option value="autoservicio">Autoservicio</option>
-            <option value="otro">Otro</option>
-          </Select>
-          <FieldError fieldId="business_type" message={errors.business_type} />
+          <div className="space-y-2">
+            <Label htmlFor="slug" required>
+              Identificador único
+            </Label>
+            <div
+              className={cn(
+                "flex items-stretch overflow-hidden rounded-sm border-2 bg-steel-950",
+                "shadow-control-inset transition-all duration-150 ease-out",
+                "focus-within:ring-2",
+                errors.slug
+                  ? "border-hazard-500/70 focus-within:border-hazard-500 focus-within:ring-hazard-500/45"
+                  : "border-steel-700 hover:border-steel-500 focus-within:border-safety-500 focus-within:ring-safety-500/45"
+              )}
+            >
+              <span className="grid place-items-center border-r-2 border-steel-700 bg-steel-800 px-3 font-mono text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground sm:text-[11.5px]">
+                saturnlub.app/
+              </span>
+              <input
+                id="slug"
+                name="slug"
+                value={slug}
+                onChange={(e) => {
+                  setSlug(e.target.value);
+                  setSlugTouched(true);
+                  clearError("slug");
+                }}
+                placeholder="la-esquina"
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck={false}
+                aria-invalid={Boolean(errors.slug) || undefined}
+                aria-describedby={errors.slug ? "slug-error" : "slug-hint"}
+                className="h-11 min-w-0 flex-1 bg-transparent px-3 font-mono text-[13.5px] tracking-[0.02em] tabular-nums text-foreground placeholder:font-normal placeholder:tracking-normal placeholder:text-muted-foreground focus:outline-none sm:h-12 sm:px-4 sm:text-[14.5px]"
+              />
+            </div>
+            {errors.slug ? (
+              <FieldError fieldId="slug" message={errors.slug} />
+            ) : (
+              <p id="slug-hint" className="field-hint">
+                Solo minúsculas, números y guiones
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="business_type" required>
+              Tipo de negocio
+            </Label>
+            <Select
+              id="business_type"
+              name="business_type"
+              defaultValue="lubricentro"
+              invalid={Boolean(errors.business_type)}
+              onChange={() => clearError("business_type")}
+              aria-describedby={
+                errors.business_type ? "business_type-error" : undefined
+              }
+            >
+              <option value="lubricentro">Lubricentro</option>
+              <option value="taller">Taller mecánico</option>
+              <option value="autoservicio">Autoservicio</option>
+              <option value="otro">Otro</option>
+            </Select>
+            <FieldError fieldId="business_type" message={errors.business_type} />
+          </div>
         </div>
       </Section>
 
@@ -177,7 +179,7 @@ export function OnboardingForm() {
         title="Datos fiscales"
         description="Opcionales por ahora. Los puedes completar más tarde para emitir comprobantes."
       >
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="legal_name">
               Razón social{" "}
@@ -229,9 +231,9 @@ export function OnboardingForm() {
         <Alert tone="error">{state.error}</Alert>
       ) : null}
 
-      <div className="flex flex-col-reverse items-stretch gap-3 border-t border-steel-700 pt-5 sm:flex-row sm:items-center sm:justify-end">
+      <div className="flex flex-col-reverse items-stretch gap-4 border-t border-steel-700 pt-7 sm:flex-row sm:items-center sm:justify-end">
         <p className="industrial-label sm:mr-auto">
-          Tu negocio inicia con un periodo de prueba sin tarjeta.
+          Tu negocio inicia con un periodo de prueba.
         </p>
         <Button
           type="submit"
@@ -239,7 +241,7 @@ export function OnboardingForm() {
           loading={pending}
           className="sm:min-w-[240px]"
         >
-          {pending ? "Creando negocio…" : "Crear negocio y continuar"}
+          {pending ? "Creando negocio…" : "Crear negocio"}
         </Button>
       </div>
     </form>
@@ -256,24 +258,24 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section className="space-y-5">
-      <header className="flex items-center gap-3 border-b-2 border-steel-700 pb-3">
+    <section className="space-y-6">
+      <header className="flex items-center gap-3 border-b-2 border-steel-700 pb-4">
         <span
           aria-hidden
-          className="inline-block h-3 w-3 shrink-0 rounded-sm bg-safety-500"
+          className="inline-block h-3 w-3 shrink-0 rounded-sm bg-safety-500 shadow-[0_0_8px_-1px_rgba(255,193,7,0.4)]"
         />
-        <div className="space-y-0.5">
-          <h2 className="text-[14px] font-extrabold uppercase tracking-wider leading-none">
+        <div className="space-y-1">
+          <h2 className="text-[15px] font-extrabold uppercase tracking-[0.08em] text-foreground leading-none">
             {title}
           </h2>
           {description ? (
-            <p className="text-[12px] leading-5 text-muted-foreground">
+            <p className="text-[12.5px] leading-5 text-muted-foreground">
               {description}
             </p>
           ) : null}
         </div>
       </header>
-      <div className="space-y-5">{children}</div>
+      <div className="space-y-6">{children}</div>
     </section>
   );
 }
@@ -282,7 +284,7 @@ function Divider() {
   return (
     <div
       aria-hidden
-      className="hazard-stripe h-1 w-full opacity-70"
+      className="hazard-stripe h-1 w-full opacity-60"
     />
   );
 }
