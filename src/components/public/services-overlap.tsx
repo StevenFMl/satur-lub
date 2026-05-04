@@ -81,7 +81,7 @@ export function ServicesOverlapSection() {
     <section id="servicios" className="relative text-zinc-900">
       {/* Bloque superior blanco — solo para las cards superpuestas */}
       <div className="bg-white pb-20 sm:pb-24 lg:pb-28">
-        <div className="relative z-20 mx-auto -mt-20 w-full max-w-7xl px-6 sm:-mt-24 lg:-mt-28 lg:px-10">
+        <div className="relative z-20 mx-auto -mt-32 w-full max-w-7xl px-6 sm:-mt-40 lg:-mt-44 lg:px-10">
           <div className="grid gap-5 md:grid-cols-3 md:gap-6">
             {SERVICES.map((s) => (
               <ServiceCard key={s.badge} {...s} />
