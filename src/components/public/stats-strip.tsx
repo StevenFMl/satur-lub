@@ -43,7 +43,7 @@ export function StatsStrip() {
         className="absolute inset-x-0 -top-1 h-8 bg-gradient-to-b from-zinc-950 to-transparent"
       />
 
-      <div className="mx-auto w-full max-w-7xl px-6 sm:px-8 lg:px-10 xl:px-12">
+      <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="grid grid-cols-2 divide-zinc-800 border-y border-zinc-800 lg:grid-cols-4 lg:divide-x">
           {STATS.map((s) => (
             <StatCell key={s.label} {...s} />

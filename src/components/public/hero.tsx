@@ -33,10 +33,10 @@ export function HeroSection() {
       />
 
       {/* === Contenido === */}
-      <div className="relative mx-auto grid w-full max-w-7xl flex-1 grid-cols-1 items-center gap-12 px-6 sm:px-8 lg:grid-cols-[1.35fr_1fr] lg:gap-14 lg:px-10 xl:px-12">
+      <div className="relative mx-auto grid w-full max-w-7xl flex-1 grid-cols-1 items-center gap-12 px-4 sm:px-6 lg:grid-cols-[1.35fr_1fr] lg:gap-14 lg:px-8">
         {/* Columna izquierda: copy enorme */}
         <div className="space-y-7">
-          <span className="inline-flex items-center gap-2 border border-safety-500/30 bg-safety-500/10 px-3 py-1.5 text-[12px] font-semibold uppercase tracking-[0.18em] text-safety-500 backdrop-blur">
+          <span className="inline-flex items-center gap-2 border border-safety-500/30 bg-safety-500/10 px-3 py-1.5 text-[12px] font-semibold uppercase tracking-[0.18em] text-safety-500 backdrop-blur animate-in fade-in slide-in-from-bottom-4 duration-700 fill-mode-both">
             <span
               aria-hidden
               className="h-1.5 w-1.5 rounded-full bg-safety-500 shadow-[0_0_8px_2px_rgba(255,193,7,0.7)]"
@@ -44,13 +44,13 @@ export function HeroSection() {
             Software para talleres en Ecuador
           </span>
 
-          <h1 className="font-display text-[52px] leading-[0.92] tracking-[0.005em] text-white sm:text-[76px] md:text-[84px] lg:text-[104px] xl:text-[120px]">
+          <h1 className="font-display text-[52px] leading-[0.92] tracking-[0.005em] text-white sm:text-[76px] md:text-[84px] lg:text-[104px] xl:text-[120px] animate-in fade-in slide-in-from-bottom-4 duration-700 fill-mode-both delay-100">
             Gestión total
             <br />
             <span className="text-safety-500">para tu taller.</span>
           </h1>
 
-          <p className="max-w-xl text-[15px] leading-7 text-zinc-300 sm:text-[17px] sm:leading-8">
+          <p className="max-w-xl text-[15px] leading-7 text-zinc-300 sm:text-[17px] sm:leading-8 animate-in fade-in slide-in-from-bottom-4 duration-700 fill-mode-both delay-200">
             SaturnLub digitaliza tu lubricadora, taller mecánico o ferretería
             automotriz: órdenes de trabajo, ficha por vehículo, control de
             inventario, caja diaria y facturación electrónica conectada al SRI.
@@ -58,7 +58,7 @@ export function HeroSection() {
           </p>
 
           {/* Trust strip */}
-          <ul className="flex flex-wrap items-center gap-x-6 gap-y-2 text-[13px] font-medium text-zinc-400">
+          <ul className="flex flex-wrap items-center gap-x-6 gap-y-2 text-[13px] font-medium text-zinc-400 animate-in fade-in slide-in-from-bottom-4 duration-700 fill-mode-both delay-300">
             <TrustItem icon={<CheckCircle2 className="h-4 w-4 text-safety-500" />}>
               Sin tarjeta para empezar
             </TrustItem>
@@ -95,7 +95,7 @@ function TrustItem({
 
 function CtaBox() {
   return (
-    <aside className="relative">
+    <aside className="relative animate-in fade-in slide-in-from-bottom-4 duration-700 fill-mode-both delay-300">
       {/* Halo amarillo detrás de la card */}
       <div
         aria-hidden

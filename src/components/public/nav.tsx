@@ -34,7 +34,7 @@ export function PublicNav() {
           : "border-b border-transparent bg-transparent"
       )}
     >
-      <div className="mx-auto flex h-20 w-full max-w-7xl items-center justify-between gap-6 px-6 lg:px-10">
+      <div className="mx-auto flex h-20 w-full max-w-7xl items-center justify-between gap-6 px-4 sm:px-6 lg:px-8">
         <Link
           href="/"
           aria-label="SaturnLub · Inicio"
@@ -83,7 +83,7 @@ export function PublicNav() {
       {/* Mobile drawer */}
       {mobileOpen ? (
         <div className="border-t border-zinc-800 bg-zinc-950/95 backdrop-blur lg:hidden">
-          <nav className="mx-auto flex w-full max-w-7xl flex-col gap-1 px-6 py-4">
+          <nav className="mx-auto flex w-full max-w-7xl flex-col gap-1 px-4 sm:px-6 lg:px-8 py-4">
             {SECTIONS.map((s) => (
               <a
                 key={s.href}

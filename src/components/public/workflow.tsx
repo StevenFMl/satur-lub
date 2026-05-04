@@ -8,6 +8,8 @@ type Step = {
   caption: string;
 };
 
+const STEP_DELAYS = ["", "delay-100", "delay-200"] as const;
+
 const STEPS: Step[] = [
   {
     number: "01",
@@ -36,7 +38,7 @@ export function WorkflowSection() {
   return (
     <section
       id="como-opera"
-      className="relative w-full overflow-hidden bg-zinc-950 py-24 sm:py-28 lg:py-36"
+      className="relative w-full overflow-hidden bg-zinc-950 py-16 md:py-24 lg:py-32"
     >
       {/* Gradiente superior: fusión suave con la wave del services */}
       <div
@@ -53,14 +55,14 @@ export function WorkflowSection() {
         className="absolute -top-40 right-[-15%] h-[460px] w-[460px] rounded-full bg-safety-500/10 blur-[140px]"
       />
 
-      <div className="relative mx-auto w-full max-w-7xl px-6 sm:px-8 lg:px-10 xl:px-12">
+      <div className="relative mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
         {/* Encabezado */}
         <div className="grid gap-8 lg:grid-cols-[1fr_1.4fr] lg:items-end">
           <div>
-            <span className="text-[12px] font-bold uppercase tracking-[0.22em] text-safety-500">
+            <span className="text-[12px] font-bold uppercase tracking-[0.22em] text-safety-500 animate-in fade-in slide-in-from-bottom-4 duration-700 fill-mode-both">
               Cómo funciona
             </span>
-            <h2 className="mt-4 font-display text-[40px] leading-[0.95] tracking-[0.01em] text-white sm:text-[52px] lg:text-[64px]">
+            <h2 className="mt-4 font-display text-[40px] leading-[0.95] tracking-[0.01em] text-white sm:text-[52px] lg:text-[64px] animate-in fade-in slide-in-from-bottom-4 duration-700 fill-mode-both delay-100">
               Del mostrador
               <br />
               <span className="text-safety-500">a la caja,</span>
@@ -68,7 +70,7 @@ export function WorkflowSection() {
               en tres pasos.
             </h2>
           </div>
-          <p className="max-w-xl text-[15px] leading-7 text-zinc-400 lg:text-[16px] lg:leading-8">
+          <p className="max-w-xl text-[15px] leading-7 text-zinc-400 lg:text-[16px] lg:leading-8 animate-in fade-in slide-in-from-bottom-4 duration-700 fill-mode-both delay-200">
             SaturnLub colapsa el flujo entero del taller en un proceso lineal.
             Sin saltar entre planillas de Excel, cuadernos y notas pegadas en
             el monitor. Una orden, un técnico, un cobro.
@@ -78,7 +80,10 @@ export function WorkflowSection() {
         {/* Steps */}
         <ol className="mt-16 grid gap-6 sm:mt-20 md:grid-cols-3 md:gap-8">
           {STEPS.map((s, i) => (
-            <li key={s.number} className="relative">
+            <li
+              key={s.number}
+              className={`relative flex animate-in fade-in slide-in-from-bottom-4 duration-700 fill-mode-both ${STEP_DELAYS[i] ?? ""}`}
+            >
               <StepCard step={s} isLast={i === STEPS.length - 1} />
             </li>
           ))}
@@ -90,7 +95,7 @@ export function WorkflowSection() {
 
 function StepCard({ step, isLast }: { step: Step; isLast: boolean }) {
   return (
-    <div className="relative flex h-full flex-col overflow-hidden border border-zinc-800 bg-zinc-900 p-7 shadow-bevel-sm transition-all duration-300 hover:-translate-y-1.5 hover:border-safety-500 hover:shadow-[0_0_0_1px_rgba(255,193,7,0.15),0_12px_28px_-8px_rgba(255,193,7,0.15)] sm:p-8">
+    <div className="relative flex h-full w-full flex-col overflow-hidden border border-zinc-800 bg-zinc-900 p-7 shadow-bevel-sm transition-all duration-300 hover:-translate-y-1.5 hover:border-safety-500 hover:shadow-[0_0_0_1px_rgba(255,193,7,0.15),0_12px_28px_-8px_rgba(255,193,7,0.15)] sm:p-8">
       {/* Número gigante de fondo */}
       <span
         aria-hidden

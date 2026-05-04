@@ -154,7 +154,7 @@ export function PricingSection() {
   return (
     <section
       id="precios"
-      className="relative w-full overflow-hidden bg-zinc-950 py-20 sm:py-24 lg:py-32"
+      className="relative w-full overflow-hidden bg-zinc-950 py-16 md:py-24 lg:py-32"
     >
       {/* Backdrop */}
       <div aria-hidden className="absolute inset-0 tread-plate opacity-30" />
@@ -163,18 +163,18 @@ export function PricingSection() {
         className="absolute -top-40 left-1/2 h-[520px] w-[520px] -translate-x-1/2 rounded-full bg-safety-500/10 blur-[160px]"
       />
 
-      <div className="relative mx-auto w-full max-w-7xl px-6 lg:px-10">
+      <div className="relative mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="mx-auto max-w-3xl text-center">
-          <span className="text-[12px] font-bold uppercase tracking-[0.22em] text-safety-500">
+          <span className="inline-block text-[12px] font-bold uppercase tracking-[0.22em] text-safety-500 animate-in fade-in slide-in-from-bottom-4 duration-700 fill-mode-both">
             Planes y precios
           </span>
-          <h2 className="mt-4 font-display text-[44px] leading-[0.95] tracking-[0.01em] text-white sm:text-[56px] lg:text-[64px]">
+          <h2 className="mt-4 font-display text-[44px] leading-[0.95] tracking-[0.01em] text-white sm:text-[56px] lg:text-[64px] animate-in fade-in slide-in-from-bottom-4 duration-700 fill-mode-both delay-100">
             Elige el plan que
             <br />
             <span className="text-safety-500">mueve tu taller.</span>
           </h2>
-          <p className="mx-auto mt-5 max-w-2xl text-[15px] leading-7 text-zinc-400 sm:text-[16px] sm:leading-8">
+          <p className="mx-auto mt-5 max-w-2xl text-[15px] leading-7 text-zinc-400 sm:text-[16px] sm:leading-8 animate-in fade-in slide-in-from-bottom-4 duration-700 fill-mode-both delay-200">
             Sin contratos, sin permanencia y sin tarjeta para empezar. Activas,
             pruebas catorce días y sigues solo si SaturnLub te resuelve la
             operación.
@@ -215,11 +215,18 @@ export function PricingSection() {
 /*                              VISTA: ESTÁNDAR                                 */
 /* ============================================================================ */
 
+const PLAN_DELAYS = ["", "delay-100", "delay-200"] as const;
+
 function StandardView({ billing }: { billing: Billing }) {
   return (
     <div className="mt-10 grid items-stretch gap-6 lg:grid-cols-3 lg:gap-8">
-      {STANDARD_PLANS.map((plan) => (
-        <PlanCard key={plan.code} plan={plan} billing={billing} />
+      {STANDARD_PLANS.map((plan, i) => (
+        <PlanCard
+          key={plan.code}
+          plan={plan}
+          billing={billing}
+          delayClass={PLAN_DELAYS[i] ?? ""}
+        />
       ))}
     </div>
   );
@@ -461,7 +468,15 @@ function ToggleButton({
 /*                                 PLAN CARD                                    */
 /* ============================================================================ */
 
-function PlanCard({ plan, billing }: { plan: Plan; billing: Billing }) {
+function PlanCard({
+  plan,
+  billing,
+  delayClass = "",
+}: {
+  plan: Plan;
+  billing: Billing;
+  delayClass?: string;
+}) {
   const highlighted = plan.highlighted;
 
   // Cálculo de precio
@@ -477,7 +492,13 @@ function PlanCard({ plan, billing }: { plan: Plan; billing: Billing }) {
   return (
     <div
       className={cn(
-        "relative flex h-full flex-col overflow-hidden border-2 bg-zinc-900 transition-all duration-300",
+        "flex h-full animate-in fade-in slide-in-from-bottom-4 duration-700 fill-mode-both",
+        delayClass
+      )}
+    >
+    <div
+      className={cn(
+        "relative flex h-full w-full flex-col overflow-hidden border-2 bg-zinc-900 transition-all duration-300",
         highlighted
           ? "z-10 border-safety-500 shadow-[0_0_0_1px_rgba(255,193,7,0.15),0_16px_40px_-12px_rgba(255,193,7,0.3)] lg:scale-[1.04]"
           : "border-zinc-800 hover:border-zinc-600 hover:shadow-[0_8px_24px_-8px_rgba(0,0,0,0.5)]"
@@ -554,6 +575,7 @@ function PlanCard({ plan, billing }: { plan: Plan; billing: Billing }) {
           </Button>
         </Link>
       </div>
+    </div>
     </div>
   );
 }

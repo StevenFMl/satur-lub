@@ -6,7 +6,7 @@ export function CtaBanner() {
   return (
     <section
       id="contacto"
-      className="relative w-full overflow-hidden bg-zinc-900 py-24 sm:py-28 lg:py-36"
+      className="relative w-full overflow-hidden bg-zinc-900 py-16 md:py-24 lg:py-32"
     >
       {/* Backdrop industrial */}
       <div aria-hidden className="absolute inset-0 brushed-steel opacity-90" />
@@ -20,25 +20,25 @@ export function CtaBanner() {
         className="absolute -bottom-32 right-[-10%] h-[420px] w-[420px] rounded-full bg-safety-500/15 blur-[140px]"
       />
 
-      <div className="relative mx-auto w-full max-w-7xl px-6 sm:px-8 lg:px-10 xl:px-12">
+      <div className="relative mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="grid items-center gap-12 lg:grid-cols-[1.5fr_1fr] lg:gap-16">
           {/* Copy */}
           <div>
-            <span className="text-[12px] font-bold uppercase tracking-[0.22em] text-safety-500">
+            <span className="inline-block text-[12px] font-bold uppercase tracking-[0.22em] text-safety-500 animate-in fade-in slide-in-from-bottom-4 duration-700 fill-mode-both">
               Pon en marcha tu taller
             </span>
-            <h2 className="mt-4 font-display text-[40px] leading-[0.94] tracking-[0.01em] text-white sm:text-[52px] lg:text-[68px]">
+            <h2 className="mt-4 font-display text-[40px] leading-[0.94] tracking-[0.01em] text-white sm:text-[52px] lg:text-[68px] animate-in fade-in slide-in-from-bottom-4 duration-700 fill-mode-both delay-100">
               Empieza hoy.
               <br />
               <span className="text-safety-500">Decide en 14 días.</span>
             </h2>
-            <p className="mt-5 max-w-xl text-[15px] leading-7 text-zinc-300 sm:text-[16px] sm:leading-8">
+            <p className="mt-5 max-w-xl text-[15px] leading-7 text-zinc-300 sm:text-[16px] sm:leading-8 animate-in fade-in slide-in-from-bottom-4 duration-700 fill-mode-both delay-200">
               Crea tu cuenta en menos de un minuto. Sin tarjeta, sin
               instalaciones, sin llamadas. Empiezas a operar el mismo día y
               decides si seguir cuando termine la prueba.
             </p>
 
-            <div className="mt-8 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
+            <div className="mt-8 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center animate-in fade-in slide-in-from-bottom-4 duration-700 fill-mode-both delay-300">
               <Link href="/register" className="sm:min-w-[240px]">
                 <Button size="xl" className="group/cta w-full">
                   Crear cuenta ahora
@@ -54,7 +54,7 @@ export function CtaBanner() {
           </div>
 
           {/* Caja lateral con datos de contacto */}
-          <aside className="relative overflow-hidden border border-zinc-800 bg-zinc-950/80 shadow-[0_8px_24px_-8px_rgba(0,0,0,0.5)] backdrop-blur">
+          <aside className="relative overflow-hidden border border-zinc-800 bg-zinc-950/80 shadow-[0_8px_24px_-8px_rgba(0,0,0,0.5)] backdrop-blur animate-in fade-in slide-in-from-bottom-4 duration-700 fill-mode-both delay-300">
             <div aria-hidden className="h-1 w-full bg-safety-500" />
 
             <div className="border-b border-zinc-800 px-6 py-5 sm:px-7">
