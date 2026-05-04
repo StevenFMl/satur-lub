@@ -1,0 +1,88 @@
+import { cache } from "react";
+import type { User } from "@supabase/supabase-js";
+import { createClient } from "./server";
+import type { SubscriptionStatus, TenantRole } from "./types";
+
+export type ActiveMembership = {
+  tenant_id: string;
+  role: TenantRole;
+  tenants: {
+    id: string;
+    business_name: string;
+    slug: string;
+    onboarding_completed: boolean;
+    subscription_status: SubscriptionStatus;
+    subscription_plan_code: string | null;
+    trial_ends_at: string | null;
+  } | null;
+};
+
+export type MembershipContext = {
+  user: User | null;
+  membership: ActiveMembership | null;
+};
+
+const PLAN_DISPLAY_NAMES: Record<string, string> = {
+  free_trial: "Prueba",
+  starter: "Starter",
+  pro: "Pro",
+  enterprise: "Enterprise",
+};
+
+/**
+ * Mapea un `subscription_plan_code` (denormalizado en `tenants`) a su nombre
+ * mostrable. Para códigos no listados, retorna el code en mayúsculas como
+ * fallback razonable.
+ */
+export function getPlanDisplayName(code: string | null | undefined): string {
+  if (!code) return "Prueba";
+  return PLAN_DISPLAY_NAMES[code] ?? code.toUpperCase();
+}
+
+/**
+ * Resuelve el usuario autenticado y su tenant activo en una sola pasada,
+ * cacheada por request (React `cache()`): el árbol RSC del dashboard la lee
+ * desde varios layouts/pages sin pegarle a la DB más de una vez.
+ *
+ * El filtro real es `is_active = true` en `tenant_memberships` (el schema
+ * NO tiene una columna `status`). Mantener este helper como fuente única
+ * evita repetir el mismo SELECT — y previene volver a equivocarse de columna.
+ *
+ * El plan/estado de suscripción se lee de las columnas denormalizadas en
+ * `tenants` (`subscription_status`, `subscription_plan_code`); para el detalle
+ * histórico ver tabla `subscriptions`.
+ */
+export const getActiveMembership = cache(async (): Promise<MembershipContext> => {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { user: null, membership: null };
+
+  const { data } = await supabase
+    .from("tenant_memberships")
+    .select(
+      `
+      tenant_id,
+      role,
+      tenants (
+        id,
+        business_name,
+        slug,
+        onboarding_completed,
+        subscription_status,
+        subscription_plan_code,
+        trial_ends_at
+      )
+    `
+    )
+    .eq("user_id", user.id)
+    .eq("is_active", true)
+    .limit(1)
+    .maybeSingle();
+
+  return {
+    user,
+    membership: (data as unknown as ActiveMembership | null) ?? null,
+  };
+});

@@ -12,6 +12,7 @@ import {
   forgotPasswordSchema,
   type ForgotPasswordFieldErrors,
 } from "@/lib/validations/auth";
+import { useScrollOnMessage } from "@/lib/hooks/use-scroll-on-error";
 
 export function ForgotPasswordForm() {
   const [state, formAction, pending] = useActionState<AuthState, FormData>(
@@ -20,6 +21,8 @@ export function ForgotPasswordForm() {
   );
 
   const [clientErrors, setClientErrors] = useState<ForgotPasswordFieldErrors>({});
+  const messageForScroll = state?.notice ?? (!state?.fieldErrors ? state?.error : null);
+  const alertRef = useScrollOnMessage<HTMLDivElement>(messageForScroll);
 
   const serverFieldErrors =
     (state?.fieldErrors as ForgotPasswordFieldErrors | undefined) ?? {};
@@ -61,48 +64,50 @@ export function ForgotPasswordForm() {
   }
 
   return (
-    <form
-      action={formAction}
-      onSubmit={handleSubmit}
-      className="space-y-6"
-      noValidate
-    >
-      <div className="space-y-2">
-        <Label htmlFor="email" required>
-          Correo electrónico
-        </Label>
-        <Input
-          id="email"
-          name="email"
-          type="email"
-          autoComplete="email"
-          mono
-          placeholder="tu@empresa.com"
-          autoFocus
-          aria-describedby={errors.email ? "email-error" : "email-hint"}
-          invalid={Boolean(errors.email)}
-          onChange={() => clearError("email")}
-        />
-        {errors.email ? (
-          <FieldError fieldId="email" message={errors.email} />
-        ) : (
-          <p id="email-hint" className="field-hint">
-            Te enviaremos un enlace seguro válido por 1 hora
-          </p>
-        )}
-      </div>
+    <form action={formAction} onSubmit={handleSubmit} noValidate>
+      <fieldset
+        disabled={pending}
+        className="m-0 min-w-0 space-y-6 border-0 p-0 disabled:opacity-95"
+      >
+        <div className="space-y-2">
+          <Label htmlFor="email" required>
+            Correo electrónico
+          </Label>
+          <Input
+            id="email"
+            name="email"
+            type="email"
+            autoComplete="email"
+            mono
+            placeholder="tu@empresa.com"
+            autoFocus
+            aria-describedby={errors.email ? "email-error" : "email-hint"}
+            invalid={Boolean(errors.email)}
+            onChange={() => clearError("email")}
+          />
+          {errors.email ? (
+            <FieldError fieldId="email" message={errors.email} />
+          ) : (
+            <p id="email-hint" className="field-hint">
+              Te enviaremos un enlace seguro válido por 1 hora
+            </p>
+          )}
+        </div>
 
-      {state?.notice ? (
-        <Alert tone="success">{state.notice}</Alert>
-      ) : null}
+        {state?.notice ? (
+          <div ref={alertRef} tabIndex={-1} className="outline-none">
+            <Alert tone="success">{state.notice}</Alert>
+          </div>
+        ) : state?.error && !state.fieldErrors ? (
+          <div ref={alertRef} tabIndex={-1} className="outline-none">
+            <Alert tone="error">{state.error}</Alert>
+          </div>
+        ) : null}
 
-      {state?.error && !state.fieldErrors ? (
-        <Alert tone="error">{state.error}</Alert>
-      ) : null}
-
-      <Button type="submit" size="xl" loading={pending} className="w-full">
-        {pending ? "Enviando…" : "Restablecer acceso"}
-      </Button>
+        <Button type="submit" size="xl" loading={pending} className="w-full">
+          {pending ? "Enviando…" : "Restablecer acceso"}
+        </Button>
+      </fieldset>
     </form>
   );
 }

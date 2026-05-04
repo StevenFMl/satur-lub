@@ -1,8 +1,8 @@
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
-import { createClient } from "@/lib/supabase/server";
 import { Sidebar } from "@/components/dashboard/sidebar";
 import { DashboardHeader } from "@/components/dashboard/header";
+import { getActiveMembership } from "@/lib/supabase/membership";
 
 /**
  * Layout específico de `/dashboard/*`. Carga el chrome (sidebar + header) y
@@ -15,25 +15,9 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { user, membership } = await getActiveMembership();
   if (!user) redirect("/login");
-
-  const { data: membership } = await supabase
-    .from("tenant_memberships")
-    .select("tenant_id, role, tenants(business_name)")
-    .eq("user_id", user.id)
-    .eq("status", "active")
-    .limit(1)
-    .maybeSingle();
-
   if (!membership) redirect("/onboarding");
-
-  const tenant =
-    (membership.tenants as unknown as { business_name: string } | null) ?? null;
 
   const fullName =
     (user.user_metadata?.full_name as string | undefined) ??
@@ -51,7 +35,7 @@ export default async function DashboardLayout({
       <Sidebar activePath={activePath} />
       <div className="flex min-w-0 flex-1 flex-col">
         <DashboardHeader
-          businessName={tenant?.business_name ?? "Mi negocio"}
+          businessName={membership.tenants?.business_name ?? "Mi negocio"}
           userName={fullName}
           userEmail={user.email ?? ""}
           role={membership.role ?? "owner"}

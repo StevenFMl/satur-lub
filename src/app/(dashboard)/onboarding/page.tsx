@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Logo } from "@/components/brand/logo";
-import { createClient } from "@/lib/supabase/server";
+import { getActiveMembership } from "@/lib/supabase/membership";
 import { OnboardingForm } from "./onboarding-form";
 import { logoutAction } from "@/actions/auth";
 
@@ -11,22 +11,9 @@ export const metadata: Metadata = {
 };
 
 export default async function OnboardingPage() {
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { user, membership } = await getActiveMembership();
   if (!user) redirect("/login");
-
-  const { data: existing } = await supabase
-    .from("tenant_memberships")
-    .select("tenant_id")
-    .eq("user_id", user.id)
-    .eq("status", "active")
-    .limit(1)
-    .maybeSingle();
-
-  if (existing?.tenant_id) redirect("/dashboard");
+  if (membership?.tenant_id) redirect("/dashboard");
 
   const fullName =
     (user.user_metadata?.full_name as string | undefined) ?? user.email ?? "";
@@ -56,7 +43,7 @@ export default async function OnboardingPage() {
       </header>
 
       <main className="relative z-10 mx-auto flex w-full max-w-7xl flex-1 flex-col px-6 py-10 sm:py-14 lg:py-20 xl:px-8">
-        <div className="grid grid-cols-1 gap-10 lg:grid-cols-[320px_1fr] xl:grid-cols-[380px_1fr] lg:gap-16">
+        <div className="grid grid-cols-1 gap-10 lg:grid-cols-[300px_1fr] xl:grid-cols-[360px_1fr] lg:gap-14 xl:gap-16">
           
           {/* Columna Izquierda: Header y Stepper */}
           <aside className="space-y-10">

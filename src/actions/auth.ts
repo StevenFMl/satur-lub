@@ -223,7 +223,7 @@ async function resolvePostAuthRoute(requested: string): Promise<string> {
     .from("tenant_memberships")
     .select("tenant_id, role")
     .eq("user_id", user.id)
-    .eq("status", "active")
+    .eq("is_active", true)
     .limit(1)
     .maybeSingle();
 

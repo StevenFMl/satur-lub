@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import {
+  getActiveMembership,
+  getPlanDisplayName,
+} from "@/lib/supabase/membership";
 import { daysBetween, formatDate } from "@/lib/utils";
 
 export const metadata: Metadata = {
@@ -8,48 +11,16 @@ export const metadata: Metadata = {
 };
 
 export default async function DashboardPage() {
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { user, membership } = await getActiveMembership();
   if (!user) redirect("/login");
-
-  const { data: membership } = await supabase
-    .from("tenant_memberships")
-    .select(
-      `
-      role,
-      tenants (
-        id,
-        business_name,
-        slug,
-        status,
-        trial_ends_at,
-        subscription_plans:plan_id ( name, code )
-      )
-    `
-    )
-    .eq("user_id", user.id)
-    .eq("status", "active")
-    .limit(1)
-    .maybeSingle();
-
   if (!membership) redirect("/onboarding");
 
-  const tenant = membership.tenants as unknown as {
-    id: string;
-    business_name: string;
-    slug: string;
-    status: string;
-    trial_ends_at: string | null;
-    subscription_plans: { name: string; code: string } | null;
-  } | null;
+  const tenant = membership.tenants;
 
   const fullName =
     (user.user_metadata?.full_name as string | undefined) ?? user.email ?? "—";
 
-  const planName = tenant?.subscription_plans?.name ?? "Prueba";
+  const planName = getPlanDisplayName(tenant?.subscription_plan_code);
   const trialEndsAt = tenant?.trial_ends_at ?? null;
   const trialDaysLeft = trialEndsAt
     ? daysBetween(new Date(), new Date(trialEndsAt))
@@ -86,7 +57,7 @@ export default async function DashboardPage() {
         <Tile
           label="Plan"
           value={planName}
-          hint={`Estado · ${tenant?.status ?? "trial"}`}
+          hint={`Estado · ${tenant?.subscription_status ?? "trial"}`}
         />
         <Tile
           label="Periodo de prueba"

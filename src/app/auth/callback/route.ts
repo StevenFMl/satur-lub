@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
     .from("tenant_memberships")
     .select("tenant_id")
     .eq("user_id", user.id)
-    .eq("status", "active")
+    .eq("is_active", true)
     .limit(1)
     .maybeSingle();
 
