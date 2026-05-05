@@ -3,7 +3,8 @@ import { headers } from "next/headers";
 import { Sidebar } from "@/components/dashboard/sidebar";
 import { DashboardHeader } from "@/components/dashboard/header";
 import { getActiveMembership } from "@/lib/supabase/membership";
-import { isTrialBlocked } from "@/lib/supabase/access-claims";
+import { isTrialBlocked, decodeJwtPayload, type AccessClaims } from "@/lib/supabase/access-claims";
+import { createClient } from "@/lib/supabase/server";
 
 /**
  * Layout específico de `/dashboard/*`. Carga el chrome (sidebar + header) y
@@ -20,9 +21,28 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const supabase = await createClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  const claims = session?.access_token
+    ? decodeJwtPayload<AccessClaims>(session.access_token)
+    : null;
+
   const { user, membership, trial } = await getActiveMembership();
   if (!user) redirect("/login");
-  if (!membership) redirect("/onboarding");
+
+  if (!claims?.tenant_id) {
+    if (membership) {
+      await supabase.auth.refreshSession();
+    } else {
+      redirect("/onboarding");
+    }
+  } else {
+    if (!membership) redirect("/onboarding");
+  }
+
   if (isTrialBlocked(trial)) redirect("/upgrade");
 
   const fullName =
