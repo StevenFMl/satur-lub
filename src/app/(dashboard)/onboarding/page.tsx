@@ -13,7 +13,7 @@ export const metadata: Metadata = {
 export default async function OnboardingPage() {
   const { user, membership } = await getActiveMembership();
   if (!user) redirect("/login");
-  if (membership?.tenant_id) redirect("/dashboard");
+  if (membership?.tenants?.onboarding_completed) redirect("/dashboard");
 
   const fullName =
     (user.user_metadata?.full_name as string | undefined) ?? user.email ?? "";

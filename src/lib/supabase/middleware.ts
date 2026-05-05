@@ -112,8 +112,8 @@ export async function updateSession(request: NextRequest) {
     // En cualquier ausencia delegamos al server component (que consulta DB)
     // — así jamás causamos un loop por claims temporalmente faltantes.
     if (claims?.tenant_id) {
-      // /onboarding con tenant ya creado → /dashboard
-      if (pathname === "/onboarding") {
+      // /onboarding con tenant ya creado y onboarding finalizado → /dashboard
+      if (pathname === "/onboarding" && claims.onboarding_completed) {
         const url = request.nextUrl.clone();
         url.pathname = "/dashboard";
         return NextResponse.redirect(url);

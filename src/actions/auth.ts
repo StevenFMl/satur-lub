@@ -219,30 +219,75 @@ import { decodeJwtPayload, type AccessClaims } from "@/lib/supabase/access-claim
 
 async function resolvePostAuthRoute(requested: string): Promise<string> {
   const supabase = await createClient();
-  let { data: { session } } = await supabase.auth.getSession();
+  const { data: { session } } = await supabase.auth.getSession();
 
-  if (!session) return "/login";
+  if (!session) {
+    console.log("[resolvePostAuthRoute] No session found, redirecting to /login");
+    return "/login";
+  }
 
-  // 1. Chequeo rápido: si ya tiene el claim, vamos al dashboard.
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return "/login";
+
+  // Vía Rápida: Si el JWT ya tiene la info (Optimización)
   let claims = decodeJwtPayload<AccessClaims>(session.access_token);
-  if (claims?.tenant_id) {
+  if (claims?.tenant_id && claims?.onboarding_completed) {
+    console.log(`[resolvePostAuthRoute] JWT claims found for ${user.id}, onboarding completed. Redirecting to dashboard.`);
     if (isSafeRedirectPath(requested)) return requested;
     return "/dashboard";
   }
 
-  // 2. Si no lo tiene, forzamos refresh. El hook de Supabase corre como superuser
-  // (ignorando RLS) y si el usuario tiene un tenant, lo inyectará en el nuevo JWT.
-  const { data: refreshData } = await supabase.auth.refreshSession();
-  
-  if (refreshData.session) {
-    claims = decodeJwtPayload<AccessClaims>(refreshData.session.access_token);
-    if (claims?.tenant_id) {
-      if (isSafeRedirectPath(requested)) return requested;
-      return "/dashboard";
+  // Vía Segura (DB-First): El JWT no tiene el claim, consultamos DB
+  console.log(`[resolvePostAuthRoute] Verifying DB for user ${user.id}`);
+
+  const { data: userData } = await supabase
+    .from("users")
+    .select("default_tenant_id")
+    .eq("id", user.id)
+    .single();
+
+  const defaultTenantId = userData?.default_tenant_id;
+
+  const { data } = await supabase
+    .from("tenant_memberships")
+    .select(`
+      tenant_id,
+      tenants!inner (
+        onboarding_completed,
+        subscription_status,
+        trial_ends_at
+      )
+    `)
+    .eq("user_id", user.id)
+    .eq("is_active", true);
+
+  const memberships = (data as any[]) || [];
+  let membership = null;
+
+  if (memberships.length > 0) {
+    if (defaultTenantId) {
+      membership = memberships.find((m) => m.tenant_id === defaultTenantId) || memberships[0];
+    } else {
+      membership = memberships[0];
     }
   }
 
-  // 3. Si aun después de refrescar no hay claim, empíricamente no tiene tenant.
+  console.log("[resolvePostAuthRoute] User ID:", user.id);
+  console.log("[resolvePostAuthRoute] Membership found:", membership ? "Yes" : "Null");
+  console.log("[resolvePostAuthRoute] Default Tenant ID:", defaultTenantId || "None");
+
+  if (membership?.tenant_id) {
+    console.log("[resolvePostAuthRoute] Tenant ID:", membership.tenant_id);
+    console.log("[resolvePostAuthRoute] Onboarding Completed:", membership.tenants?.onboarding_completed);
+
+    if (membership.tenants?.onboarding_completed) {
+      const target = isSafeRedirectPath(requested) ? requested : "/dashboard";
+      console.log("[resolvePostAuthRoute] Redirecting to:", target);
+      return target;
+    }
+  }
+
+  console.log("[resolvePostAuthRoute] User needs onboarding, redirecting to /onboarding");
   return "/onboarding";
 }
 
