@@ -876,11 +876,13 @@ begin
 
   insert into public.tenants (
     business_name, slug, legal_name, ruc, business_type, created_by_user_id,
-    subscription_plan_code, subscription_status, trial_ends_at
+    subscription_plan_code, subscription_status, trial_ends_at,
+    onboarding_completed
   )
   values (
     p_business_name, p_slug, p_legal_name, p_ruc, p_business_type, v_user_id,
-    'free_trial', 'trial', now() + interval '14 days'
+    'free_trial', 'trial', now() + interval '14 days',
+    true
   )
   returning id into v_tenant_id;
 
