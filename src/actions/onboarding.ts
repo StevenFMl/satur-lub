@@ -11,6 +11,14 @@ import {
 export type OnboardingState = {
   error?: string;
   fieldErrors?: OnboardingFieldErrors;
+  /**
+   * Marcado por la action al INSERT exitoso. El cliente lo escucha en un
+   * `useEffect`, fuerza `supabase.auth.refreshSession()` para que el JWT
+   * recoja los claims recién emitidos por el hook (`tenant_id`,
+   * `onboarding_completed`), y solo entonces hace `router.push('/dashboard')`.
+   * Sin esto, el middleware lee un JWT stale y rebota a /onboarding.
+   */
+  success?: true;
 } | null;
 
 /**
@@ -73,6 +81,10 @@ export async function createTenantAction(
     return { error: "No pudimos crear tu negocio. Intenta nuevamente." };
   }
 
+  // NO redirigimos aquí: el cliente debe primero refrescar su JWT para
+  // obtener los claims (tenant_id, onboarding_completed) recién emitidos
+  // por el Custom Access Token Hook. Sin ese refresh, el middleware ve un
+  // JWT stale y rebota a /onboarding (loop infinito).
   revalidatePath("/", "layout");
-  redirect("/dashboard");
+  return { success: true };
 }
