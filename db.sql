@@ -1171,3 +1171,175 @@ BEGIN
     END LOOP;
 END
 $$;
+
+-- =========================================================================
+-- F. FREE TRIAL · 14 DÍAS · SEMILLA, GUARDS Y JWT HOOK
+-- =========================================================================
+
+-- F.1 Plan semilla "free_trial" — sin esto, create_tenant_for_owner deja el
+-- tenant sin fila en `subscriptions` (el lookup por code retorna NULL).
+
+INSERT INTO public.subscription_plans (code, name, description, is_free, trial_days, is_active)
+VALUES ('free_trial', 'Prueba Gratis', '14 días de prueba sin tarjeta', true, 14, true)
+ON CONFLICT (code) DO UPDATE SET
+  name        = EXCLUDED.name,
+  description = EXCLUDED.description,
+  is_free     = EXCLUDED.is_free,
+  trial_days  = EXCLUDED.trial_days,
+  is_active   = EXCLUDED.is_active;
+
+-- F.2 CHECK constraint en tenants.business_type — alinea DB con el enum de
+-- types.ts y previene escrituras de valores inválidos.
+
+ALTER TABLE public.tenants
+  DROP CONSTRAINT IF EXISTS tenants_business_type_check;
+ALTER TABLE public.tenants
+  ADD  CONSTRAINT tenants_business_type_check
+  CHECK (business_type IS NULL OR business_type IN (
+    'lubricentro', 'taller', 'autoservicio', 'ferreteria', 'otro'
+  ));
+
+-- F.3 Endurecer RLS: los owners/admins pueden actualizar el tenant, PERO
+-- columnas de billing/trial son inmutables desde el cliente. Solo cambian
+-- vía RPCs SECURITY DEFINER (creación, renovación, pago).
+
+CREATE OR REPLACE FUNCTION public.protect_tenant_billing_columns()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  -- auth.role() = 'authenticated' cuando viene del cliente con JWT de usuario.
+  -- SECURITY DEFINER (RPCs internas) corre como el owner del SP → no bloquea.
+  IF auth.role() = 'authenticated' THEN
+    IF NEW.subscription_status    IS DISTINCT FROM OLD.subscription_status
+    OR NEW.subscription_plan_code IS DISTINCT FROM OLD.subscription_plan_code
+    OR NEW.trial_starts_at        IS DISTINCT FROM OLD.trial_starts_at
+    OR NEW.trial_ends_at          IS DISTINCT FROM OLD.trial_ends_at THEN
+      RAISE EXCEPTION USING
+        ERRCODE = 'insufficient_privilege',
+        MESSAGE = 'No se puede modificar billing/trial desde el cliente';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_tenants_protect_billing ON public.tenants;
+CREATE TRIGGER trg_tenants_protect_billing
+BEFORE UPDATE ON public.tenants
+FOR EACH ROW EXECUTE PROCEDURE public.protect_tenant_billing_columns();
+
+-- Subscriptions: revocar UPDATE/DELETE público. Se manejan vía RPCs.
+DROP POLICY IF EXISTS "update_subscriptions" ON public.subscriptions;
+
+-- F.4 Sync de auth.users → public.users en UPDATE
+-- Mantiene email, full_name, phone, avatar, last_sign_in_at, etc. al día.
+
+CREATE OR REPLACE FUNCTION public.handle_user_meta_update()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  UPDATE public.users SET
+    email           = COALESCE(NEW.email, email),
+    full_name       = COALESCE(NEW.raw_user_meta_data ->> 'full_name', full_name),
+    phone           = COALESCE(NEW.raw_user_meta_data ->> 'phone', phone),
+    avatar_url      = COALESCE(NEW.raw_user_meta_data ->> 'avatar_url', avatar_url),
+    email_confirmed = COALESCE(NEW.email_confirmed_at IS NOT NULL, email_confirmed),
+    last_sign_in_at = COALESCE(NEW.last_sign_in_at, last_sign_in_at)
+  WHERE id = NEW.id;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS on_auth_user_updated ON auth.users;
+CREATE TRIGGER on_auth_user_updated
+AFTER UPDATE ON auth.users
+FOR EACH ROW EXECUTE PROCEDURE public.handle_user_meta_update();
+
+-- F.5 Custom Access Token Hook — INYECTA CLAIMS EN EL JWT
+-- Supabase Auth GoTrue invoca esta función al emitir/refrescar el access
+-- token. Le añadimos: tenant_id, tenant_role, trial_ends_at,
+-- subscription_status, onboarding_completed.
+--
+-- ⚠️ Activar manualmente en Dashboard:
+--    Authentication → Hooks → Custom Access Token Hook
+--    → public.custom_access_token_hook
+
+CREATE OR REPLACE FUNCTION public.custom_access_token_hook(event jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_user_id uuid := (event->>'user_id')::uuid;
+  v_claims  jsonb := event->'claims';
+  v_tenant_id           uuid;
+  v_role                text;
+  v_trial_ends_at       timestamptz;
+  v_subscription_status text;
+  v_onboarding_completed boolean;
+BEGIN
+  -- Tolerancia a fallos: si la consulta falla por cualquier motivo,
+  -- emitimos el JWT sin claims custom y el middleware/layout degradan
+  -- al fallback de DB. NUNCA debemos bloquear la emisión del token.
+  BEGIN
+    SELECT tm.tenant_id, tm.role,
+           t.trial_ends_at, t.subscription_status, t.onboarding_completed
+      INTO v_tenant_id, v_role, v_trial_ends_at, v_subscription_status, v_onboarding_completed
+    FROM public.tenant_memberships tm
+    JOIN public.tenants t ON t.id = tm.tenant_id
+    WHERE tm.user_id = v_user_id AND tm.is_active = true
+    ORDER BY tm.is_owner DESC, tm.joined_at ASC
+    LIMIT 1;
+
+    IF v_tenant_id IS NOT NULL THEN
+      v_claims := v_claims || jsonb_build_object(
+        'tenant_id',            v_tenant_id,
+        'tenant_role',          v_role,
+        'trial_ends_at',        v_trial_ends_at,
+        'subscription_status',  v_subscription_status,
+        'onboarding_completed', v_onboarding_completed
+      );
+    END IF;
+  EXCEPTION WHEN OTHERS THEN
+    -- log del error a Postgres logs, sin propagar.
+    RAISE WARNING 'custom_access_token_hook failed for user %: % / %',
+                  v_user_id, SQLSTATE, SQLERRM;
+  END;
+
+  RETURN jsonb_build_object('claims', v_claims);
+END;
+$$;
+
+GRANT USAGE ON SCHEMA public TO supabase_auth_admin;
+GRANT EXECUTE ON FUNCTION public.custom_access_token_hook(jsonb) TO supabase_auth_admin;
+REVOKE EXECUTE ON FUNCTION public.custom_access_token_hook(jsonb) FROM authenticated, anon, public;
+GRANT SELECT ON public.tenants TO supabase_auth_admin;
+GRANT SELECT ON public.tenant_memberships TO supabase_auth_admin;
+
+-- F.6 Política RLS para que supabase_auth_admin lea sin restricción de tenant
+-- (el hook necesita ver TODO para construir claims; corre como GoTrue, no como user).
+-- supabase_auth_admin no aplica a `authenticated` policies, pero RLS bloquea por
+-- defecto a roles no-superuser que no tengan policy. Le damos BYPASSRLS implícito
+-- vía las policies dedicadas:
+
+DROP POLICY IF EXISTS "auth_admin_select_tenant_memberships" ON public.tenant_memberships;
+CREATE POLICY "auth_admin_select_tenant_memberships"
+  ON public.tenant_memberships FOR SELECT
+  TO supabase_auth_admin
+  USING (true);
+
+DROP POLICY IF EXISTS "auth_admin_select_tenants" ON public.tenants;
+CREATE POLICY "auth_admin_select_tenants"
+  ON public.tenants FOR SELECT
+  TO supabase_auth_admin
+  USING (true);
+
+-- F.7 Índice para acelerar la query del hook (se invoca en cada token issue/refresh).
+CREATE INDEX IF NOT EXISTS idx_tenant_memberships_user_active
+  ON public.tenant_memberships(user_id) WHERE is_active = true;

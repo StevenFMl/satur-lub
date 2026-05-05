@@ -1,6 +1,7 @@
 import { cache } from "react";
 import type { User } from "@supabase/supabase-js";
 import { createClient } from "./server";
+import { evaluateTrial, type TrialState } from "./access-claims";
 import type { SubscriptionStatus, TenantRole } from "./types";
 
 export type ActiveMembership = {
@@ -20,6 +21,7 @@ export type ActiveMembership = {
 export type MembershipContext = {
   user: User | null;
   membership: ActiveMembership | null;
+  trial: TrialState;
 };
 
 const PLAN_DISPLAY_NAMES: Record<string, string> = {
@@ -57,7 +59,7 @@ export const getActiveMembership = cache(async (): Promise<MembershipContext> =>
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return { user: null, membership: null };
+  if (!user) return { user: null, membership: null, trial: { kind: "no-tenant" } };
 
   const { data } = await supabase
     .from("tenant_memberships")
@@ -81,8 +83,16 @@ export const getActiveMembership = cache(async (): Promise<MembershipContext> =>
     .limit(1)
     .maybeSingle();
 
-  return {
-    user,
-    membership: (data as unknown as ActiveMembership | null) ?? null,
-  };
+  const membership = (data as unknown as ActiveMembership | null) ?? null;
+  const trial = evaluateTrial(
+    membership && membership.tenants
+      ? {
+          tenant_id: membership.tenant_id,
+          subscription_status: membership.tenants.subscription_status,
+          trial_ends_at: membership.tenants.trial_ends_at,
+        }
+      : null
+  );
+
+  return { user, membership, trial };
 });

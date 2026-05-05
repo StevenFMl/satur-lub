@@ -3,21 +3,27 @@ import { headers } from "next/headers";
 import { Sidebar } from "@/components/dashboard/sidebar";
 import { DashboardHeader } from "@/components/dashboard/header";
 import { getActiveMembership } from "@/lib/supabase/membership";
+import { isTrialBlocked } from "@/lib/supabase/access-claims";
 
 /**
  * Layout específico de `/dashboard/*`. Carga el chrome (sidebar + header) y
- * fuerza `/onboarding` si el usuario no tiene tenant activo.
+ * fuerza:
+ *  - `/onboarding` si el usuario no tiene tenant activo.
+ *  - `/upgrade`    si el trial expiró o la suscripción está delinquent.
  *
- * El guard de sesión vive en `(dashboard)/layout.tsx`.
+ * El guard de sesión vive en `(dashboard)/layout.tsx`. Esto duplica el
+ * trial-guard del middleware solo cuando el JWT custom hook todavía no está
+ * activado en Supabase (defensa en profundidad).
  */
 export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const { user, membership } = await getActiveMembership();
+  const { user, membership, trial } = await getActiveMembership();
   if (!user) redirect("/login");
   if (!membership) redirect("/onboarding");
+  if (isTrialBlocked(trial)) redirect("/upgrade");
 
   const fullName =
     (user.user_metadata?.full_name as string | undefined) ??
