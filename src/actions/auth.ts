@@ -215,25 +215,35 @@ export async function logoutAction() {
 /*                                  HELPERS                                   */
 /* -------------------------------------------------------------------------- */
 
+import { decodeJwtPayload, type AccessClaims } from "@/lib/supabase/access-claims";
+
 async function resolvePostAuthRoute(requested: string): Promise<string> {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  let { data: { session } } = await supabase.auth.getSession();
 
-  if (!user) return "/login";
+  if (!session) return "/login";
 
-  const { data: membership } = await supabase
-    .from("tenant_memberships")
-    .select("tenant_id, role")
-    .eq("user_id", user.id)
-    .eq("is_active", true)
-    .limit(1)
-    .maybeSingle();
+  // 1. Chequeo rápido: si ya tiene el claim, vamos al dashboard.
+  let claims = decodeJwtPayload<AccessClaims>(session.access_token);
+  if (claims?.tenant_id) {
+    if (isSafeRedirectPath(requested)) return requested;
+    return "/dashboard";
+  }
 
-  if (!membership) return "/onboarding";
-  if (isSafeRedirectPath(requested)) return requested;
-  return "/dashboard";
+  // 2. Si no lo tiene, forzamos refresh. El hook de Supabase corre como superuser
+  // (ignorando RLS) y si el usuario tiene un tenant, lo inyectará en el nuevo JWT.
+  const { data: refreshData } = await supabase.auth.refreshSession();
+  
+  if (refreshData.session) {
+    claims = decodeJwtPayload<AccessClaims>(refreshData.session.access_token);
+    if (claims?.tenant_id) {
+      if (isSafeRedirectPath(requested)) return requested;
+      return "/dashboard";
+    }
+  }
+
+  // 3. Si aun después de refrescar no hay claim, empíricamente no tiene tenant.
+  return "/onboarding";
 }
 
 /**

@@ -1,7 +1,7 @@
 import { cache } from "react";
 import type { User } from "@supabase/supabase-js";
 import { createClient } from "./server";
-import { evaluateTrial, type TrialState } from "./access-claims";
+import { evaluateTrial, type TrialState, decodeJwtPayload, type AccessClaims } from "./access-claims";
 import type { SubscriptionStatus, TenantRole } from "./types";
 
 export type ActiveMembership = {
@@ -56,6 +56,20 @@ export function getPlanDisplayName(code: string | null | undefined): string {
  */
 export const getActiveMembership = cache(async (): Promise<MembershipContext> => {
   const supabase = await createClient();
+  let { data: { session } } = await supabase.auth.getSession();
+  if (!session) return { user: null, membership: null, trial: { kind: "no-tenant" } };
+
+  // RLS on tenant_memberships requires the tenant_id claim in the JWT.
+  // If it's missing, we MUST force a refresh so the Postgres hook can inject it.
+  // Otherwise, the DB query below will return 0 rows and falsely trigger onboarding.
+  let claims = decodeJwtPayload<AccessClaims>(session.access_token);
+  if (!claims?.tenant_id) {
+    const { data: refreshData } = await supabase.auth.refreshSession();
+    if (refreshData.session) {
+      session = refreshData.session;
+    }
+  }
+
   const {
     data: { user },
   } = await supabase.auth.getUser();
