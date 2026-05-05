@@ -874,8 +874,6 @@ declare
 begin
   if v_user_id is null then raise exception 'Not authenticated'; end if;
 
-  select id into v_plan_id from public.subscription_plans where code = 'free_trial' limit 1;
-
   insert into public.tenants (
     business_name, slug, legal_name, ruc, business_type, created_by_user_id,
     subscription_plan_code, subscription_status, trial_ends_at
@@ -891,14 +889,22 @@ begin
   insert into public.tenant_memberships (tenant_id, user_id, role, is_owner)
   values (v_tenant_id, v_user_id, 'owner', true);
 
-  if v_plan_id is not null then
-    insert into public.subscriptions (
-      tenant_id, plan_id, status, current_period_start, current_period_end
-    )
-    values (
-      v_tenant_id, v_plan_id, 'trial', now(), now() + interval '14 days'
-    );
+  -- Suscripción 'free_trial' automática: lookup tras crear tenant + membership.
+  select id into v_plan_id
+    from public.subscription_plans
+    where code = 'free_trial'
+    limit 1;
+
+  if v_plan_id is null then
+    raise exception 'subscription_plans seed missing: code=free_trial';
   end if;
+
+  insert into public.subscriptions (
+    tenant_id, plan_id, status, current_period_start, current_period_end
+  )
+  values (
+    v_tenant_id, v_plan_id, 'trial', now(), now() + interval '14 days'
+  );
 
   return v_tenant_id;
 end;
@@ -1464,3 +1470,58 @@ WITH CHECK (
     SELECT public.get_auth_user_managed_tenants()
   )
 );
+
+CREATE OR REPLACE FUNCTION public.create_tenant_for_owner(
+  p_business_name text,
+  p_slug text
+)
+RETURNS uuid
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_tenant_id uuid;
+  v_user_id uuid;
+  v_plan_id uuid;
+BEGIN
+  -- 1. Verificar autenticación
+  v_user_id := auth.uid();
+  IF v_user_id IS NULL THEN
+    RAISE EXCEPTION 'Usuario no autenticado';
+  END IF;
+
+  -- 2. Crear el negocio (Tenant)
+  INSERT INTO public.tenants (business_name, slug, onboarding_completed, trial_ends_at)
+  VALUES (p_business_name, p_slug, false, now() + interval '14 days')
+  RETURNING id INTO v_tenant_id;
+
+  -- 3. Actualizar al usuario con su default_tenant_id
+  UPDATE public.users 
+  SET default_tenant_id = v_tenant_id 
+  WHERE id = v_user_id;
+
+  -- 4. Insertar al creador como Owner
+  INSERT INTO public.tenant_memberships (tenant_id, user_id, role, is_active)
+  VALUES (v_tenant_id, v_user_id, 'owner', true);
+
+  -- 5. ======= LA NUEVA LÓGICA DE SUSCRIPCIÓN =======
+  -- Buscar el ID del plan de prueba
+  SELECT id INTO v_plan_id 
+  FROM public.subscription_plans 
+  WHERE code = 'free_trial' 
+  LIMIT 1;
+
+  -- Si no existe el plan, abortar todo para no dejar bases de datos corruptas
+  IF v_plan_id IS NULL THEN
+    RAISE EXCEPTION 'Falta el plan free_trial en la tabla subscription_plans';
+  END IF;
+
+  -- Crear la suscripción asociada al tenant
+  INSERT INTO public.subscriptions (tenant_id, plan_id, status)
+  VALUES (v_tenant_id, v_plan_id, 'trial');
+  -- ==================================================
+
+  RETURN v_tenant_id;
+END;
+$$;

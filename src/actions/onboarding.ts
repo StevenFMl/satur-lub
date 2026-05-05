@@ -78,18 +78,25 @@ export async function createTenantAction(
 
   const tenantId = data;
 
-  // Actualizamos explícitamente onboarding_completed
-  const { error: updateError } = await supabase
+  // Marcamos onboarding como completado. Hacemos el UPDATE en el mismo
+  // request del Action (no en el RPC) para que la RLS de `update_tenants`
+  // valide que el usuario es owner — la membership recién insertada por el
+  // RPC ya satisface esa policy.
+  const { data: updated, error: updateError } = await supabase
     .from("tenants")
-    .update({ onboarding_completed: true })
-    .eq("id", tenantId);
+    .update({
+      business_name,
+      onboarding_completed: true,
+    })
+    .eq("id", tenantId)
+    .select("id, onboarding_completed")
+    .single();
 
-  if (updateError) {
-    console.error("Error setting onboarding_completed:", updateError);
+  if (updateError || !updated?.onboarding_completed) {
+    console.error("Error setting onboarding_completed:", updateError, updated);
     return { error: "No pudimos finalizar la configuración. Intenta nuevamente." };
   }
 
-  // Purgar caché y redirigir
   revalidatePath("/", "layout");
   redirect("/dashboard");
 }
