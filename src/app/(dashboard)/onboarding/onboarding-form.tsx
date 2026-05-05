@@ -2,7 +2,6 @@
 
 import { useActionState, useEffect, useState } from "react";
 import type * as React from "react";
-import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,11 +15,8 @@ import {
   type OnboardingFieldErrors,
 } from "@/lib/validations/onboarding";
 import { useScrollOnMessage } from "@/lib/hooks/use-scroll-on-error";
-import { createClient } from "@/lib/supabase/client";
-import { decodeJwtPayload } from "@/lib/supabase/access-claims";
 
 export function OnboardingForm() {
-  const router = useRouter();
   const [state, formAction, pending] = useActionState<OnboardingState, FormData>(
     createTenantAction,
     null
@@ -30,7 +26,6 @@ export function OnboardingForm() {
   const [slug, setSlug] = useState("");
   const [slugTouched, setSlugTouched] = useState(false);
   const [clientErrors, setClientErrors] = useState<OnboardingFieldErrors>({});
-  const [finalizing, setFinalizing] = useState(false);
   const alertRef = useScrollOnMessage<HTMLDivElement>(
     !state?.fieldErrors ? state?.error : null
   );
@@ -38,62 +33,6 @@ export function OnboardingForm() {
   useEffect(() => {
     if (!slugTouched) setSlug(slugify(businessName));
   }, [businessName, slugTouched]);
-
-  // Tras éxito de la action: forzar refresh del JWT para que recoja los
-  // claims nuevos (tenant_id, onboarding_completed) emitidos por el hook,
-  // VERIFICAR empíricamente que el access token nuevo ya trae `tenant_id`,
-  // invalidar el cache RSC y recién entonces navegar a /dashboard.
-  // Sin la verificación, una race condition puede dejar al middleware
-  // leyendo el JWT viejo y rebotando a /onboarding.
-  useEffect(() => {
-    if (!state?.success) return;
-    let cancelled = false;
-    setFinalizing(true);
-
-    (async () => {
-      const supabase = createClient();
-
-      // Forzar la emisión de un nuevo access token vía el refresh endpoint.
-      // Eso dispara el `custom_access_token_hook` con la membership ya creada.
-      try {
-        await supabase.auth.refreshSession();
-      } catch {
-        // Si el refresh falla aquí, el middleware degradará al fallback de DB
-        // en `dashboard/layout.tsx` (un rebote más, no loop).
-      }
-
-      // Verifica que el JWT actual ya contenga `tenant_id`. Reintenta con
-      // backoff corto: si el cookie write fue async o el hook tardó, damos
-      // hasta ~1s antes de rendirnos y dejar que el server component decida.
-      const MAX_ATTEMPTS = 5;
-      const DELAY_MS = 200;
-      for (let attempt = 0; attempt < MAX_ATTEMPTS && !cancelled; attempt++) {
-        const { data } = await supabase.auth.getSession();
-        const token = data.session?.access_token;
-        const claims = token ? decodeJwtPayload(token) : null;
-        if (claims?.tenant_id) break;
-        if (attempt === 0) {
-          // Primer fallo: forzar otro refresh por si el primer attempt no
-          // alcanzó a propagar el cookie write.
-          await supabase.auth.refreshSession().catch(() => {});
-        }
-        await new Promise((r) => setTimeout(r, DELAY_MS));
-      }
-
-      if (cancelled) return;
-
-      // router.refresh() invalida el cache RSC ANTES de navegar — así el
-      // árbol del dashboard se renderiza con `getActiveMembership` recargado.
-      // Si tras el retry seguimos sin claim, navegamos igual: el server
-      // component usa DB query como fallback y decide allí.
-      router.refresh();
-      router.replace("/dashboard");
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [state?.success, router]);
 
   const errors: OnboardingFieldErrors = {
     ...(state?.fieldErrors as OnboardingFieldErrors | undefined),
@@ -139,7 +78,7 @@ export function OnboardingForm() {
   return (
     <form action={formAction} onSubmit={handleSubmit} noValidate>
       <fieldset
-        disabled={pending || finalizing}
+        disabled={pending}
         className="m-0 min-w-0 space-y-10 border-0 p-0 disabled:opacity-95"
       >
         <Section
@@ -304,12 +243,10 @@ export function OnboardingForm() {
           <Button
             type="submit"
             size="xl"
-            loading={pending || finalizing}
+            loading={pending}
             className="sm:min-w-[240px]"
           >
-            {finalizing
-              ? "Iniciando sesión…"
-              : pending
+            {pending
                 ? "Creando negocio…"
                 : "Crear negocio"}
           </Button>
