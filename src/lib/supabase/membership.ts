@@ -16,6 +16,11 @@ export type ActiveMembership = {
     subscription_plan_code: string | null;
     trial_ends_at: string | null;
   } | null;
+  subscription: {
+    status: string;
+    current_period_start: string;
+    current_period_end: string | null;
+  } | null;
 };
 
 export type MembershipContext = {
@@ -97,7 +102,22 @@ export const getActiveMembership = cache(async (): Promise<MembershipContext> =>
     .limit(1)
     .maybeSingle();
 
-  const membership = (data as unknown as ActiveMembership | null) ?? null;
+  const baseMembership = (data as unknown as Omit<ActiveMembership, "subscription"> | null) ?? null;
+
+  let subscription: ActiveMembership["subscription"] = null;
+  if (baseMembership) {
+    const { data: sub } = await supabase
+      .from("subscriptions")
+      .select("status, current_period_start, current_period_end")
+      .eq("tenant_id", baseMembership.tenant_id)
+      .maybeSingle();
+    subscription = (sub as ActiveMembership["subscription"]) ?? null;
+  }
+
+  const membership: ActiveMembership | null = baseMembership
+    ? { ...baseMembership, subscription }
+    : null;
+
   const trial = evaluateTrial(
     membership && membership.tenants
       ? {

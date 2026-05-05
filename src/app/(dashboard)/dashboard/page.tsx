@@ -21,9 +21,14 @@ export default async function DashboardPage() {
     (user.user_metadata?.full_name as string | undefined) ?? user.email ?? "—";
 
   const planName = getPlanDisplayName(tenant?.subscription_plan_code);
-  const trialEndsAt = tenant?.trial_ends_at ?? null;
-  const trialDaysLeft = trialEndsAt
-    ? daysBetween(new Date(), new Date(trialEndsAt))
+  // Fuente autoritativa del periodo: tabla `subscriptions`. `tenants.trial_ends_at`
+  // queda como fallback únicamente si la suscripción no se ha sincronizado todavía.
+  const periodEnd =
+    membership.subscription?.current_period_end ??
+    tenant?.trial_ends_at ??
+    null;
+  const trialDaysLeft = periodEnd
+    ? daysBetween(new Date(), new Date(periodEnd))
     : null;
 
   return (
@@ -67,7 +72,7 @@ export default async function DashboardPage() {
               : "Sin prueba"
           }
           hint={
-            trialEndsAt ? `Vence ${formatDate(trialEndsAt)}` : "Sin vencimiento"
+            periodEnd ? `Vence ${formatDate(periodEnd)}` : "Sin vencimiento"
           }
         />
       </section>

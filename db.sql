@@ -898,7 +898,7 @@ begin
     limit 1;
 
   if v_plan_id is null then
-    raise exception 'subscription_plans seed missing: code=free_trial';
+    raise exception 'Plan free_trial no configurado';
   end if;
 
   insert into public.subscriptions (
@@ -1189,12 +1189,7 @@ $$;
 
 INSERT INTO public.subscription_plans (code, name, description, is_free, trial_days, is_active)
 VALUES ('free_trial', 'Prueba Gratis', '14 días de prueba sin tarjeta', true, 14, true)
-ON CONFLICT (code) DO UPDATE SET
-  name        = EXCLUDED.name,
-  description = EXCLUDED.description,
-  is_free     = EXCLUDED.is_free,
-  trial_days  = EXCLUDED.trial_days,
-  is_active   = EXCLUDED.is_active;
+ON CONFLICT (code) DO NOTHING;
 
 -- F.2 CHECK constraint en tenants.business_type — alinea DB con el enum de
 -- types.ts y previene escrituras de valores inválidos.
