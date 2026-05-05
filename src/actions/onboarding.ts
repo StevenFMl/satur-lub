@@ -67,6 +67,7 @@ export async function createTenantAction(
   } as never);
 
   if (error) {
+    console.error("create_tenant_for_owner error:", error);
     const m = error.message.toLowerCase();
     if (m.includes("duplicate") || m.includes("unique")) {
       return {
@@ -74,7 +75,9 @@ export async function createTenantAction(
         error: "Elige otro identificador disponible.",
       };
     }
-    return { error: error.message };
+    // Nunca filtramos el `error.message` crudo (Postgres puede revelar
+    // estructura del schema). Mensaje genérico al cliente.
+    return { error: "No pudimos crear tu negocio. Intenta nuevamente." };
   }
 
   if (!data) {

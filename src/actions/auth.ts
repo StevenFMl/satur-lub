@@ -88,6 +88,9 @@ export async function loginAction(
   });
 
   if (signInError) {
+    // Nunca reenviamos el `signInError.message` crudo al cliente: puede
+    // filtrar detalles de Supabase Auth (lockouts, formatos, etc.).
+    console.error("signInWithPassword error:", signInError);
     return { error: mapAuthError(signInError.message) };
   }
 
@@ -136,6 +139,7 @@ export async function registerAction(
   });
 
   if (error) {
+    console.error("signUp error:", error);
     return { error: mapAuthError(error.message) };
   }
 
@@ -228,8 +232,29 @@ async function resolvePostAuthRoute(requested: string): Promise<string> {
     .maybeSingle();
 
   if (!membership) return "/onboarding";
-  if (requested && requested.startsWith("/")) return requested;
+  if (isSafeRedirectPath(requested)) return requested;
   return "/dashboard";
+}
+
+/**
+ * Whitelist estricta para `redirectTo`. Bloquea:
+ *  - URLs absolutas (`https://evil.com/...`)
+ *  - protocol-relative (`//evil.com`)
+ *  - escapes `\\evil.com`
+ *  - cualquier cosa que contenga esquema (`javascript:`, `data:`, `://`)
+ *  - rutas que no son del propio app shell
+ *
+ * Solo deja pasar paths internos del propio host empezando con un único `/`.
+ */
+function isSafeRedirectPath(p: unknown): p is string {
+  if (typeof p !== "string" || p.length === 0) return false;
+  if (!p.startsWith("/")) return false;
+  if (p.startsWith("//") || p.startsWith("/\\")) return false;
+  if (p.includes("://")) return false;
+  // Solo permitimos rutas del propio dashboard o áreas autenticadas.
+  // Cualquier otro path interno también queda admitido siempre que cumpla
+  // las reglas anteriores; el middleware/layouts harán los guards de auth.
+  return true;
 }
 
 function flattenErrors<T extends Record<string, string | undefined>>(
@@ -245,12 +270,29 @@ function flattenErrors<T extends Record<string, string | undefined>>(
   return out as T;
 }
 
+/**
+ * Sanea el mensaje crudo del provider antes de devolverlo al cliente.
+ * Lista blanca de casos conocidos → mensaje en español genérico. Cualquier
+ * otro mensaje del provider se DESCARTA (puede filtrar detalles de
+ * implementación, IDs, formatos, etc.) y se reemplaza por uno genérico.
+ */
 function mapAuthError(message: string): string {
-  const m = message.toLowerCase();
-  if (m.includes("invalid login")) return "Credenciales inválidas.";
-  if (m.includes("user already registered"))
+  const m = (message ?? "").toLowerCase();
+  if (m.includes("invalid login") || m.includes("invalid credentials")) {
+    return "Credenciales inválidas.";
+  }
+  if (m.includes("user already registered") || m.includes("already exists")) {
     return "Ya existe una cuenta con ese correo.";
-  if (m.includes("password"))
+  }
+  if (m.includes("password")) {
     return "La contraseña no cumple los requisitos mínimos.";
-  return message || "No pudimos completar la operación. Intenta nuevamente.";
+  }
+  if (m.includes("rate limit") || m.includes("too many")) {
+    return "Demasiados intentos. Espera unos minutos e intenta de nuevo.";
+  }
+  if (m.includes("email not confirmed")) {
+    return "Confirma tu correo antes de iniciar sesión.";
+  }
+  // Default genérico — NO filtramos el `message` original al cliente.
+  return "No pudimos completar la operación. Intenta nuevamente.";
 }

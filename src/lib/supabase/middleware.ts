@@ -103,44 +103,28 @@ export async function updateSession(request: NextRequest) {
       ? decodeJwtPayload<AccessClaims>(session.access_token)
       : null;
 
-    // Si el hook de Supabase aún no está activo, claims.tenant_id será undefined
-    // tanto para usuarios CON tenant como SIN. En ese caso no podemos decidir
-    // aquí — el server component lo hará. Solo actuamos si los claims llegaron.
-    const claimsHaveTenantSignal =
-      claims !== null &&
-      (claims.tenant_id !== undefined ||
-        claims.subscription_status !== undefined);
-
-    if (claimsHaveTenantSignal) {
-      const hasTenant = Boolean(claims?.tenant_id);
-
+    // Política conservadora: el middleware SOLO redirige cuando los claims
+    // afirman positivamente algo (tenant_id presente). La AUSENCIA de claims
+    // puede deberse a:
+    //   (a) hook todavía no activado en Supabase,
+    //   (b) JWT viejo emitido antes de completar el onboarding,
+    //   (c) refresh en vuelo durante la transición.
+    // En cualquier ausencia delegamos al server component (que consulta DB)
+    // — así jamás causamos un loop por claims temporalmente faltantes.
+    if (claims?.tenant_id) {
       // /onboarding con tenant ya creado → /dashboard
-      if (pathname === "/onboarding" && hasTenant) {
+      if (pathname === "/onboarding") {
         const url = request.nextUrl.clone();
         url.pathname = "/dashboard";
         return NextResponse.redirect(url);
       }
 
-      // /dashboard sin tenant → /onboarding
-      if (pathname.startsWith("/dashboard") && !hasTenant) {
-        const url = request.nextUrl.clone();
-        url.pathname = "/onboarding";
-        return NextResponse.redirect(url);
-      }
-
-      // /upgrade sin tenant → /onboarding
-      if (pathname === "/upgrade" && !hasTenant) {
-        const url = request.nextUrl.clone();
-        url.pathname = "/onboarding";
-        return NextResponse.redirect(url);
-      }
-
-      // Trial expirado o delinquent → /upgrade (solo si entra a rutas locked)
-      if (isTrialLocked && hasTenant) {
+      // Trial expirado o delinquent → /upgrade (solo en rutas locked)
+      if (isTrialLocked) {
         const trial = evaluateTrial({
-          tenant_id: claims?.tenant_id,
-          trial_ends_at: claims?.trial_ends_at,
-          subscription_status: claims?.subscription_status,
+          tenant_id: claims.tenant_id,
+          trial_ends_at: claims.trial_ends_at,
+          subscription_status: claims.subscription_status,
         });
         if (isTrialBlocked(trial)) {
           const url = request.nextUrl.clone();
@@ -149,6 +133,9 @@ export async function updateSession(request: NextRequest) {
         }
       }
     }
+    // Sin tenant_id en claims: NO redirigimos a /onboarding desde aquí.
+    // El layout del dashboard ya hace ese guard contra DB y evita el loop
+    // post-onboarding (cuando el JWT aún no propagó el claim nuevo).
   }
 
   return response;

@@ -22,7 +22,8 @@ export type AccessClaims = {
 /**
  * Decodifica un JWT sin verificar firma — válido SOLO para leer claims tras
  * que `supabase.auth.getUser()` ya validó el token contra Auth API.
- * Este parser no introduce dependencias y soporta base64url estándar.
+ * Cross-runtime: funciona en Node (middleware, server) y en el browser
+ * (post-onboarding refresh) usando `atob` + `TextDecoder` (ambos en Node 16+).
  */
 export function decodeJwtPayload<T = AccessClaims>(token: string): T | null {
   const parts = token.split(".");
@@ -35,7 +36,8 @@ export function decodeJwtPayload<T = AccessClaims>(token: string): T | null {
       normalized.length + ((4 - (normalized.length % 4)) % 4),
       "="
     );
-    const json = Buffer.from(padded, "base64").toString("utf-8");
+    const bytes = Uint8Array.from(atob(padded), (c) => c.charCodeAt(0));
+    const json = new TextDecoder().decode(bytes);
     return JSON.parse(json) as T;
   } catch {
     return null;
