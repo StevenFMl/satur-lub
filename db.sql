@@ -1735,3 +1735,34 @@ $$;
 
 REVOKE ALL ON FUNCTION public.receive_purchase_order(uuid, uuid, text, text, date, text, jsonb) FROM public;
 GRANT EXECUTE ON FUNCTION public.receive_purchase_order(uuid, uuid, text, text, date, text, jsonb) TO authenticated;
+
+-- =========================================================================
+-- H. INVENTARIO · BODEGAS · RLS anti-recursivo + índice de búsqueda
+-- =========================================================================
+-- Las policies actuales fueron generadas por el DO $$ loop de master_data_tables
+-- usando EXISTS sobre tenant_memberships. Las reemplazamos por la versión
+-- anti-recursiva con get_auth_user_managed_tenants() para alinear con el
+-- patrón del núcleo y prevenir 42P17 si se cruzan políticas más adelante.
+
+DROP POLICY IF EXISTS "select_warehouses" ON public.warehouses;
+DROP POLICY IF EXISTS "insert_warehouses" ON public.warehouses;
+DROP POLICY IF EXISTS "update_warehouses" ON public.warehouses;
+DROP POLICY IF EXISTS "delete_warehouses" ON public.warehouses;
+
+CREATE POLICY "select_warehouses" ON public.warehouses
+  FOR SELECT TO authenticated
+  USING (tenant_id IN (SELECT public.get_auth_user_managed_tenants()));
+
+CREATE POLICY "insert_warehouses" ON public.warehouses
+  FOR INSERT TO authenticated
+  WITH CHECK (tenant_id IN (SELECT public.get_auth_user_managed_tenants()));
+
+CREATE POLICY "update_warehouses" ON public.warehouses
+  FOR UPDATE TO authenticated
+  USING (tenant_id IN (SELECT public.get_auth_user_managed_tenants()))
+  WITH CHECK (tenant_id IN (SELECT public.get_auth_user_managed_tenants()));
+
+-- DELETE intencionalmente no permitido — soft-delete vía is_active.
+
+CREATE INDEX IF NOT EXISTS idx_warehouses_tenant_name
+  ON public.warehouses(tenant_id, name);
