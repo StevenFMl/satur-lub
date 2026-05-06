@@ -1522,3 +1522,216 @@ BEGIN
   RETURN v_tenant_id;
 END;
 $$;
+
+-- =========================================================================
+-- G. COMPRAS · PROVEEDORES · INVENTARIO TRANSACCIONAL
+-- =========================================================================
+
+-- G.1 Columnas de pago en purchase_orders
+ALTER TABLE public.purchase_orders
+  ADD COLUMN IF NOT EXISTS payment_method text;
+ALTER TABLE public.purchase_orders
+  DROP CONSTRAINT IF EXISTS purchase_orders_payment_method_check;
+ALTER TABLE public.purchase_orders
+  ADD CONSTRAINT purchase_orders_payment_method_check
+  CHECK (payment_method IS NULL OR payment_method IN ('cash', 'transfer', 'credit'));
+
+ALTER TABLE public.purchase_orders
+  ADD COLUMN IF NOT EXISTS payment_status text NOT NULL DEFAULT 'pending';
+ALTER TABLE public.purchase_orders
+  DROP CONSTRAINT IF EXISTS purchase_orders_payment_status_check;
+ALTER TABLE public.purchase_orders
+  ADD CONSTRAINT purchase_orders_payment_status_check
+  CHECK (payment_status IN ('paid', 'pending'));
+
+ALTER TABLE public.purchase_orders
+  ADD COLUMN IF NOT EXISTS payment_due_date date;
+
+-- G.2 RLS anti-recursivo en business_partners (reemplaza policies del DO $$ loop)
+DROP POLICY IF EXISTS "select_business_partners" ON public.business_partners;
+DROP POLICY IF EXISTS "insert_business_partners" ON public.business_partners;
+DROP POLICY IF EXISTS "update_business_partners" ON public.business_partners;
+DROP POLICY IF EXISTS "delete_business_partners" ON public.business_partners;
+
+CREATE POLICY "select_business_partners" ON public.business_partners
+  FOR SELECT TO authenticated
+  USING (tenant_id IN (SELECT public.get_auth_user_managed_tenants()));
+
+CREATE POLICY "insert_business_partners" ON public.business_partners
+  FOR INSERT TO authenticated
+  WITH CHECK (tenant_id IN (SELECT public.get_auth_user_managed_tenants()));
+
+CREATE POLICY "update_business_partners" ON public.business_partners
+  FOR UPDATE TO authenticated
+  USING (tenant_id IN (SELECT public.get_auth_user_managed_tenants()))
+  WITH CHECK (tenant_id IN (SELECT public.get_auth_user_managed_tenants()));
+
+-- (sin DELETE: tabla maestra; soft-delete vía is_active)
+
+-- G.3 Índice
+CREATE INDEX IF NOT EXISTS idx_partners_tenant_type
+  ON public.business_partners(tenant_id, partner_type);
+
+-- G.4 RPC transaccional: recibe una OC con sus ítems, registra movimientos
+-- y actualiza balances. Cualquier excepción aborta TODO (rollback automático
+-- al ser una sola unidad de trabajo de la función).
+--
+-- p_items shape: jsonb array → [{ "product_id": uuid, "quantity": numeric, "unit_cost": numeric }, ...]
+
+CREATE OR REPLACE FUNCTION public.receive_purchase_order(
+  p_supplier_id      uuid,
+  p_warehouse_id     uuid,
+  p_payment_method   text,
+  p_payment_status   text,
+  p_payment_due_date date,
+  p_notes            text,
+  p_items            jsonb
+)
+RETURNS uuid
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = public
+AS $$
+DECLARE
+  v_user_id    uuid := auth.uid();
+  v_tenant_id  uuid;
+  v_po_id      uuid;
+  v_subtotal   numeric(12,2) := 0;
+  v_tax_total  numeric(12,2) := 0;
+  v_total      numeric(12,2) := 0;
+  v_item       jsonb;
+  v_qty        numeric(12,2);
+  v_unit_cost  numeric(12,2);
+  v_line_total numeric(12,2);
+  v_product_id uuid;
+  v_pay_status text;
+BEGIN
+  IF v_user_id IS NULL THEN
+    RAISE EXCEPTION 'Usuario no autenticado';
+  END IF;
+
+  IF jsonb_typeof(p_items) <> 'array' OR jsonb_array_length(p_items) = 0 THEN
+    RAISE EXCEPTION 'Debe incluir al menos un ítem';
+  END IF;
+
+  IF p_payment_method NOT IN ('cash', 'transfer', 'credit') THEN
+    RAISE EXCEPTION 'Método de pago inválido';
+  END IF;
+
+  -- Resolver tenant_id del usuario activo (debe ser owner/admin)
+  SELECT tenant_id INTO v_tenant_id
+    FROM public.tenant_memberships
+   WHERE user_id = v_user_id
+     AND is_active = true
+     AND role IN ('owner', 'admin')
+   ORDER BY is_owner DESC
+   LIMIT 1;
+
+  IF v_tenant_id IS NULL THEN
+    RAISE EXCEPTION 'Sin tenant activo o sin permisos';
+  END IF;
+
+  -- Validar proveedor pertenece al tenant
+  IF NOT EXISTS (
+    SELECT 1 FROM public.business_partners
+     WHERE id = p_supplier_id
+       AND tenant_id = v_tenant_id
+       AND partner_type = 'supplier'
+       AND is_active = true
+  ) THEN
+    RAISE EXCEPTION 'Proveedor inválido';
+  END IF;
+
+  IF p_warehouse_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM public.warehouses
+     WHERE id = p_warehouse_id AND tenant_id = v_tenant_id
+  ) THEN
+    RAISE EXCEPTION 'Bodega inválida';
+  END IF;
+
+  -- Calcular totales
+  FOR v_item IN SELECT * FROM jsonb_array_elements(p_items)
+  LOOP
+    v_qty       := (v_item->>'quantity')::numeric;
+    v_unit_cost := (v_item->>'unit_cost')::numeric;
+    IF v_qty IS NULL OR v_qty <= 0 OR v_unit_cost IS NULL OR v_unit_cost < 0 THEN
+      RAISE EXCEPTION 'Cantidad y costo deben ser > 0';
+    END IF;
+    v_subtotal := v_subtotal + (v_qty * v_unit_cost);
+  END LOOP;
+  v_total := v_subtotal + v_tax_total;
+
+  v_pay_status := CASE
+    WHEN p_payment_method IN ('cash', 'transfer') THEN COALESCE(p_payment_status, 'paid')
+    ELSE COALESCE(p_payment_status, 'pending')
+  END;
+
+  -- 1. Cabecera
+  INSERT INTO public.purchase_orders (
+    tenant_id, supplier_id, warehouse_id,
+    subtotal, tax_total, total,
+    status, notes, created_by,
+    payment_method, payment_status, payment_due_date
+  ) VALUES (
+    v_tenant_id, p_supplier_id, p_warehouse_id,
+    v_subtotal, v_tax_total, v_total,
+    'received', p_notes, v_user_id,
+    p_payment_method, v_pay_status,
+    CASE WHEN p_payment_method = 'credit' THEN p_payment_due_date ELSE NULL END
+  )
+  RETURNING id INTO v_po_id;
+
+  -- 2-4. Por cada ítem: detalle, movimiento y balance
+  FOR v_item IN SELECT * FROM jsonb_array_elements(p_items)
+  LOOP
+    v_product_id := (v_item->>'product_id')::uuid;
+    v_qty        := (v_item->>'quantity')::numeric;
+    v_unit_cost  := (v_item->>'unit_cost')::numeric;
+    v_line_total := v_qty * v_unit_cost;
+
+    IF NOT EXISTS (
+      SELECT 1 FROM public.products
+       WHERE id = v_product_id AND tenant_id = v_tenant_id
+    ) THEN
+      RAISE EXCEPTION 'Producto inválido (%)', v_product_id;
+    END IF;
+
+    -- 2. Detalle
+    INSERT INTO public.purchase_order_items (
+      tenant_id, purchase_order_id, product_id,
+      quantity, unit_cost, line_total
+    ) VALUES (
+      v_tenant_id, v_po_id, v_product_id,
+      v_qty, v_unit_cost, v_line_total
+    );
+
+    -- 3. Movimiento de inventario
+    INSERT INTO public.inventory_movements (
+      tenant_id, warehouse_id, product_id,
+      movement_type, quantity, unit_cost, reason,
+      reference_type, reference_id, performed_by_user_id
+    ) VALUES (
+      v_tenant_id, p_warehouse_id, v_product_id,
+      'purchase', v_qty, v_unit_cost, 'Recepción de compra',
+      'purchase_order', v_po_id, v_user_id
+    );
+
+    -- 4. UPSERT balance (sumando)
+    IF p_warehouse_id IS NOT NULL THEN
+      INSERT INTO public.inventory_balances (
+        tenant_id, warehouse_id, product_id, quantity_on_hand
+      ) VALUES (
+        v_tenant_id, p_warehouse_id, v_product_id, v_qty
+      )
+      ON CONFLICT (tenant_id, warehouse_id, product_id) DO UPDATE
+        SET quantity_on_hand = public.inventory_balances.quantity_on_hand + EXCLUDED.quantity_on_hand,
+            updated_at = now();
+    END IF;
+  END LOOP;
+
+  RETURN v_po_id;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.receive_purchase_order(uuid, uuid, text, text, date, text, jsonb) FROM public;
+GRANT EXECUTE ON FUNCTION public.receive_purchase_order(uuid, uuid, text, text, date, text, jsonb) TO authenticated;

@@ -50,6 +50,29 @@ const NAV: NavItem[] = [
     ),
   },
   {
+    href: "/dashboard/proveedores",
+    label: "Proveedores",
+    icon: (
+      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 9h18" />
+        <path d="M5 9V6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v3" />
+        <path d="M3 9v9a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9" />
+        <path d="M9 13h6" />
+      </svg>
+    ),
+  },
+  {
+    href: "/dashboard/compras/nueva",
+    label: "Compras",
+    icon: (
+      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z" />
+        <path d="M3 6h18" />
+        <path d="M16 10a4 4 0 0 1-8 0" />
+      </svg>
+    ),
+  },
+  {
     href: "/dashboard/team",
     label: "Equipo",
     icon: (
