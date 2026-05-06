@@ -1,0 +1,96 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { createClient } from "@/lib/supabase/server";
+import { getActiveMembership } from "@/lib/supabase/membership";
+import {
+  productSchema,
+  makeSkuFromName,
+  type ProductFieldErrors,
+} from "@/lib/validations/product";
+
+export type ProductState = {
+  ok?: boolean;
+  error?: string;
+  fieldErrors?: ProductFieldErrors;
+} | null;
+
+/**
+ * Crea o actualiza un producto del catálogo.
+ *
+ * Reglas:
+ *  - `tenant_id` se inyecta en el servidor desde la sesión activa. Nunca se
+ *    acepta del FormData.
+ *  - `product_kind` queda fijo en 'item' (este formulario no maneja servicios
+ *    ni kits — esos van en módulos dedicados).
+ *  - Si `sku` viene vacío, se genera uno determinista a partir del nombre.
+ *  - Solo owner/admin pueden crear/editar (alineado con la RLS de products).
+ */
+export async function upsertProductAction(
+  _prev: ProductState,
+  formData: FormData
+): Promise<ProductState> {
+  const parsed = productSchema.safeParse({
+    id: formData.get("id"),
+    name: formData.get("name"),
+    sku: formData.get("sku"),
+    cost_price: formData.get("cost_price"),
+  });
+
+  if (!parsed.success) {
+    const fieldErrors: ProductFieldErrors = {};
+    for (const issue of parsed.error.issues) {
+      const key = issue.path[0];
+      if (typeof key === "string" && !(key in fieldErrors)) {
+        (fieldErrors as Record<string, string>)[key] = issue.message;
+      }
+    }
+    return { fieldErrors, error: "Revisa los campos marcados." };
+  }
+
+  const data = parsed.data;
+
+  const { user, membership } = await getActiveMembership();
+  if (!user || !membership) return { error: "Sesión expirada." };
+
+  if (membership.role !== "owner" && membership.role !== "admin") {
+    return { error: "No tienes permisos para gestionar productos." };
+  }
+
+  const tenantId = membership.tenant_id;
+  const supabase = await createClient();
+
+  const sku = data.sku ?? makeSkuFromName(data.name);
+
+  const payload = {
+    tenant_id: tenantId,
+    name: data.name,
+    sku,
+    cost_price: data.cost_price,
+    product_kind: "item" as const,
+  };
+
+  const { error } = data.id
+    ? await supabase
+        .from("products")
+        .update(payload)
+        .eq("id", data.id)
+        .eq("tenant_id", tenantId)
+    : await supabase.from("products").insert(payload);
+
+  if (error) {
+    const m = error.message.toLowerCase();
+    if (m.includes("duplicate") || m.includes("unique")) {
+      return {
+        fieldErrors: { sku: "Ya existe un producto con este SKU." },
+        error: "SKU duplicado.",
+      };
+    }
+    console.error("upsertProductAction:", error);
+    return { error: "No se pudo guardar el producto." };
+  }
+
+  revalidatePath("/dashboard/inventario/productos");
+  revalidatePath("/dashboard/compras/nueva");
+  return { ok: true };
+}
