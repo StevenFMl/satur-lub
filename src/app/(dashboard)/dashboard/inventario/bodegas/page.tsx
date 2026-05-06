@@ -9,6 +9,7 @@ import {
 } from "./warehouses-table";
 
 export const metadata: Metadata = { title: "Bodegas · Inventario" };
+export const dynamic = "force-dynamic";
 
 export default async function BodegasPage() {
   const { user, membership } = await getActiveMembership();
@@ -31,6 +32,13 @@ export default async function BodegasPage() {
       .eq("is_active", true)
       .order("branch_name"),
   ]);
+
+  if (warehousesRes.error) {
+    console.error("BodegasPage · warehouses query:", warehousesRes.error);
+  }
+  if (branchesRes.error) {
+    console.error("BodegasPage · branches query:", branchesRes.error);
+  }
 
   const rows = ((warehousesRes.data ?? []) as unknown) as WarehouseRow[];
   const branches = ((branchesRes.data ?? []) as unknown) as BranchOption[];

@@ -11,6 +11,7 @@ export type ProductRow = {
   id: string;
   name: string;
   sku: string;
+  unit: string;
   cost_price: number | null;
   product_kind: "item" | "service" | "kit";
   is_active: boolean;
@@ -106,6 +107,9 @@ export function ProductsTable({
                     <Td>
                       <div className="font-semibold text-foreground">
                         {r.name}
+                      </div>
+                      <div className="mt-0.5 font-mono text-[11px] text-muted-foreground">
+                        {r.unit}
                       </div>
                     </Td>
                     <Td>

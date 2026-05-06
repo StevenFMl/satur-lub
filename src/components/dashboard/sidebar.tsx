@@ -76,6 +76,18 @@ const SECTIONS: NavSection[] = [
     title: "Inventario",
     items: [
       {
+        href: "/dashboard/inventario/stock",
+        label: "Existencias",
+        icon: (
+          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 3v18h18" />
+            <rect x="7" y="10" width="3" height="8" rx="0.5" />
+            <rect x="12" y="6" width="3" height="12" rx="0.5" />
+            <rect x="17" y="3" width="3" height="15" rx="0.5" />
+          </svg>
+        ),
+      },
+      {
         href: "/dashboard/inventario/bodegas",
         label: "Bodegas",
         icon: (

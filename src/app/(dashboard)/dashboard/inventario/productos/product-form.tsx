@@ -84,6 +84,26 @@ export function ProductForm({ initial, onSuccess }: Props) {
         </div>
 
         <div className="space-y-2">
+          <Label htmlFor="unit">Unidad de medida</Label>
+          <select
+            id="unit"
+            name="unit"
+            defaultValue={initial?.unit ?? "unidad"}
+            className="flex h-10 w-full rounded-sm border-2 border-steel-700 bg-steel-800 px-3 py-2 font-mono text-[13px] text-foreground outline-none transition-colors focus:border-safety-500/60 focus:ring-2 focus:ring-safety-500/20"
+          >
+            <option value="unidad">Unidad</option>
+            <option value="galón">Galón</option>
+            <option value="litro">Litro</option>
+            <option value="caneca">Caneca</option>
+            <option value="1/4 cuarto">1/4 Cuarto</option>
+            <option value="barril">Barril</option>
+            <option value="caja">Caja</option>
+            <option value="paquete">Paquete</option>
+          </select>
+          <FieldError fieldId="unit" message={errors.unit} />
+        </div>
+
+        <div className="space-y-2">
           <Label htmlFor="cost_price">
             Costo base{" "}
             <span className="font-normal normal-case tracking-normal text-muted-foreground/80">

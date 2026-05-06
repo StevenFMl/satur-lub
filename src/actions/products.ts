@@ -34,6 +34,7 @@ export async function upsertProductAction(
     id: formData.get("id"),
     name: formData.get("name"),
     sku: formData.get("sku"),
+    unit: formData.get("unit"),
     cost_price: formData.get("cost_price"),
   });
 
@@ -66,6 +67,7 @@ export async function upsertProductAction(
     tenant_id: tenantId,
     name: data.name,
     sku,
+    unit: data.unit,
     cost_price: data.cost_price,
     product_kind: "item" as const,
   };

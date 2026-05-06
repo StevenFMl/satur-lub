@@ -5,6 +5,7 @@ import { getActiveMembership } from "@/lib/supabase/membership";
 import { ProductsTable, type ProductRow } from "./products-table";
 
 export const metadata: Metadata = { title: "Productos · Inventario" };
+export const dynamic = "force-dynamic";
 
 export default async function ProductosPage() {
   const { user, membership } = await getActiveMembership();
@@ -16,7 +17,7 @@ export default async function ProductosPage() {
   // RLS aísla por tenant; aquí solo orden y proyección mínima necesaria.
   const { data } = await supabase
     .from("products")
-    .select("id, name, sku, cost_price, product_kind, is_active, created_at")
+    .select("id, name, sku, unit, cost_price, product_kind, is_active, created_at")
     .order("created_at", { ascending: false });
 
   const rows = ((data ?? []) as unknown) as ProductRow[];

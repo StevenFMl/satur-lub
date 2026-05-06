@@ -41,6 +41,17 @@ export const productSchema = z.object({
       .optional()
       .transform((v) => v ?? null)
   ),
+  unit: z.preprocess(
+    (v) => {
+      if (typeof v !== "string") return "unidad";
+      const t = v.trim();
+      return t.length === 0 ? "unidad" : t;
+    },
+    z
+      .string()
+      .min(1, "Unidad requerida.")
+      .max(30, "Máx. 30 caracteres.")
+  ),
   cost_price: z.preprocess(
     toNumberOrNaN,
     z
