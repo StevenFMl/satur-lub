@@ -1,11 +1,14 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 
 export type StockRow = {
   id: string;
+  product_id: string;
+  warehouse_id: string;
   warehouse_name: string;
   product_name: string;
   sku: string;
@@ -75,13 +78,14 @@ export function StockTable({ initialRows }: { initialRows: StockRow[] }) {
                 <Th>Unidad</Th>
                 <Th>Bodega</Th>
                 <Th>Estado</Th>
+                <Th className="text-right">Auditoría</Th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={7}
                     className="px-5 py-12 text-center text-[13px] text-muted-foreground"
                   >
                     {initialRows.length === 0
@@ -139,6 +143,15 @@ export function StockTable({ initialRows }: { initialRows: StockRow[] }) {
                         ) : (
                           <Badge tone="active">Normal</Badge>
                         )}
+                      </Td>
+                      <Td className="text-right">
+                        <Link
+                          href={`/dashboard/inventario/movimientos?product_id=${r.product_id}&warehouse_id=${r.warehouse_id}`}
+                          className="inline-flex items-center gap-1.5 rounded-sm border border-steel-700 bg-steel-800 px-3 py-1.5 font-mono text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground transition-colors hover:border-safety-500/60 hover:text-safety-500"
+                        >
+                          <KardexIcon className="h-3.5 w-3.5" />
+                          Ver Kárdex
+                        </Link>
                       </Td>
                     </tr>
                   );
@@ -223,6 +236,26 @@ function WarningIcon({ className }: { className?: string }) {
       <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
       <path d="M12 9v4" />
       <path d="M12 17h.01" />
+    </svg>
+  );
+}
+
+function KardexIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M3 5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+      <path d="M14 3v6h6" />
+      <path d="M8 13h8" />
+      <path d="M8 17h5" />
     </svg>
   );
 }

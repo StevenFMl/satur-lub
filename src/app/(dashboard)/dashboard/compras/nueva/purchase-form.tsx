@@ -71,7 +71,12 @@ export function PurchaseForm({
     null
   );
 
-  const [warehouseId, setWarehouseId] = useState(warehouses[0]?.id ?? "");
+  // UX: si el tenant tiene exactamente 1 bodega activa, la auto-seleccionamos
+  // (caso típico de negocios con única ubicación). Con 0 o 2+ bodegas dejamos
+  // la selección explícita al usuario para evitar errores silenciosos.
+  const [warehouseId, setWarehouseId] = useState(
+    warehouses.length === 1 ? warehouses[0].id : ""
+  );
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
   const [dueDate, setDueDate] = useState("");
   const [rows, setRows] = useState<Row[]>([newRow()]);
