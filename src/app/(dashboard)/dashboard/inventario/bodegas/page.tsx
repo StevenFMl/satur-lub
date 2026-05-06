@@ -25,6 +25,7 @@ export default async function BodegasPage() {
       .select(
         "id, name, branch_id, is_active, created_at, branches(branch_name)"
       )
+      .eq("is_active", true)
       .order("created_at", { ascending: false }),
     supabase
       .from("branches")

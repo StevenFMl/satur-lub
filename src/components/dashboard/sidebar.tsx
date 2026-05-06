@@ -1,6 +1,11 @@
+"use client";
+
 import Link from "next/link";
+import { useState } from "react";
+import { usePathname } from "next/navigation";
 import { Logo } from "@/components/brand/logo";
 import { cn } from "@/lib/utils";
+import { Sheet } from "@/components/ui/sheet";
 
 type NavItem = {
   href: string;
@@ -175,14 +180,14 @@ const SECTIONS: NavSection[] = [
   },
 ];
 
-export function Sidebar({ activePath }: { activePath: string }) {
+function SidebarContent({ activePath, onNavigate }: { activePath: string; onNavigate?: () => void }) {
   return (
-    <aside className="hidden w-64 shrink-0 border-r border-steel-700 bg-steel-900 lg:flex lg:flex-col">
-      <div className="flex h-16 items-center border-b border-steel-700 bg-steel-900/70 px-5 top-highlight">
+    <div className="flex h-full flex-col">
+      <div className="flex h-16 shrink-0 items-center border-b border-steel-700 bg-steel-900/70 px-5 top-highlight">
         <Logo size="sm" />
       </div>
 
-      <nav className="flex-1 space-y-6 px-3 py-4">
+      <nav className="flex-1 space-y-6 overflow-y-auto px-3 py-4">
         {SECTIONS.map((section) => (
           <div key={section.title} className="space-y-1">
             <p className="px-3 pb-1 hud-readout !text-muted-foreground">
@@ -197,9 +202,10 @@ export function Sidebar({ activePath }: { activePath: string }) {
                 <Link
                   key={item.href}
                   href={item.href}
+                  onClick={onNavigate}
                   aria-current={isActive ? "page" : undefined}
                   className={cn(
-                    "group/nav flex items-center gap-3 rounded-sm border-l-2 px-3 py-2.5 font-mono text-[12px] font-semibold uppercase tracking-[0.14em]",
+                    "group/nav flex min-h-[44px] items-center gap-3 rounded-sm border-l-2 px-3 py-2.5 font-mono text-[12px] font-semibold uppercase tracking-[0.14em]",
                     "transition-all duration-150 ease-out",
                     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-safety-500 focus-visible:ring-offset-2 focus-visible:ring-offset-steel-900",
                     isActive
@@ -225,11 +231,53 @@ export function Sidebar({ activePath }: { activePath: string }) {
         ))}
       </nav>
 
-      <div className="border-t border-steel-700 px-5 py-3">
+      <div className="shrink-0 border-t border-steel-700 px-5 py-3">
         <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
           Plataforma · v0.1
         </p>
       </div>
+    </div>
+  );
+}
+
+export function Sidebar({ activePath }: { activePath: string }) {
+  return (
+    <aside className="hidden w-64 shrink-0 border-r border-steel-700 bg-steel-900 md:flex md:flex-col">
+      <SidebarContent activePath={activePath} />
     </aside>
+  );
+}
+export function MobileSidebar({ activePath }: { activePath?: string }) {
+  const [open, setOpen] = useState(false);
+  const pathname = usePathname();
+  const currentPath = activePath || pathname || "/dashboard";
+
+  return (
+    <>
+      <button
+        type="button"
+        aria-label="Abrir menú"
+        onClick={() => setOpen(true)}
+        className="grid h-11 w-11 place-items-center rounded-sm border border-steel-700 bg-steel-800 text-muted-foreground transition-colors hover:text-foreground md:hidden"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          className="h-5 w-5"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <line x1="4" x2="20" y1="12" y2="12" />
+          <line x1="4" x2="20" y1="6" y2="6" />
+          <line x1="4" x2="20" y1="18" y2="18" />
+        </svg>
+      </button>
+
+      <Sheet open={open} onClose={() => setOpen(false)} side="left" className="w-64 p-0">
+        <SidebarContent activePath={currentPath} onNavigate={() => setOpen(false)} />
+      </Sheet>
+    </>
   );
 }

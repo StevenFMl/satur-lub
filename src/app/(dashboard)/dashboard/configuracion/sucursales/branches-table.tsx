@@ -1,10 +1,13 @@
 "use client";
 
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Sheet } from "@/components/ui/sheet";
+import { DropdownMenu, DropdownItem } from "@/components/ui/dropdown-menu";
+import { toggleBranchActiveAction } from "@/actions/branches";
 import { BranchForm } from "./branch-form";
 
 export type BranchRow = {
@@ -21,9 +24,30 @@ export function BranchesTable({
   initialRows: BranchRow[];
   canManage: boolean;
 }) {
+  const router = useRouter();
   const [query, setQuery] = React.useState("");
   const [editing, setEditing] = React.useState<BranchRow | null>(null);
   const [open, setOpen] = React.useState(false);
+  const [pendingId, setPendingId] = React.useState<string | null>(null);
+
+  const onInactivate = (row: BranchRow) => {
+    if (
+      !window.confirm(
+        `¿Inactivar la sucursal "${row.branch_name}"? Las bodegas asociadas seguirán visibles, pero la sucursal desaparecerá de los selectores.`
+      )
+    )
+      return;
+    setPendingId(row.id);
+    void (async () => {
+      const res = await toggleBranchActiveAction(row.id, false);
+      setPendingId(null);
+      if (res?.error) {
+        window.alert(res.error);
+        return;
+      }
+      router.refresh();
+    })();
+  };
 
   const filtered = React.useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -103,14 +127,34 @@ export function BranchesTable({
                     </Td>
                     {canManage ? (
                       <Td className="text-right">
-                        <button
-                          type="button"
-                          onClick={() => openEdit(r)}
-                          className="inline-flex items-center gap-1.5 rounded-sm border border-steel-700 bg-steel-800 px-3 py-1.5 font-mono text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground transition-colors hover:border-safety-500/60 hover:text-safety-500"
+                        <DropdownMenu
+                          triggerAriaLabel={`Acciones para ${r.branch_name}`}
+                          disabled={pendingId === r.id}
                         >
-                          <PencilIcon className="h-3.5 w-3.5" />
-                          Editar
-                        </button>
+                          {(close) => (
+                            <>
+                              <DropdownItem
+                                onClick={() => {
+                                  close();
+                                  openEdit(r);
+                                }}
+                              >
+                                <PencilIcon className="h-3.5 w-3.5" />
+                                Editar
+                              </DropdownItem>
+                              <DropdownItem
+                                destructive
+                                onClick={() => {
+                                  close();
+                                  onInactivate(r);
+                                }}
+                              >
+                                <TrashIcon className="h-3.5 w-3.5" />
+                                Inactivar
+                              </DropdownItem>
+                            </>
+                          )}
+                        </DropdownMenu>
                       </Td>
                     ) : null}
                   </tr>
@@ -193,6 +237,16 @@ function PencilIcon({ className }: { className?: string }) {
     <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <path d="M12 20h9" />
       <path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+    </svg>
+  );
+}
+
+function TrashIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M3 6h18" />
+      <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+      <path d="M6 6l1 14a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-14" />
     </svg>
   );
 }

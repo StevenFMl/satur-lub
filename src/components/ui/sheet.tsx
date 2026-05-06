@@ -3,6 +3,8 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
+import { createPortal } from "react-dom";
+
 export interface SheetProps {
   open: boolean;
   onClose: () => void;
@@ -22,6 +24,12 @@ export function Sheet({
   children,
   className,
 }: SheetProps) {
+  const [mounted, setMounted] = React.useState(false);
+
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
+
   React.useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -36,9 +44,9 @@ export function Sheet({
     };
   }, [open, onClose]);
 
-  if (!open) return null;
+  if (!open || !mounted) return null;
 
-  return (
+  return createPortal(
     <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex">
       <button
         type="button"
@@ -93,6 +101,7 @@ export function Sheet({
         )}
         <div className="flex-1 overflow-y-auto">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

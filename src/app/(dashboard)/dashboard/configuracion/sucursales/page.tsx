@@ -14,9 +14,11 @@ export default async function SucursalesPage() {
 
   const supabase = await createClient();
 
+  // Solo activas — los inactivados (soft-delete) desaparecen de la UI.
   const { data, error } = await supabase
     .from("branches")
     .select("id, branch_name, is_active, created_at")
+    .eq("is_active", true)
     .order("created_at", { ascending: false });
 
   if (error) {

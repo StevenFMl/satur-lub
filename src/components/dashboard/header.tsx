@@ -1,4 +1,5 @@
 import { logoutAction } from "@/actions/auth";
+import { MobileSidebar } from "./sidebar";
 
 export function DashboardHeader({
   businessName,
@@ -20,12 +21,15 @@ export function DashboardHeader({
     .toUpperCase();
 
   return (
-    <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b border-steel-700 bg-steel-900/80 px-6 backdrop-blur top-highlight">
-      <div className="min-w-0">
-        <p className="hud-readout">Negocio · activo</p>
-        <h1 className="truncate font-display text-[18px] leading-none tracking-[0.04em] text-foreground">
-          {businessName}
-        </h1>
+    <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b border-steel-700 bg-steel-900/80 px-4 md:px-6 backdrop-blur top-highlight">
+      <div className="flex items-center gap-3">
+        <MobileSidebar />
+        <div className="min-w-0">
+          <p className="hud-readout hidden md:block">Negocio · activo</p>
+          <h1 className="truncate font-display text-[18px] leading-none tracking-[0.04em] text-foreground">
+            {businessName}
+          </h1>
+        </div>
       </div>
 
       <div className="flex items-center gap-4">

@@ -1,19 +1,57 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import {
   getActiveMembership,
   getPlanDisplayName,
 } from "@/lib/supabase/membership";
+import { createClient } from "@/lib/supabase/server";
 import { daysBetween, formatDate } from "@/lib/utils";
 
 export const metadata: Metadata = {
   title: "Panel de control",
 };
+export const dynamic = "force-dynamic";
+
+type LowStockRow = {
+  id: string;
+  product_id: string;
+  warehouse_id: string;
+  quantity_on_hand: number | string | null;
+  product: { id: string; name: string; sku: string; unit: string; is_active: boolean } | null;
+  warehouse: { id: string; name: string } | null;
+};
+
+const qtyFmt = new Intl.NumberFormat("es-EC", {
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 2,
+});
+
+const LOW_STOCK_THRESHOLD = 5;
 
 export default async function DashboardPage() {
   const { user, membership } = await getActiveMembership();
   if (!user) redirect("/login");
   if (!membership) redirect("/onboarding");
+
+  const supabase = await createClient();
+  // Top-5 productos con menor stock — apunta a la decisión más urgente del
+  // dueño al entrar al sistema: "¿qué tengo que volver a comprar hoy?".
+  // Sobre-fetcheamos para descartar productos inactivos client-side (filtrar
+  // sobre el embed en PostgREST es frágil con FKs compuestas).
+  const { data: lowRaw } = await supabase
+    .from("inventory_balances")
+    .select(
+      `id, product_id, warehouse_id, quantity_on_hand,
+       product:products(id, name, sku, unit, is_active),
+       warehouse:warehouses(id, name)`
+    )
+    .order("quantity_on_hand", { ascending: true })
+    .limit(20);
+
+  const lowStock = ((lowRaw ?? []) as unknown as LowStockRow[])
+    .filter((r) => r.product?.is_active !== false)
+    .slice(0, 5);
 
   const tenant = membership.tenants;
 
@@ -75,6 +113,74 @@ export default async function DashboardPage() {
             periodEnd ? `Vence ${formatDate(periodEnd)}` : "Sin vencimiento"
           }
         />
+      </section>
+
+      {/* Stock bajo · Top 5 */}
+      <section className="panel rounded-sm">
+        <header className="top-highlight flex items-center justify-between border-b-2 border-steel-700 bg-steel-900/70 px-5 py-4">
+          <div className="flex items-center gap-3">
+            <span aria-hidden className="hazard-stripe h-3 w-3" />
+            <h3 className="font-display text-[18px] leading-none tracking-[0.04em] text-foreground">
+              STOCK BAJO · TOP 5
+            </h3>
+          </div>
+          <Link
+            href="/dashboard/inventario/stock"
+            className="font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground transition-colors hover:text-safety-500"
+          >
+            Ver todo →
+          </Link>
+        </header>
+        {lowStock.length === 0 ? (
+          <div className="px-5 py-8 text-center text-[13px] text-muted-foreground">
+            Sin existencias registradas. Recibe una compra para empezar a
+            monitorear el stock.
+          </div>
+        ) : (
+          <ul className="divide-y divide-steel-800">
+            {lowStock.map((r) => {
+              const qty = Number(r.quantity_on_hand ?? 0);
+              const isCritical = qty <= LOW_STOCK_THRESHOLD;
+              return (
+                <li
+                  key={r.id}
+                  className="flex items-center gap-4 px-5 py-3 transition-colors hover:bg-steel-900/50"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-semibold text-foreground">
+                      {r.product?.name ?? "—"}
+                    </p>
+                    <p className="mt-0.5 truncate font-mono text-[11px] tabular-nums text-muted-foreground">
+                      {r.product?.sku ?? "—"}
+                      {r.warehouse?.name ? ` · ${r.warehouse.name}` : ""}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p
+                      className={
+                        "font-mono text-[18px] font-bold leading-none tabular-nums " +
+                        (isCritical ? "text-red-300" : "text-foreground")
+                      }
+                    >
+                      {qtyFmt.format(qty)}
+                    </p>
+                    <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                      {r.product?.unit ?? "u."}
+                    </p>
+                  </div>
+                  {r.product_id ? (
+                    <Link
+                      href={`/dashboard/inventario/movimientos?product_id=${r.product_id}`}
+                      className="shrink-0 rounded-sm border border-steel-700 bg-steel-800 px-3 py-1.5 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground transition-colors hover:border-safety-500/60 hover:text-safety-500"
+                    >
+                      Kárdex
+                    </Link>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </section>
 
       {/* Próximos pasos + cuenta */}

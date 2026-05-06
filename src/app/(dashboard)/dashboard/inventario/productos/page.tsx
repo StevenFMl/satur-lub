@@ -15,9 +15,11 @@ export default async function ProductosPage() {
   const supabase = await createClient();
 
   // RLS aísla por tenant; aquí solo orden y proyección mínima necesaria.
+  // Solo activos — los inactivados (soft-delete) desaparecen de la UI.
   const { data } = await supabase
     .from("products")
     .select("id, name, sku, unit, cost_price, product_kind, is_active, created_at")
+    .eq("is_active", true)
     .order("created_at", { ascending: false });
 
   const rows = ((data ?? []) as unknown) as ProductRow[];
