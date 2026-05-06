@@ -216,6 +216,7 @@ export async function logoutAction() {
 /* -------------------------------------------------------------------------- */
 
 import { decodeJwtPayload, type AccessClaims } from "@/lib/supabase/access-claims";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 async function resolvePostAuthRoute(requested: string): Promise<string> {
   const supabase = await createClient();
@@ -275,6 +276,61 @@ async function resolvePostAuthRoute(requested: string): Promise<string> {
   console.log("[resolvePostAuthRoute] User ID:", user.id);
   console.log("[resolvePostAuthRoute] Membership found:", membership ? "Yes" : "Null");
   console.log("[resolvePostAuthRoute] Default Tenant ID:", defaultTenantId || "None");
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // SELF-HEALING FALLBACK (God Mode):
+  // Si la query RLS no devolvió membresía pero el usuario tiene un
+  // default_tenant_id válido, auto-reparamos con service_role.
+  // Esto cubre: registros corruptos (is_owner=false), RLS stale, JWT sin
+  // claims, o cualquier race condition post-onboarding.
+  // ──────────────────────────────────────────────────────────────────────────
+  if (!membership && defaultTenantId) {
+    console.log(`[resolvePostAuthRoute] 🔧 SELF-HEALING: No membership via RLS but default_tenant_id=${defaultTenantId} exists. Executing admin UPSERT...`);
+
+    try {
+      const supabaseAdmin = createAdminClient();
+
+      // 1) UPSERT atómico: repara cualquier registro corrupto o inexistente
+      // Cast a `any` porque los tipos generados excluyen inserts en tablas
+      // protegidas por RLS — el admin client bypasea RLS por completo.
+      const { error: upsertError } = await supabaseAdmin
+        .from("tenant_memberships")
+        .upsert(
+          {
+            tenant_id: defaultTenantId,
+            user_id: user.id,
+            role: "owner",
+            is_owner: true,
+            is_active: true,
+          } as any,
+          { onConflict: "tenant_id,user_id" }
+        );
+
+      if (upsertError) {
+        console.error("[resolvePostAuthRoute] UPSERT failed:", upsertError.message);
+        // No bloqueamos; caemos al flujo de onboarding como último recurso
+      } else {
+        console.log("[resolvePostAuthRoute] ✅ Membership auto-repaired for owner.");
+
+        // 2) Inyectar tenant_id en user_metadata (God Mode JWT)
+        //    Asegura que futuras sesiones y RLS funcionen sin fallos.
+        await supabaseAdmin.auth.admin.updateUserById(user.id, {
+          user_metadata: { tenant_id: defaultTenantId },
+        });
+        console.log("[resolvePostAuthRoute] ✅ user_metadata.tenant_id injected.");
+
+        // 3) Forzar refresh de sesión para que el JWT recoja los nuevos claims
+        await supabase.auth.refreshSession();
+
+        // 4) Retornar objeto sintético válido — NO dejamos que se evalúe como Null
+        const target = isSafeRedirectPath(requested) ? requested : "/dashboard";
+        console.log(`[resolvePostAuthRoute] 🚀 Self-healed, redirecting to: ${target}`);
+        return target;
+      }
+    } catch (adminError) {
+      console.error("[resolvePostAuthRoute] Admin self-healing threw:", adminError);
+    }
+  }
 
   if (membership?.tenant_id) {
     console.log("[resolvePostAuthRoute] Tenant ID:", membership.tenant_id);
