@@ -59,34 +59,11 @@ const SECTIONS: NavSection[] = [
           </svg>
         ),
       },
-      {
-        href: "/dashboard/compras/nueva",
-        label: "Compras",
-        icon: (
-          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z" />
-            <path d="M3 6h18" />
-            <path d="M16 10a4 4 0 0 1-8 0" />
-          </svg>
-        ),
-      },
     ],
   },
   {
     title: "Inventario",
     items: [
-      {
-        href: "/dashboard/inventario/stock",
-        label: "Existencias",
-        icon: (
-          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M3 3v18h18" />
-            <rect x="7" y="10" width="3" height="8" rx="0.5" />
-            <rect x="12" y="6" width="3" height="12" rx="0.5" />
-            <rect x="17" y="3" width="3" height="15" rx="0.5" />
-          </svg>
-        ),
-      },
       {
         href: "/dashboard/inventario/bodegas",
         label: "Bodegas",
@@ -105,6 +82,41 @@ const SECTIONS: NavSection[] = [
             <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
             <path d="M3.27 6.96 12 12.01l8.73-5.05" />
             <path d="M12 22.08V12" />
+          </svg>
+        ),
+      },
+      {
+        href: "/dashboard/inventario/stock",
+        label: "Existencias",
+        icon: (
+          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 3v18h18" />
+            <rect x="7" y="10" width="3" height="8" rx="0.5" />
+            <rect x="12" y="6" width="3" height="12" rx="0.5" />
+            <rect x="17" y="3" width="3" height="15" rx="0.5" />
+          </svg>
+        ),
+      },
+      {
+        href: "/dashboard/inventario/compras",
+        label: "Compras",
+        icon: (
+          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" />
+            <rect x="9" y="3" width="6" height="4" rx="1" />
+            <path d="M9 12h6" />
+            <path d="M9 16h6" />
+          </svg>
+        ),
+      },
+      {
+        href: "/dashboard/compras/nueva",
+        label: "Nueva Compra",
+        icon: (
+          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z" />
+            <path d="M3 6h18" />
+            <path d="M16 10a4 4 0 0 1-8 0" />
           </svg>
         ),
       },

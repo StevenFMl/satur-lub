@@ -96,9 +96,54 @@ export async function receivePurchaseAction(
 
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/compras");
-  revalidatePath("/dashboard/inventory");
+  revalidatePath("/dashboard/inventario");
   return {
     ok: true,
     poId: typeof poId === "string" ? poId : undefined,
   };
+}
+
+/* ------------------------------------------------------------------ */
+/* Anulación de Orden de Compra                                       */
+/* ------------------------------------------------------------------ */
+
+export type CancelState = {
+  ok?: boolean;
+  error?: string;
+} | null;
+
+export async function cancelPurchaseAction(
+  poId: string
+): Promise<CancelState> {
+  const { user, membership } = await getActiveMembership();
+  if (!user || !membership) return { error: "Sesión expirada." };
+
+  if (membership.role !== "owner" && membership.role !== "admin") {
+    return { error: "No tienes permisos para anular compras." };
+  }
+
+  const supabase = await createClient();
+
+  const { error } = await supabase.rpc("cancel_purchase_order", {
+    p_po_id: poId,
+  } as never);
+
+  if (error) {
+    console.error("cancel_purchase_order:", error);
+    const msg = error.message ?? "";
+    if (
+      msg.startsWith("Orden") ||
+      msg.startsWith("Solo") ||
+      msg.startsWith("Sin tenant") ||
+      msg.startsWith("Usuario")
+    ) {
+      return { error: msg };
+    }
+    return { error: "No se pudo anular la compra." };
+  }
+
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/compras");
+  revalidatePath("/dashboard/inventario");
+  return { ok: true };
 }
