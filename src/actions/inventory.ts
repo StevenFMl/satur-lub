@@ -90,3 +90,41 @@ export async function upsertWarehouseAction(
   revalidatePath("/dashboard/compras/nueva");
   return { ok: true };
 }
+
+/* ------------------------------------------------------------------ */
+/* Borrado lógico (soft-delete)                                       */
+/* ------------------------------------------------------------------ */
+
+export type ToggleState = { ok?: boolean; error?: string } | null;
+
+export async function toggleWarehouseActiveAction(
+  id: string,
+  isActive: boolean
+): Promise<ToggleState> {
+  if (typeof id !== "string" || id.length === 0) {
+    return { error: "ID inválido." };
+  }
+
+  const { user, membership } = await getActiveMembership();
+  if (!user || !membership) return { error: "Sesión expirada." };
+
+  if (membership.role !== "owner" && membership.role !== "admin") {
+    return { error: "No tienes permisos para inactivar bodegas." };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("warehouses")
+    .update({ is_active: isActive })
+    .eq("id", id)
+    .eq("tenant_id", membership.tenant_id);
+
+  if (error) {
+    console.error("toggleWarehouseActiveAction:", error);
+    return { error: "No se pudo cambiar el estado de la bodega." };
+  }
+
+  revalidatePath("/dashboard/inventario/bodegas");
+  revalidatePath("/dashboard/compras/nueva");
+  return { ok: true };
+}

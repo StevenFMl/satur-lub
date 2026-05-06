@@ -12,12 +12,14 @@ export default async function ProveedoresPage() {
   if (!membership) redirect("/onboarding");
 
   const supabase = await createClient();
+  // Solo activos — los inactivados (soft-delete) desaparecen de la UI.
   const { data } = await supabase
     .from("business_partners")
     .select(
       "id, full_name, document_type, document_number, email, phone, is_active, created_at"
     )
     .eq("partner_type", "supplier")
+    .eq("is_active", true)
     .order("created_at", { ascending: false });
 
   const rows = ((data ?? []) as unknown) as SupplierRow[];

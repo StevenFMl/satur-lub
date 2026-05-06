@@ -126,3 +126,41 @@ export async function upsertBranchAction(
   revalidatePath("/dashboard/inventario/bodegas");
   return { ok: true };
 }
+
+/* ------------------------------------------------------------------ */
+/* Borrado lógico (soft-delete)                                       */
+/* ------------------------------------------------------------------ */
+
+export type ToggleState = { ok?: boolean; error?: string } | null;
+
+export async function toggleBranchActiveAction(
+  id: string,
+  isActive: boolean
+): Promise<ToggleState> {
+  if (typeof id !== "string" || id.length === 0) {
+    return { error: "ID inválido." };
+  }
+
+  const { user, membership } = await getActiveMembership();
+  if (!user || !membership) return { error: "Sesión expirada." };
+
+  if (membership.role !== "owner" && membership.role !== "admin") {
+    return { error: "No tienes permisos para inactivar sucursales." };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("branches")
+    .update({ is_active: isActive })
+    .eq("id", id)
+    .eq("tenant_id", membership.tenant_id);
+
+  if (error) {
+    console.error("toggleBranchActiveAction:", error);
+    return { error: "No se pudo cambiar el estado de la sucursal." };
+  }
+
+  revalidatePath("/dashboard/configuracion/sucursales");
+  revalidatePath("/dashboard/inventario/bodegas");
+  return { ok: true };
+}

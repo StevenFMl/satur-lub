@@ -86,3 +86,47 @@ export async function upsertSupplierAction(
   revalidatePath("/dashboard/compras/nueva");
   return { ok: true };
 }
+
+/* ------------------------------------------------------------------ */
+/* Borrado lógico (soft-delete)                                       */
+/* ------------------------------------------------------------------ */
+
+export type ToggleState = { ok?: boolean; error?: string } | null;
+
+/**
+ * Cambia `is_active` de un proveedor. Filtros server-side por `tenant_id`
+ * (defensa en profundidad sobre la RLS) y por `partner_type='supplier'` para
+ * evitar inactivar otros tipos de partners por error.
+ */
+export async function toggleSupplierActiveAction(
+  id: string,
+  isActive: boolean
+): Promise<ToggleState> {
+  if (typeof id !== "string" || id.length === 0) {
+    return { error: "ID inválido." };
+  }
+
+  const { user, membership } = await getActiveMembership();
+  if (!user || !membership) return { error: "Sesión expirada." };
+
+  if (membership.role !== "owner" && membership.role !== "admin") {
+    return { error: "No tienes permisos para inactivar proveedores." };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("business_partners")
+    .update({ is_active: isActive })
+    .eq("id", id)
+    .eq("tenant_id", membership.tenant_id)
+    .eq("partner_type", "supplier");
+
+  if (error) {
+    console.error("toggleSupplierActiveAction:", error);
+    return { error: "No se pudo cambiar el estado del proveedor." };
+  }
+
+  revalidatePath("/dashboard/proveedores");
+  revalidatePath("/dashboard/compras/nueva");
+  return { ok: true };
+}

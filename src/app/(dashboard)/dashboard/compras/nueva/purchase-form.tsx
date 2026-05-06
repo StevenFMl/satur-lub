@@ -139,7 +139,25 @@ export function PurchaseForm({
   const errors = state?.fieldErrors ?? {};
   const noSuppliers = suppliers.length === 0;
   const noProducts = products.length === 0;
-  const noWarehouse = !warehouseId;
+  const noWarehouses = warehouses.length === 0;
+  const noWarehouseSelected = !warehouseId;
+  // Un ERP no permite transacciones huérfanas: si falta cualquier
+  // dependencia maestra (proveedores, productos o bodegas activas), bloqueamos
+  // todo el formulario y enumeramos qué crear primero.
+  const blocked = noSuppliers || noProducts || noWarehouses;
+  const missing: { label: string; href: string }[] = [];
+  if (noSuppliers)
+    missing.push({ label: "un Proveedor", href: "/dashboard/proveedores" });
+  if (noProducts)
+    missing.push({
+      label: "un Producto",
+      href: "/dashboard/inventario/productos",
+    });
+  if (noWarehouses)
+    missing.push({
+      label: "una Bodega",
+      href: "/dashboard/inventario/bodegas",
+    });
 
   return (
     <form action={formAction} className="space-y-8">
@@ -150,6 +168,27 @@ export function PurchaseForm({
         name="payment_due_date"
         value={paymentMethod === "credit" ? dueDate : ""}
       />
+
+      {blocked ? (
+        <Alert tone="error">
+          <strong className="block font-semibold">
+            No puedes registrar compras todavía.
+          </strong>
+          <span className="mt-1 block text-[12px] leading-5">
+            Para recibir mercancía necesitas crear:
+          </span>
+          <ul className="mt-2 space-y-1 text-[12.5px] leading-5">
+            {missing.map((m) => (
+              <li key={m.href}>
+                <span className="mr-1">•</span>
+                <a href={m.href} className="underline hover:text-red-200">
+                  Crear {m.label} →
+                </a>
+              </li>
+            ))}
+          </ul>
+        </Alert>
+      ) : null}
 
       {/* Cabecera */}
       <section className="panel rounded-sm">
@@ -204,7 +243,7 @@ export function PurchaseForm({
               ))}
             </Select>
             <FieldError fieldId="warehouse_id" message={errors.warehouse_id} />
-            {noWarehouse ? (
+            {!noWarehouses && noWarehouseSelected ? (
               <p className="field-hint">
                 Selecciona una bodega para actualizar el stock al recibir.
               </p>
@@ -437,7 +476,7 @@ export function PurchaseForm({
             type="submit"
             size="xl"
             loading={pending}
-            disabled={noSuppliers || noProducts || pending}
+            disabled={blocked || pending}
           >
             {pending ? "Registrando…" : "Recibir mercancía"}
           </Button>
