@@ -10,6 +10,7 @@ import {
 } from "./purchase-form";
 
 export const metadata: Metadata = { title: "Nueva compra · Recepción" };
+export const dynamic = "force-dynamic";
 
 export default async function NuevaCompraPage() {
   const { user, membership } = await getActiveMembership();
@@ -28,7 +29,7 @@ export default async function NuevaCompraPage() {
       .order("full_name"),
     supabase
       .from("products")
-      .select("id, sku, name, cost_price")
+      .select("id, sku, name, unit, cost_price")
       .eq("is_active", true)
       .order("name")
       .limit(500),

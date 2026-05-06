@@ -24,6 +24,7 @@ export type LookupProduct = {
   id: string;
   sku: string;
   name: string;
+  unit: string;
   cost_price: number | null;
 };
 export type LookupWarehouse = { id: string; name: string };
@@ -35,6 +36,7 @@ type Row = {
   product_id: string;
   quantity: string;
   unit_cost: string;
+  unit: string;
 };
 
 const newRow = (): Row => ({
@@ -45,6 +47,7 @@ const newRow = (): Row => ({
   product_id: "",
   quantity: "1",
   unit_cost: "0",
+  unit: "unidad",
 });
 
 const moneyFmt = new Intl.NumberFormat("es-EC", {
@@ -124,6 +127,7 @@ export function PurchaseForm({
         product?.cost_price != null
           ? String(product.cost_price)
           : "0",
+      unit: product?.unit ?? "unidad",
     });
   };
 
@@ -265,18 +269,23 @@ export function PurchaseForm({
                         </Select>
                       </td>
                       <td className="px-4 py-3">
-                        <Input
-                          type="number"
-                          min="0.01"
-                          step="0.01"
-                          mono
-                          className="text-right"
-                          value={r.quantity}
-                          onChange={(e) =>
-                            updateRow(r.uid, { quantity: e.target.value })
-                          }
-                          aria-label="Cantidad"
-                        />
+                        <div className="flex items-center gap-2">
+                          <Input
+                            type="number"
+                            min="0.01"
+                            step="0.01"
+                            mono
+                            className="text-right"
+                            value={r.quantity}
+                            onChange={(e) =>
+                              updateRow(r.uid, { quantity: e.target.value })
+                            }
+                            aria-label="Cantidad"
+                          />
+                          <span className="shrink-0 font-mono text-[11px] font-bold uppercase tracking-[0.1em] text-muted-foreground">
+                            {r.unit}
+                          </span>
+                        </div>
                       </td>
                       <td className="px-4 py-3">
                         <Input

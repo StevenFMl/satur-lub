@@ -23,7 +23,7 @@ export default async function BodegasPage() {
     supabase
       .from("warehouses")
       .select(
-        "id, name, branch_id, is_active, created_at, branches:branch_id(branch_name)"
+        "id, name, branch_id, is_active, created_at, branches(branch_name)"
       )
       .order("created_at", { ascending: false }),
     supabase

@@ -16,14 +16,16 @@ export default async function StockPage() {
 
   // JOIN inventory_balances con products y warehouses.
   // RLS en inventory_balances filtra por tenant automáticamente.
+  // NOTA: usamos el nombre de la tabla (no de la columna FK) para evitar PGRST200
+  // con foreign keys compuestas (tenant_id, product_id).
   const { data, error } = await supabase
     .from("inventory_balances")
     .select(
       `
       id,
       quantity_on_hand,
-      products:product_id ( name, sku, unit ),
-      warehouses:warehouse_id ( name )
+      products ( name, sku, unit ),
+      warehouses ( name )
       `
     )
     .order("quantity_on_hand", { ascending: true });

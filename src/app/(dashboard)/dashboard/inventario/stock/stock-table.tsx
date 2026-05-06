@@ -35,7 +35,9 @@ export function StockTable({ initialRows }: { initialRows: StockRow[] }) {
   }, [initialRows, query]);
 
   const lowCount = React.useMemo(
-    () => initialRows.filter((r) => r.quantity_on_hand <= LOW_STOCK_THRESHOLD).length,
+    () =>
+      initialRows.filter((r) => r.quantity_on_hand <= LOW_STOCK_THRESHOLD)
+        .length,
     [initialRows]
   );
 
@@ -67,11 +69,11 @@ export function StockTable({ initialRows }: { initialRows: StockRow[] }) {
           <table className="w-full text-left">
             <thead className="border-b-2 border-steel-700 bg-steel-900/70">
               <tr>
-                <Th>Bodega</Th>
                 <Th>Producto</Th>
                 <Th>SKU</Th>
+                <Th className="text-right">Cantidad</Th>
                 <Th>Unidad</Th>
-                <Th className="text-right">Cantidad en Stock</Th>
+                <Th>Bodega</Th>
                 <Th>Estado</Th>
               </tr>
             </thead>
@@ -96,14 +98,6 @@ export function StockTable({ initialRows }: { initialRows: StockRow[] }) {
                       className="border-b border-steel-800 transition-colors hover:bg-steel-900/50"
                     >
                       <Td>
-                        <div className="flex items-center gap-2">
-                          <WarehouseIcon className="h-3.5 w-3.5 text-muted-foreground" />
-                          <span className="font-semibold text-foreground">
-                            {r.warehouse_name}
-                          </span>
-                        </div>
-                      </Td>
-                      <Td>
                         <span className="font-semibold text-foreground">
                           {r.product_name}
                         </span>
@@ -111,11 +105,6 @@ export function StockTable({ initialRows }: { initialRows: StockRow[] }) {
                       <Td>
                         <span className="font-mono text-[12.5px] tabular-nums text-muted-foreground">
                           {r.sku}
-                        </span>
-                      </Td>
-                      <Td>
-                        <span className="font-mono text-[12px] uppercase tracking-[0.1em] text-muted-foreground">
-                          {r.unit}
                         </span>
                       </Td>
                       <Td className="text-right">
@@ -127,6 +116,19 @@ export function StockTable({ initialRows }: { initialRows: StockRow[] }) {
                         >
                           {numberFmt.format(r.quantity_on_hand)}
                         </span>
+                      </Td>
+                      <Td>
+                        <span className="font-mono text-[12px] capitalize tracking-[0.06em] text-muted-foreground">
+                          {r.unit}
+                        </span>
+                      </Td>
+                      <Td>
+                        <div className="flex items-center gap-2">
+                          <WarehouseIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                          <span className="text-[13px] text-foreground">
+                            {r.warehouse_name}
+                          </span>
+                        </div>
                       </Td>
                       <Td>
                         {isLow ? (
