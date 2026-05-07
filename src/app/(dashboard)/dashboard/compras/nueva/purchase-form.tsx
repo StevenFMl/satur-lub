@@ -23,6 +23,7 @@ import {
   toFixedStr,
   toNum,
   toMoney,
+  toUnitPrice,
 } from "@/lib/math";
 import { QuickCreateProductDialog } from "./quick-create-product-dialog";
 
@@ -61,10 +62,21 @@ const newRow = (): Row => ({
   unit: "unidad",
 });
 
+// Totales (subtotal, IVA, total factura): 2 decimales fijos.
 const moneyFmt = new Intl.NumberFormat("es-EC", {
   style: "currency",
   currency: "USD",
   minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+// Costos unitarios: hasta 4 decimales (tolera fracciones de centavo).
+// minimumFractionDigits=4 mantiene la alineación visual columna a columna.
+const unitCostFmt = new Intl.NumberFormat("es-EC", {
+  style: "currency",
+  currency: "USD",
+  minimumFractionDigits: 4,
+  maximumFractionDigits: 4,
 });
 
 export function PurchaseForm({
@@ -93,10 +105,12 @@ export function PurchaseForm({
   const [rows, setRows] = useState<Row[]>([newRow()]);
 
   // Track filas cuyo costo total fue editado manualmente para evitar
-  // sobrescribirlas al cambiar cantidad.
+  // sobrescribirlas al cambiar cantidad. Es la pieza clave del cálculo
+  // bidireccional: si el usuario ajusta el total (ej. para cuadrar con la
+  // factura del proveedor), respetamos ese valor y derivamos el unitario.
   const manualTotalEdited = useRef(new Set<string>());
 
-  // IVA selector (15% default)
+  // IVA selector (15% default Ecuador 2024+).
   const [taxRate, setTaxRate] = useState<number>(15);
 
   // Productos locales: se alimenta con la prop SSR pero se extiende con
@@ -129,12 +143,10 @@ export function PurchaseForm({
       rows
         .filter((r) => r.product_id)
         .map((r) => {
-          const qStr = r.quantity;
-          const tcStr = r.total_cost;
-          const unitCostBig = unitCostFromTotal(tcStr, qStr);
+          const unitCostBig = unitCostFromTotal(r.total_cost, r.quantity);
           return {
             product_id: r.product_id,
-            quantity: Number(qStr) || 0,
+            quantity: Number(r.quantity) || 0,
             unit_cost: Number(toFixedStr(unitCostBig, 4)),
           };
         })
@@ -171,13 +183,10 @@ export function PurchaseForm({
 
   const onProductCreated = useCallback(
     (product: LookupProduct) => {
-      // Agregar el producto a la lista local
       setLocalProducts((prev) => {
-        // Evitar duplicados
         if (prev.some((p) => p.id === product.id)) return prev;
         return [...prev, product].sort((a, b) => a.name.localeCompare(b.name));
       });
-      // Seleccionar el producto en la fila activa
       if (activeRowUid) {
         const row = rows.find((r) => r.uid === activeRowUid);
         const qty = row ? row.quantity : "1";
@@ -194,9 +203,11 @@ export function PurchaseForm({
     [activeRowUid, rows]
   );
 
+  // Cálculo A: usuario cambia cantidad → si NO ha tocado el total manualmente,
+  // recalculamos total = qty × precio_base. Si ya lo tocó, conservamos el total
+  // y el costo unitario derivado se recalcula automáticamente al renderizar.
   const onQuantityChange = (uid: string, qStr: string) => {
     updateRow(uid, { quantity: qStr });
-    // Auto-fill total_cost only if user hasn't edited it manually
     const row = rows.find((r) => r.uid === uid);
     if (!row) return;
     const product = productById.get(row.product_id);
@@ -206,6 +217,9 @@ export function PurchaseForm({
     updateRow(uid, { total_cost: tc });
   };
 
+  // Cálculo B: usuario edita el total manualmente (ej. cuadrar 44.76 → 44.73
+  // para que coincida con la factura física del proveedor). Marcamos la fila
+  // como "manual" y dejamos que el render derive el costo unitario real.
   const onTotalCostChange = (uid: string, value: string) => {
     manualTotalEdited.current.add(uid);
     updateRow(uid, { total_cost: value });
@@ -216,11 +230,6 @@ export function PurchaseForm({
   const noProducts = localProducts.length === 0;
   const noWarehouses = warehouses.length === 0;
   const noWarehouseSelected = !warehouseId;
-  // Un ERP no permite transacciones huérfanas: si falta cualquier
-  // dependencia maestra (proveedores o bodegas activas), bloqueamos
-  // todo el formulario y enumeramos qué crear primero.
-  // Nota: ya no bloqueamos por productos porque el usuario puede
-  // crearlos inline con el botón "Crear Producto Rápido".
   const blocked = noSuppliers || noWarehouses;
   const missing: { label: string; href: string }[] = [];
   if (noSuppliers)
@@ -360,20 +369,21 @@ export function PurchaseForm({
               <thead className="border-b border-steel-800 bg-steel-950/60">
                 <tr>
                   <Th>Producto</Th>
-                  <Th className="w-[220px] text-right">Cantidad / Unidad</Th>
-                  <Th className="w-[150px] text-right">Costo Total</Th>
-                  <Th className="w-[140px] text-right">Costo Unit.</Th>
+                  <Th className="w-[220px]">Cantidad / Unidad</Th>
+                  <Th className="w-[160px] text-right">Costo Unitario</Th>
+                  <Th className="w-[160px] text-right">Costo Total</Th>
                   <Th className="w-[60px]"> </Th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((r) => {
-                  const qStr = r.quantity;
-                  const tcStr = r.total_cost;
-                  const unitCostBig = unitCostFromTotal(tcStr, qStr);
+                  // Costo unitario derivado: 4 decimales. Es READ-ONLY en la
+                  // UI — la fuente de verdad editable es total_cost.
+                  const unitCostBig = unitCostFromTotal(r.total_cost, r.quantity);
+                  const isManual = manualTotalEdited.current.has(r.uid);
                   return (
                     <tr key={r.uid} className="border-b border-steel-800">
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 align-top">
                         <Select
                           value={r.product_id}
                           onChange={(e) => onProductChange(r.uid, e.target.value)}
@@ -407,7 +417,7 @@ export function PurchaseForm({
                           Crear Producto Rápido
                         </button>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 align-top">
                         <div className="flex items-center gap-2">
                           <Input
                             type="text"
@@ -441,7 +451,15 @@ export function PurchaseForm({
                           </Select>
                         </div>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 align-top text-right">
+                        <span className="block font-mono text-[14px] tabular-nums text-foreground">
+                          {unitCostFmt.format(toNum(toUnitPrice(unitCostBig)))}
+                        </span>
+                        <span className="mt-0.5 block font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground/70">
+                          /{r.unit}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 align-top">
                         <Input
                           type="text"
                           inputMode="decimal"
@@ -452,16 +470,13 @@ export function PurchaseForm({
                           onChange={(e) => onTotalCostChange(r.uid, e.target.value)}
                           aria-label="Costo total de la fila"
                         />
+                        {isManual ? (
+                          <span className="mt-1 block text-right font-mono text-[10px] uppercase tracking-[0.1em] text-safety-500/80">
+                            ajuste manual
+                          </span>
+                        ) : null}
                       </td>
-                      <td className="px-4 py-3 text-right">
-                        <span className="font-mono text-[14px] tabular-nums text-muted-foreground">
-                          {moneyFmt.format(toNum(toMoney(unitCostBig)))}
-                        </span>
-                        <span className="block font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground/60">
-                          /{r.unit}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-right">
+                      <td className="px-4 py-3 align-top text-right">
                         <button
                           type="button"
                           onClick={() => removeRow(r.uid)}
@@ -514,33 +529,9 @@ export function PurchaseForm({
               </svg>
               Agregar ítem
             </Button>
-            <div className="text-right space-y-1">
-              <div>
-                <p className="hud-readout !text-muted-foreground">Subtotal</p>
-                <p className="font-display text-[20px] leading-none tracking-[0.02em] text-foreground">
-                  {moneyFmt.format(toNum(toMoney(subtotalBig)))}
-                </p>
-              </div>
-              <div className="mt-1 flex items-center justify-end gap-3">
-                <label className="text-[12px] text-muted-foreground">IVA</label>
-                <Select
-                  value={String(taxRate)}
-                  onChange={(e) => setTaxRate(Number(e.target.value))}
-                >
-                  <option value="15">15%</option>
-                  <option value="12">12%</option>
-                  <option value="0">0%</option>
-                </Select>
-              </div>
-              <div>
-                <p className="hud-readout !text-muted-foreground">Monto IVA</p>
-                <p className="font-mono text-[14px] tabular-nums text-foreground">{moneyFmt.format(toNum(toMoney(taxBig)))}</p>
-              </div>
-              <div>
-                <p className="hud-readout !text-muted-foreground">Total factura</p>
-                <p className="font-display text-[28px] leading-none tracking-[0.02em] text-safety-500">{moneyFmt.format(toNum(toMoney(grandBig)))}</p>
-              </div>
-            </div>
+            <p className="industrial-label hidden sm:block">
+              Edita el costo total para cuadrar con la factura del proveedor.
+            </p>
           </div>
 
           {errors.items ? (
@@ -548,6 +539,55 @@ export function PurchaseForm({
               <FieldError message={errors.items} />
             </div>
           ) : null}
+        </section>
+
+        {/* Resumen de factura — Card dedicada con jerarquía clara */}
+        <section className="panel rounded-sm">
+          <header className="top-highlight border-b-2 border-steel-700 bg-steel-900/70 px-6 py-4">
+            <h2 className="font-display text-[18px] tracking-[0.04em]">
+              RESUMEN DE FACTURA
+            </h2>
+          </header>
+          <div className="px-6 py-6">
+            <div className="ml-auto w-full max-w-md space-y-3">
+              <SummaryRow
+                label="Subtotal"
+                value={moneyFmt.format(toNum(toMoney(subtotalBig)))}
+              />
+
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <span className="font-mono text-[12px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                    IVA
+                  </span>
+                  <Select
+                    value={String(taxRate)}
+                    onChange={(e) => setTaxRate(Number(e.target.value))}
+                    aria-label="Tasa de IVA"
+                    className="h-9 min-w-[90px] text-[13px]"
+                  >
+                    <option value="15">15%</option>
+                    <option value="12">12%</option>
+                    <option value="0">0%</option>
+                  </Select>
+                </div>
+                <span className="font-mono text-[15px] tabular-nums text-foreground">
+                  {moneyFmt.format(toNum(toMoney(taxBig)))}
+                </span>
+              </div>
+
+              <div className="my-2 h-px bg-steel-700" />
+
+              <div className="flex items-baseline justify-between gap-4 pt-1">
+                <span className="font-mono text-[13px] font-bold uppercase tracking-[0.16em] text-foreground">
+                  Total Factura
+                </span>
+                <span className="font-display text-[32px] leading-none tracking-[0.02em] text-safety-500">
+                  {moneyFmt.format(toNum(toMoney(grandBig)))}
+                </span>
+              </div>
+            </div>
+          </div>
         </section>
 
         {/* Pago */}
@@ -597,22 +637,14 @@ export function PurchaseForm({
           <p className="industrial-label">
             Al enviar se registra la OC, los movimientos y se actualiza el stock en una transacción.
           </p>
-          <div className="flex items-center gap-4">
-            <div className="text-right">
-              <span className="hud-readout !text-muted-foreground">Total</span>
-              <span className="block font-display text-[24px] tracking-[0.02em] text-foreground">
-                {moneyFmt.format(toNum(toMoney(grandBig)))}
-              </span>
-            </div>
-            <Button
-              type="submit"
-              size="xl"
-              loading={pending}
-              disabled={blocked || pending}
-            >
-              {pending ? "Registrando…" : "Recibir mercancía"}
-            </Button>
-          </div>
+          <Button
+            type="submit"
+            size="xl"
+            loading={pending}
+            disabled={blocked || pending}
+          >
+            {pending ? "Registrando…" : "Recibir mercancía"}
+          </Button>
         </div>
       </form>
 
@@ -623,6 +655,19 @@ export function PurchaseForm({
         onCreated={onProductCreated}
       />
     </>
+  );
+}
+
+function SummaryRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <span className="font-mono text-[12px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+        {label}
+      </span>
+      <span className="font-mono text-[15px] tabular-nums text-foreground">
+        {value}
+      </span>
+    </div>
   );
 }
 
