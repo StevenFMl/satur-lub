@@ -26,6 +26,32 @@ export type SubscriptionStatus =
 
 export type TenantRole = "owner" | "admin" | "user";
 
+export type CustomerDocumentType =
+  | "CEDULA"
+  | "RUC"
+  | "CONSUMIDOR_FINAL"
+  | "PASAPORTE";
+
+export type PartnerType = "customer" | "supplier" | "distributor";
+
+export interface BusinessPartner {
+  id: string;
+  tenant_id: string;
+  partner_type: PartnerType;
+  document_type: CustomerDocumentType;
+  document_number: string;
+  full_name: string;
+  email: string | null;
+  phone: string | null;
+  address: Json;
+  customer_category: string;
+  loyalty_points: number;
+  metadata: Json;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface SubscriptionPlan {
   id: string;
   code: string;
@@ -143,6 +169,16 @@ export interface Database {
           role: TenantRole;
         };
         Update: Partial<TenantMembership>;
+      };
+      business_partners: {
+        Row: BusinessPartner;
+        Insert: Partial<BusinessPartner> & {
+          tenant_id: string;
+          partner_type: "supplier" | "customer";
+          document_number: string;
+          full_name: string;
+        };
+        Update: Partial<BusinessPartner>;
       };
     };
     Views: Record<string, never>;

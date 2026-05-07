@@ -331,7 +331,7 @@ export function PurchaseForm({
               <thead className="border-b border-steel-800 bg-steel-950/60">
                 <tr>
                   <Th>Producto</Th>
-                  <Th className="w-[120px] text-right">Cantidad</Th>
+                  <Th className="w-[220px] text-right">Cantidad / Unidad</Th>
                   <Th className="w-[150px] text-right">Costo Total</Th>
                   <Th className="w-[140px] text-right">Costo Unit.</Th>
                   <Th className="w-[60px]"> </Th>
@@ -389,7 +389,7 @@ export function PurchaseForm({
                             type="text"
                             inputMode="decimal"
                             mono
-                            className="text-right"
+                            className="w-[80px] shrink-0 text-right"
                             value={r.quantity}
                             onFocus={(e) => e.target.select()}
                             onChange={(e) =>
@@ -397,9 +397,26 @@ export function PurchaseForm({
                             }
                             aria-label="Cantidad"
                           />
-                          <span className="shrink-0 font-mono text-[11px] font-bold uppercase tracking-[0.1em] text-muted-foreground">
-                            {r.unit}
-                          </span>
+                          <Select
+                            value={r.unit}
+                            onChange={(e) =>
+                              updateRow(r.uid, { unit: e.target.value })
+                            }
+                            aria-label="Unidad de medida"
+                            className="min-w-[100px] text-[11px]"
+                          >
+                            <option value="unidad">Unidad</option>
+                            <option value="galón">Galón</option>
+                            <option value="medio_galon">Medio Galón</option>
+                            <option value="cuarto">Cuarto</option>
+                            <option value="litro">Litro</option>
+                            <option value="media_caneca">Media Caneca</option>
+                            <option value="caneca">Caneca</option>
+                            <option value="tambor">Tambor</option>
+                            <option value="barril">Barril</option>
+                            <option value="caja">Caja</option>
+                            <option value="paquete">Paquete</option>
+                          </Select>
                         </div>
                       </td>
                       <td className="px-4 py-3">
@@ -421,7 +438,7 @@ export function PurchaseForm({
                           {moneyFmt.format(unitCost)}
                         </span>
                         <span className="block font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground/60">
-                          /unidad
+                          /{r.unit}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right">

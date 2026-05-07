@@ -1860,5 +1860,19 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.cancel_purchase_order(uuid) FROM public;
 GRANT EXECUTE ON FUNCTION public.cancel_purchase_order(uuid) TO authenticated;
+
+-- =========================================================================
+-- J. CRM CLIENTES · FIDELIZACIÓN AUTOMOTRIZ
+-- =========================================================================
+
+-- J.1 Extender business_partners para CRM automotriz
+ALTER TABLE public.business_partners
+  ADD COLUMN IF NOT EXISTS loyalty_points integer NOT NULL DEFAULT 0;
+ALTER TABLE public.business_partners
+  ADD COLUMN IF NOT EXISTS metadata jsonb NOT NULL DEFAULT '[]'::jsonb;
+
+-- J.2 Índice para búsqueda rápida de clientes por nombre
+CREATE INDEX IF NOT EXISTS idx_partners_tenant_customer_name
+  ON public.business_partners(tenant_id, full_name)
+  WHERE partner_type = 'customer';

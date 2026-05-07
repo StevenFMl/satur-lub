@@ -36,12 +36,14 @@ export function ProductForm({ initial, onSuccess }: Props) {
   const [savedFlash, setSavedFlash] = useState(false);
   // Key para forzar re-render del formulario en modo continuo
   const [formKey, setFormKey] = useState(0);
+  const [hasProcessedSuccess, setHasProcessedSuccess] = useState(false);
 
   useEffect(() => {
-    if (!state?.ok) return;
+    if (!state?.ok || hasProcessedSuccess) return;
 
     if (keepOpen && !initial?.id) {
       // Modo continuo: resetear form, mantener Sheet abierto
+      setHasProcessedSuccess(true);
       setFormKey((k) => k + 1);
       setSavedFlash(true);
       router.refresh();
@@ -65,6 +67,9 @@ export function ProductForm({ initial, onSuccess }: Props) {
       key={formKey}
       action={formAction}
       className="flex h-full flex-col"
+      onChange={() => {
+        if (hasProcessedSuccess) setHasProcessedSuccess(false);
+      }}
     >
       {initial?.id ? (
         <input type="hidden" name="id" value={initial.id} />
@@ -150,6 +155,7 @@ export function ProductForm({ initial, onSuccess }: Props) {
             <option value="medio_galon">Medio Galón</option>
             <option value="cuarto">Cuarto</option>
             <option value="litro">Litro</option>
+            <option value="media_caneca">Media Caneca (2.5 Galones)</option>
             <option value="caneca">Caneca (5 Galones)</option>
             <option value="tambor">Tambor (55 Galones)</option>
             <option value="barril">Barril</option>
