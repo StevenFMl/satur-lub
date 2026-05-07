@@ -1883,3 +1883,16 @@ ALTER TABLE public.business_partners
 CREATE INDEX IF NOT EXISTS idx_partners_tenant_customer_name
   ON public.business_partners(tenant_id, full_name)
   WHERE partner_type = 'customer';
+  -- 1. Añadir el campo faltante al encabezado de compras
+ALTER TABLE public.purchase_orders 
+  ADD COLUMN IF NOT EXISTS tax_rate numeric(5,2) DEFAULT 0;
+
+-- 2. Corregir precisión para ver costos como 0.0223 (cambiar de numeric(12,2) a numeric(12,4))
+ALTER TABLE public.products 
+  ALTER COLUMN cost_price TYPE numeric(12,4);
+
+ALTER TABLE public.purchase_order_items 
+  ALTER COLUMN unit_cost TYPE numeric(12,4);
+
+ALTER TABLE public.inventory_movements 
+  ALTER COLUMN unit_cost TYPE numeric(12,4);

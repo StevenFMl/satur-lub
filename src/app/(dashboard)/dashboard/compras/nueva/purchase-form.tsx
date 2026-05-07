@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useActionState, useEffect, useMemo, useState, useCallback } from "react";
+import { useActionState, useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,16 @@ import {
   receivePurchaseAction,
   type PurchaseState,
 } from "@/actions/purchases";
+import {
+  lineTotal,
+  unitCostFromTotal,
+  sumAll,
+  taxAmount,
+  grandTotal,
+  toFixedStr,
+  toNum,
+  toMoney,
+} from "@/lib/math";
 import { QuickCreateProductDialog } from "./quick-create-product-dialog";
 
 export type LookupSupplier = {
@@ -82,6 +92,13 @@ export function PurchaseForm({
   const [dueDate, setDueDate] = useState("");
   const [rows, setRows] = useState<Row[]>([newRow()]);
 
+  // Track filas cuyo costo total fue editado manualmente para evitar
+  // sobrescribirlas al cambiar cantidad.
+  const manualTotalEdited = useRef(new Set<string>());
+
+  // IVA selector (15% default)
+  const [taxRate, setTaxRate] = useState<number>(15);
+
   // Productos locales: se alimenta con la prop SSR pero se extiende con
   // productos creados inline sin recargar la página.
   const [localProducts, setLocalProducts] = useState<LookupProduct[]>(products);
@@ -100,40 +117,29 @@ export function PurchaseForm({
     return m;
   }, [localProducts]);
 
-  // Subtotal = suma directa de total_cost de cada fila
-  const subtotal = useMemo(
-    () =>
-      rows.reduce((acc, r) => {
-        const tc = Number(r.total_cost);
-        if (!Number.isFinite(tc)) return acc;
-        return acc + tc;
-      }, 0),
-    [rows]
-  );
+  // Subtotal = suma segura de total_cost (big.js)
+  const subtotalBig = useMemo(() => sumAll(rows.map((r) => r.total_cost)), [rows]);
+  const taxBig = useMemo(() => taxAmount(subtotalBig, taxRate), [subtotalBig, taxRate]);
+  const grandBig = useMemo(() => grandTotal(subtotalBig, taxBig), [subtotalBig, taxBig]);
 
   // Serialización: el backend espera { product_id, quantity, unit_cost }
-  // El front calcula unit_cost = total_cost / quantity
-  const itemsJson = useMemo(
-    () =>
-      JSON.stringify(
-        rows
-          .filter((r) => r.product_id)
-          .map((r) => {
-            const q = Number(r.quantity);
-            const tc = Number(r.total_cost);
-            const unitCost =
-              Number.isFinite(q) && Number.isFinite(tc) && q > 0
-                ? tc / q
-                : 0;
-            return {
-              product_id: r.product_id,
-              quantity: q,
-              unit_cost: Math.round(unitCost * 10000) / 10000,
-            };
-          })
-      ),
-    [rows]
-  );
+  // unit_cost se calcula con precisión y redondeo a 4 decimales.
+  const itemsJson = useMemo(() => {
+    return JSON.stringify(
+      rows
+        .filter((r) => r.product_id)
+        .map((r) => {
+          const qStr = r.quantity;
+          const tcStr = r.total_cost;
+          const unitCostBig = unitCostFromTotal(tcStr, qStr);
+          return {
+            product_id: r.product_id,
+            quantity: Number(qStr) || 0,
+            unit_cost: Number(toFixedStr(unitCostBig, 4)),
+          };
+        })
+    );
+  }, [rows]);
 
   const updateRow = (uid: string, patch: Partial<Row>) =>
     setRows((prev) => prev.map((r) => (r.uid === uid ? { ...r, ...patch } : r)));
@@ -146,13 +152,14 @@ export function PurchaseForm({
   const onProductChange = (uid: string, productId: string) => {
     const product = productById.get(productId);
     const row = rows.find((r) => r.uid === uid);
-    const qty = row ? Number(row.quantity) : 1;
-    // Pre-calcular total_cost basado en cost_price * quantity
-    const costPrice = product?.cost_price ?? 0;
-    const totalCost = Number.isFinite(qty) && qty > 0 ? costPrice * qty : costPrice;
+    const qty = row ? row.quantity : "1";
+    const costPrice = product?.cost_price ?? null;
+    // Al seleccionar producto (o crearlo), reseteamos la marca de edición manual
+    manualTotalEdited.current.delete(uid);
+    const totalCostStr = costPrice != null ? toFixedStr(lineTotal(qty, costPrice), 2) : "0";
     updateRow(uid, {
       product_id: productId,
-      total_cost: String(totalCost),
+      total_cost: totalCostStr,
       unit: product?.unit ?? "unidad",
     });
   };
@@ -173,18 +180,36 @@ export function PurchaseForm({
       // Seleccionar el producto en la fila activa
       if (activeRowUid) {
         const row = rows.find((r) => r.uid === activeRowUid);
-        const qty = row ? Number(row.quantity) : 1;
-        const costPrice = product.cost_price ?? 0;
-        const totalCost = Number.isFinite(qty) && qty > 0 ? costPrice * qty : costPrice;
+        const qty = row ? row.quantity : "1";
+        const costPrice = product.cost_price ?? null;
+        manualTotalEdited.current.delete(activeRowUid);
+        const totalCostStr = costPrice != null ? toFixedStr(lineTotal(qty, costPrice), 2) : "0";
         updateRow(activeRowUid, {
           product_id: product.id,
-          total_cost: String(totalCost),
+          total_cost: totalCostStr,
           unit: product.unit,
         });
       }
     },
     [activeRowUid, rows]
   );
+
+  const onQuantityChange = (uid: string, qStr: string) => {
+    updateRow(uid, { quantity: qStr });
+    // Auto-fill total_cost only if user hasn't edited it manually
+    const row = rows.find((r) => r.uid === uid);
+    if (!row) return;
+    const product = productById.get(row.product_id);
+    if (!product || product.cost_price == null) return;
+    if (manualTotalEdited.current.has(uid)) return;
+    const tc = toFixedStr(lineTotal(qStr, product.cost_price), 2);
+    updateRow(uid, { total_cost: tc });
+  };
+
+  const onTotalCostChange = (uid: string, value: string) => {
+    manualTotalEdited.current.add(uid);
+    updateRow(uid, { total_cost: value });
+  };
 
   const errors = state?.fieldErrors ?? {};
   const noSuppliers = suppliers.length === 0;
@@ -221,6 +246,10 @@ export function PurchaseForm({
           name="payment_due_date"
           value={paymentMethod === "credit" ? dueDate : ""}
         />
+        <input type="hidden" name="tax_rate" value={String(taxRate)} />
+        <input type="hidden" name="subtotal" value={toFixedStr(subtotalBig, 2)} />
+        <input type="hidden" name="tax_amount" value={toFixedStr(taxBig, 2)} />
+        <input type="hidden" name="grand_total" value={toFixedStr(grandBig, 2)} />
 
         {blocked || (noProducts && localProducts.length === 0) ? (
           <Alert tone="error">
@@ -339,14 +368,9 @@ export function PurchaseForm({
               </thead>
               <tbody>
                 {rows.map((r) => {
-                  const q = Number(r.quantity);
-                  const tc = Number(r.total_cost);
-                  const unitCost =
-                    Number.isFinite(q) &&
-                    Number.isFinite(tc) &&
-                    q > 0
-                      ? tc / q
-                      : 0;
+                  const qStr = r.quantity;
+                  const tcStr = r.total_cost;
+                  const unitCostBig = unitCostFromTotal(tcStr, qStr);
                   return (
                     <tr key={r.uid} className="border-b border-steel-800">
                       <td className="px-4 py-3">
@@ -392,9 +416,7 @@ export function PurchaseForm({
                             className="w-[80px] shrink-0 text-right"
                             value={r.quantity}
                             onFocus={(e) => e.target.select()}
-                            onChange={(e) =>
-                              updateRow(r.uid, { quantity: e.target.value })
-                            }
+                            onChange={(e) => onQuantityChange(r.uid, e.target.value)}
                             aria-label="Cantidad"
                           />
                           <Select
@@ -427,15 +449,13 @@ export function PurchaseForm({
                           className="text-right"
                           value={r.total_cost}
                           onFocus={(e) => e.target.select()}
-                          onChange={(e) =>
-                            updateRow(r.uid, { total_cost: e.target.value })
-                          }
+                          onChange={(e) => onTotalCostChange(r.uid, e.target.value)}
                           aria-label="Costo total de la fila"
                         />
                       </td>
                       <td className="px-4 py-3 text-right">
                         <span className="font-mono text-[14px] tabular-nums text-muted-foreground">
-                          {moneyFmt.format(unitCost)}
+                          {moneyFmt.format(toNum(toMoney(unitCostBig)))}
                         </span>
                         <span className="block font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground/60">
                           /{r.unit}
@@ -494,11 +514,32 @@ export function PurchaseForm({
               </svg>
               Agregar ítem
             </Button>
-            <div className="text-right">
-              <p className="hud-readout !text-muted-foreground">Subtotal</p>
-              <p className="font-display text-[28px] leading-none tracking-[0.02em] text-safety-500">
-                {moneyFmt.format(subtotal)}
-              </p>
+            <div className="text-right space-y-1">
+              <div>
+                <p className="hud-readout !text-muted-foreground">Subtotal</p>
+                <p className="font-display text-[20px] leading-none tracking-[0.02em] text-foreground">
+                  {moneyFmt.format(toNum(toMoney(subtotalBig)))}
+                </p>
+              </div>
+              <div className="mt-1 flex items-center justify-end gap-3">
+                <label className="text-[12px] text-muted-foreground">IVA</label>
+                <Select
+                  value={String(taxRate)}
+                  onChange={(e) => setTaxRate(Number(e.target.value))}
+                >
+                  <option value="15">15%</option>
+                  <option value="12">12%</option>
+                  <option value="0">0%</option>
+                </Select>
+              </div>
+              <div>
+                <p className="hud-readout !text-muted-foreground">Monto IVA</p>
+                <p className="font-mono text-[14px] tabular-nums text-foreground">{moneyFmt.format(toNum(toMoney(taxBig)))}</p>
+              </div>
+              <div>
+                <p className="hud-readout !text-muted-foreground">Total factura</p>
+                <p className="font-display text-[28px] leading-none tracking-[0.02em] text-safety-500">{moneyFmt.format(toNum(toMoney(grandBig)))}</p>
+              </div>
             </div>
           </div>
 
@@ -560,7 +601,7 @@ export function PurchaseForm({
             <div className="text-right">
               <span className="hud-readout !text-muted-foreground">Total</span>
               <span className="block font-display text-[24px] tracking-[0.02em] text-foreground">
-                {moneyFmt.format(subtotal)}
+                {moneyFmt.format(toNum(toMoney(grandBig)))}
               </span>
             </div>
             <Button
