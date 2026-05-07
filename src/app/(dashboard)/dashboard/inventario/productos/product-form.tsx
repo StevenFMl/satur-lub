@@ -147,9 +147,11 @@ export function ProductForm({ initial, onSuccess }: Props) {
           >
             <option value="unidad">Unidad</option>
             <option value="galón">Galón</option>
+            <option value="medio_galon">Medio Galón</option>
+            <option value="cuarto">Cuarto</option>
             <option value="litro">Litro</option>
-            <option value="caneca">Caneca</option>
-            <option value="1/4 cuarto">1/4 Cuarto</option>
+            <option value="caneca">Caneca (5 Galones)</option>
+            <option value="tambor">Tambor (55 Galones)</option>
             <option value="barril">Barril</option>
             <option value="caja">Caja</option>
             <option value="paquete">Paquete</option>
@@ -181,6 +183,7 @@ export function ProductForm({ initial, onSuccess }: Props) {
               mono
               className="pl-14 text-right"
               invalid={Boolean(errors.cost_price)}
+              onFocus={(e) => e.target.select()}
             />
           </div>
           <FieldError fieldId="cost_price" message={errors.cost_price} />

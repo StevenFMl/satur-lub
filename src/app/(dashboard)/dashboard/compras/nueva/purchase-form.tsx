@@ -386,12 +386,12 @@ export function PurchaseForm({
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
                           <Input
-                            type="number"
-                            min="0.01"
-                            step="0.01"
+                            type="text"
+                            inputMode="decimal"
                             mono
                             className="text-right"
                             value={r.quantity}
+                            onFocus={(e) => e.target.select()}
                             onChange={(e) =>
                               updateRow(r.uid, { quantity: e.target.value })
                             }
@@ -404,12 +404,12 @@ export function PurchaseForm({
                       </td>
                       <td className="px-4 py-3">
                         <Input
-                          type="number"
-                          min="0"
-                          step="0.01"
+                          type="text"
+                          inputMode="decimal"
                           mono
                           className="text-right"
                           value={r.total_cost}
+                          onFocus={(e) => e.target.select()}
                           onChange={(e) =>
                             updateRow(r.uid, { total_cost: e.target.value })
                           }
