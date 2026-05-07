@@ -1,12 +1,14 @@
 "use client";
 
 import * as React from "react";
-import { useActionState, useEffect } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert } from "@/components/ui/alert";
 import { FieldError } from "@/components/ui/field-error";
+import { Switch } from "@/components/ui/switch";
 import {
   upsertProductAction,
   type ProductState,
@@ -19,19 +21,51 @@ type Props = {
 };
 
 export function ProductForm({ initial, onSuccess }: Props) {
+  const router = useRouter();
+  const formRef = useRef<HTMLFormElement>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
+
   const [state, formAction, pending] = useActionState<ProductState, FormData>(
     upsertProductAction,
     null
   );
 
+  // "Guardar y añadir otro" — solo en modo creación
+  const [keepOpen, setKeepOpen] = useState(false);
+  // Flash de confirmación efímero
+  const [savedFlash, setSavedFlash] = useState(false);
+  // Key para forzar re-render del formulario en modo continuo
+  const [formKey, setFormKey] = useState(0);
+
   useEffect(() => {
-    if (state?.ok) onSuccess();
-  }, [state, onSuccess]);
+    if (!state?.ok) return;
+
+    if (keepOpen && !initial?.id) {
+      // Modo continuo: resetear form, mantener Sheet abierto
+      setFormKey((k) => k + 1);
+      setSavedFlash(true);
+      router.refresh();
+      // Focus al nombre tras el reset
+      setTimeout(() => nameRef.current?.focus(), 60);
+      // Ocultar flash después de 2.5s
+      const t = setTimeout(() => setSavedFlash(false), 2500);
+      return () => clearTimeout(t);
+    } else {
+      // Comportamiento normal: cerrar Sheet
+      onSuccess();
+    }
+  }, [state, keepOpen, initial?.id, onSuccess, router]);
 
   const errors = state?.fieldErrors ?? {};
+  const isEditing = Boolean(initial?.id);
 
   return (
-    <form action={formAction} className="flex h-full flex-col">
+    <form
+      ref={formRef}
+      key={formKey}
+      action={formAction}
+      className="flex h-full flex-col"
+    >
       {initial?.id ? (
         <input type="hidden" name="id" value={initial.id} />
       ) : null}
@@ -40,11 +74,31 @@ export function ProductForm({ initial, onSuccess }: Props) {
         disabled={pending}
         className="m-0 min-w-0 flex-1 space-y-6 border-0 px-6 py-6 disabled:opacity-95"
       >
+        {/* Flash de confirmación */}
+        {savedFlash ? (
+          <div className="flex items-center gap-2 rounded-sm border border-signal-600/60 bg-signal-700/20 px-3 py-2.5 text-[13px] font-semibold text-emerald-300 animate-in fade-in duration-200">
+            <svg
+              viewBox="0 0 24 24"
+              className="h-4 w-4 shrink-0"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
+              <path d="M20 6 9 17l-5-5" />
+            </svg>
+            Producto creado — sigue con el siguiente
+          </div>
+        ) : null}
+
         <div className="space-y-2">
           <Label htmlFor="name" required>
             Nombre del producto
           </Label>
           <Input
+            ref={nameRef}
             id="name"
             name="name"
             defaultValue={initial?.name ?? ""}
@@ -137,19 +191,41 @@ export function ProductForm({ initial, onSuccess }: Props) {
         ) : null}
       </fieldset>
 
-      <div className="flex items-center justify-end gap-3 border-t-2 border-steel-700 bg-steel-900/60 px-6 py-4">
-        <Button
-          type="button"
-          variant="outline"
-          size="md"
-          onClick={onSuccess}
-          disabled={pending}
-        >
-          Cancelar
-        </Button>
-        <Button type="submit" size="md" loading={pending}>
-          {initial?.id ? "Guardar cambios" : "Crear producto"}
-        </Button>
+      <div className="flex items-center justify-between gap-3 border-t-2 border-steel-700 bg-steel-900/60 px-6 py-4">
+        {/* Switch: solo en modo creación */}
+        {!isEditing ? (
+          <label className="flex cursor-pointer items-center gap-2.5">
+            <Switch
+              checked={keepOpen}
+              onCheckedChange={setKeepOpen}
+              aria-label="Guardar y añadir otro"
+            />
+            <span className="text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+              Guardar y añadir otro
+            </span>
+          </label>
+        ) : (
+          <div />
+        )}
+
+        <div className="flex items-center gap-3">
+          <Button
+            type="button"
+            variant="outline"
+            size="md"
+            onClick={onSuccess}
+            disabled={pending}
+          >
+            Cancelar
+          </Button>
+          <Button type="submit" size="md" loading={pending}>
+            {isEditing
+              ? "Guardar cambios"
+              : keepOpen
+                ? "Crear y seguir"
+                : "Crear producto"}
+          </Button>
+        </div>
       </div>
     </form>
   );

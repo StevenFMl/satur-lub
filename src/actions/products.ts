@@ -98,6 +98,105 @@ export async function upsertProductAction(
 }
 
 /* ------------------------------------------------------------------ */
+/* Creación rápida inline (desde formulario de compras)               */
+/* ------------------------------------------------------------------ */
+
+export type QuickCreateProductState = {
+  ok?: boolean;
+  product?: {
+    id: string;
+    name: string;
+    sku: string;
+    unit: string;
+    cost_price: number | null;
+  };
+  error?: string;
+  fieldErrors?: ProductFieldErrors;
+} | null;
+
+/**
+ * Crea un producto con datos mínimos y retorna su info completa para
+ * inyectarlo en el formulario de compras sin recargar la página.
+ */
+export async function quickCreateProductAction(
+  _prev: QuickCreateProductState,
+  formData: FormData
+): Promise<QuickCreateProductState> {
+  const parsed = productSchema.safeParse({
+    name: formData.get("name"),
+    sku: formData.get("sku"),
+    unit: formData.get("unit"),
+    cost_price: formData.get("cost_price"),
+  });
+
+  if (!parsed.success) {
+    const fieldErrors: ProductFieldErrors = {};
+    for (const issue of parsed.error.issues) {
+      const key = issue.path[0];
+      if (typeof key === "string" && !(key in fieldErrors)) {
+        (fieldErrors as Record<string, string>)[key] = issue.message;
+      }
+    }
+    return { fieldErrors, error: "Revisa los campos marcados." };
+  }
+
+  const data = parsed.data;
+
+  const { user, membership } = await getActiveMembership();
+  if (!user || !membership) return { error: "Sesión expirada." };
+
+  if (membership.role !== "owner" && membership.role !== "admin") {
+    return { error: "No tienes permisos para gestionar productos." };
+  }
+
+  const tenantId = membership.tenant_id;
+  const supabase = await createClient();
+  const sku = data.sku ?? makeSkuFromName(data.name);
+
+  const payload = {
+    tenant_id: tenantId,
+    name: data.name,
+    sku,
+    unit: data.unit,
+    cost_price: data.cost_price,
+    product_kind: "item" as const,
+  };
+
+  const { data: inserted, error } = await supabase
+    .from("products")
+    .insert(payload)
+    .select("id, name, sku, unit, cost_price")
+    .single();
+
+  if (error) {
+    const m = error.message.toLowerCase();
+    if (m.includes("duplicate") || m.includes("unique")) {
+      return {
+        fieldErrors: { sku: "Ya existe un producto con este SKU." },
+        error: "SKU duplicado.",
+      };
+    }
+    console.error("quickCreateProductAction:", error);
+    return { error: "No se pudo crear el producto." };
+  }
+
+  revalidatePath("/dashboard/inventario/productos");
+  revalidatePath("/dashboard/compras/nueva");
+  return {
+    ok: true,
+    product: inserted
+      ? {
+          id: inserted.id as string,
+          name: inserted.name as string,
+          sku: inserted.sku as string,
+          unit: inserted.unit as string,
+          cost_price: inserted.cost_price as number | null,
+        }
+      : undefined,
+  };
+}
+
+/* ------------------------------------------------------------------ */
 /* Borrado lógico (soft-delete)                                       */
 /* ------------------------------------------------------------------ */
 
