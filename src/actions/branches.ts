@@ -122,8 +122,7 @@ export async function upsertBranchAction(
     }
   }
 
-  revalidatePath("/dashboard/configuracion/sucursales");
-  revalidatePath("/dashboard/inventario/bodegas");
+  revalidatePath("/dashboard/inventario/infraestructura");
   return { ok: true };
 }
 
@@ -160,7 +159,6 @@ export async function toggleBranchActiveAction(
     return { error: "No se pudo cambiar el estado de la sucursal." };
   }
 
-  revalidatePath("/dashboard/configuracion/sucursales");
-  revalidatePath("/dashboard/inventario/bodegas");
+  revalidatePath("/dashboard/inventario/infraestructura");
   return { ok: true };
 }

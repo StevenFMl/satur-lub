@@ -86,7 +86,7 @@ export async function upsertWarehouseAction(
     return { error: "No se pudo guardar la bodega." };
   }
 
-  revalidatePath("/dashboard/inventario/bodegas");
+  revalidatePath("/dashboard/inventario/infraestructura");
   revalidatePath("/dashboard/compras/nueva");
   return { ok: true };
 }
@@ -124,7 +124,7 @@ export async function toggleWarehouseActiveAction(
     return { error: "No se pudo cambiar el estado de la bodega." };
   }
 
-  revalidatePath("/dashboard/inventario/bodegas");
+  revalidatePath("/dashboard/inventario/infraestructura");
   revalidatePath("/dashboard/compras/nueva");
   return { ok: true };
 }

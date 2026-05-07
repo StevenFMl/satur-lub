@@ -57,7 +57,7 @@ export function WarehouseForm({ initial, branches, onSuccess }: Props) {
             <span className="mt-1 block text-[12px] leading-5">
               Una bodega siempre pertenece a una sucursal.{" "}
               <a
-                href="/dashboard/configuracion/sucursales"
+                href="/dashboard/inventario/infraestructura"
                 className="underline hover:text-red-200"
               >
                 Crear sucursal →

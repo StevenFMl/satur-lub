@@ -170,10 +170,10 @@ export default async function DashboardPage() {
                   </div>
                   {r.product_id ? (
                     <Link
-                      href={`/dashboard/inventario/movimientos?product_id=${r.product_id}`}
+                      href={`/dashboard/inventario/stock?productId=${r.product_id}&warehouseId=${r.warehouse_id}`}
                       className="shrink-0 rounded-sm border border-steel-700 bg-steel-800 px-3 py-1.5 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground transition-colors hover:border-safety-500/60 hover:text-safety-500"
                     >
-                      Kárdex
+                      Historial
                     </Link>
                   ) : null}
                 </li>

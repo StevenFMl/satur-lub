@@ -208,7 +208,7 @@ export function PurchaseForm({
   if (noWarehouses)
     missing.push({
       label: "una Bodega",
-      href: "/dashboard/inventario/bodegas",
+      href: "/dashboard/inventario/infraestructura",
     });
 
   return (

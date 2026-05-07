@@ -70,24 +70,14 @@ const SECTIONS: NavSection[] = [
     title: "Inventario",
     items: [
       {
-        href: "/dashboard/configuracion/sucursales",
-        label: "Sucursales",
+        href: "/dashboard/inventario/infraestructura",
+        label: "Locales y Bodegas",
         icon: (
           <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M3 21h18" />
             <path d="M5 21V7l7-4 7 4v14" />
             <path d="M9 21v-6h6v6" />
             <path d="M9 9h.01M15 9h.01M9 13h.01M15 13h.01" />
-          </svg>
-        ),
-      },
-      {
-        href: "/dashboard/inventario/bodegas",
-        label: "Bodegas",
-        icon: (
-          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M3 9 12 4l9 5" />
-            <path d="M5 9v11h4v-7h6v7h4V9" />
           </svg>
         ),
       },
@@ -115,18 +105,6 @@ const SECTIONS: NavSection[] = [
         ),
       },
       {
-        href: "/dashboard/inventario/movimientos",
-        label: "Kárdex",
-        icon: (
-          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M3 5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-            <path d="M14 3v6h6" />
-            <path d="M8 13h8" />
-            <path d="M8 17h5" />
-          </svg>
-        ),
-      },
-      {
         href: "/dashboard/inventario/compras",
         label: "Compras",
         icon: (
@@ -135,17 +113,6 @@ const SECTIONS: NavSection[] = [
             <rect x="9" y="3" width="6" height="4" rx="1" />
             <path d="M9 12h6" />
             <path d="M9 16h6" />
-          </svg>
-        ),
-      },
-      {
-        href: "/dashboard/compras/nueva",
-        label: "Nueva Compra",
-        icon: (
-          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z" />
-            <path d="M3 6h18" />
-            <path d="M16 10a4 4 0 0 1-8 0" />
           </svg>
         ),
       },

@@ -1,9 +1,10 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { KardexSheet, type KardexMovement } from "./kardex-sheet";
 
 export type StockRow = {
   id: string;
@@ -24,7 +25,82 @@ const numberFmt = new Intl.NumberFormat("es-EC", {
 });
 
 export function StockTable({ initialRows }: { initialRows: StockRow[] }) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [query, setQuery] = React.useState("");
+
+  // Micro-Kárdex state — controlado por ?productId & ?warehouseId en la URL
+  const activeProductId = searchParams.get("productId");
+  const activeWarehouseId = searchParams.get("warehouseId");
+  const isSheetOpen = Boolean(activeProductId && activeWarehouseId);
+
+  const [movements, setMovements] = React.useState<KardexMovement[]>([]);
+  const [loadingKardex, setLoadingKardex] = React.useState(false);
+
+  // La fila activa para mostrar nombre en el Sheet
+  const activeRow = React.useMemo(
+    () =>
+      isSheetOpen
+        ? initialRows.find(
+            (r) =>
+              r.product_id === activeProductId &&
+              r.warehouse_id === activeWarehouseId
+          )
+        : undefined,
+    [initialRows, activeProductId, activeWarehouseId, isSheetOpen]
+  );
+
+  // Fetch movements cuando se abre el Sheet
+  React.useEffect(() => {
+    if (!isSheetOpen || !activeProductId || !activeWarehouseId) {
+      setMovements([]);
+      return;
+    }
+
+    let cancelled = false;
+    setLoadingKardex(true);
+
+    fetch(
+      `/api/kardex?product_id=${activeProductId}&warehouse_id=${activeWarehouseId}`
+    )
+      .then((res) => res.json())
+      .then((data: { movements?: KardexMovement[] }) => {
+        if (!cancelled) {
+          setMovements(data.movements ?? []);
+          setLoadingKardex(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setMovements([]);
+          setLoadingKardex(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isSheetOpen, activeProductId, activeWarehouseId]);
+
+  const openKardex = (row: StockRow) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("productId", row.product_id);
+    params.set("warehouseId", row.warehouse_id);
+    router.push(`/dashboard/inventario/stock?${params.toString()}`, {
+      scroll: false,
+    });
+  };
+
+  const closeKardex = () => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("productId");
+    params.delete("warehouseId");
+    const qs = params.toString();
+    router.push(
+      `/dashboard/inventario/stock${qs ? `?${qs}` : ""}`,
+      { scroll: false }
+    );
+  };
 
   const filtered = React.useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -145,13 +221,14 @@ export function StockTable({ initialRows }: { initialRows: StockRow[] }) {
                         )}
                       </Td>
                       <Td className="text-right">
-                        <Link
-                          href={`/dashboard/inventario/movimientos?product_id=${r.product_id}&warehouse_id=${r.warehouse_id}`}
+                        <button
+                          type="button"
+                          onClick={() => openKardex(r)}
                           className="inline-flex items-center gap-1.5 rounded-sm border border-steel-700 bg-steel-800 px-3 py-1.5 font-mono text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground transition-colors hover:border-safety-500/60 hover:text-safety-500"
                         >
                           <KardexIcon className="h-3.5 w-3.5" />
-                          Ver Kárdex
-                        </Link>
+                          Historial
+                        </button>
                       </Td>
                     </tr>
                   );
@@ -168,6 +245,16 @@ export function StockTable({ initialRows }: { initialRows: StockRow[] }) {
           {initialRows.length !== 1 ? "s" : ""}
         </p>
       ) : null}
+
+      {/* Micro-Kárdex Sheet */}
+      <KardexSheet
+        open={isSheetOpen}
+        onClose={closeKardex}
+        productName={activeRow?.product_name ?? "—"}
+        warehouseName={activeRow?.warehouse_name ?? "—"}
+        movements={movements}
+        loading={loadingKardex}
+      />
     </div>
   );
 }
