@@ -12,6 +12,20 @@ const trimmedOrUndef = (v: unknown): string | undefined => {
   return t.length === 0 ? undefined : t;
 };
 
+/**
+ * Tasas de IVA válidas en Ecuador (post-reforma 2024: 0% / 12% / 15%).
+ * Se expresan como porcentaje (no fracción) para alineación con SRI.
+ */
+export const TAX_RATES = [0, 12, 15] as const;
+export type TaxRate = (typeof TAX_RATES)[number];
+
+// Validador "money": número no negativo, finito, coercionado desde string.
+// La aritmética real se delega a lib/math.ts (big.js); aquí solo validamos rango.
+const money = z.coerce
+  .number()
+  .nonnegative("Debe ser ≥ 0.")
+  .refine((n) => Number.isFinite(n), "Monto inválido.");
+
 export const purchaseSchema = z
   .object({
     supplier_id: z.preprocess(
@@ -49,6 +63,20 @@ export const purchaseSchema = z
         .transform((v) => v ?? null)
     ),
     items: z.array(itemSchema).min(1, "Debe incluir al menos un ítem."),
+
+    // ── Totales fiscales (calculados en UI con big.js, re-verificados aquí) ──
+    tax_rate: z.preprocess(
+      (v) => (v === "" || v == null ? undefined : Number(v)),
+      z
+        .number()
+        .refine(
+          (n): n is TaxRate => (TAX_RATES as readonly number[]).includes(n),
+          "Tasa IVA inválida (permitidas: 0, 12, 15)."
+        )
+    ),
+    subtotal: money,
+    tax_amount: money,
+    grand_total: money,
   })
   .superRefine((d, ctx) => {
     if (d.payment_method === "credit" && !d.payment_due_date) {

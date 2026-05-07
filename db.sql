@@ -1165,14 +1165,14 @@ BEGIN
         EXECUTE format('DROP POLICY IF EXISTS "insert_%1$s" ON public.%1$s;', t_name);
         EXECUTE format('
             CREATE POLICY "insert_%1$s" ON public.%1$s FOR INSERT TO authenticated
-            WITH CHECK (EXISTS (SELECT 1 FROM public.tenant_memberships tm WHERE tm.tenant_id = tenant_id AND tm.user_id = auth.uid() AND tm.is_active = true));
+            WITH CHECK (EXISTS (SELECT 1 FROM public.tenant_memberships tm WHERE tm.tenant_id = tenant_id AND tm.user_id = auth.uid() AND tm.role IN (''owner'', ''admin'') AND tm.is_active = true));
         ', t_name);
 
         EXECUTE format('DROP POLICY IF EXISTS "update_%1$s" ON public.%1$s;', t_name);
         EXECUTE format('
             CREATE POLICY "update_%1$s" ON public.%1$s FOR UPDATE TO authenticated
-            USING (EXISTS (SELECT 1 FROM public.tenant_memberships tm WHERE tm.tenant_id = %1$s.tenant_id AND tm.user_id = auth.uid() AND tm.is_active = true))
-            WITH CHECK (EXISTS (SELECT 1 FROM public.tenant_memberships tm WHERE tm.tenant_id = %1$s.tenant_id AND tm.user_id = auth.uid() AND tm.is_active = true));
+            USING (EXISTS (SELECT 1 FROM public.tenant_memberships tm WHERE tm.tenant_id = %1$s.tenant_id AND tm.user_id = auth.uid() AND tm.role IN (''owner'', ''admin'') AND tm.is_active = true))
+            WITH CHECK (EXISTS (SELECT 1 FROM public.tenant_memberships tm WHERE tm.tenant_id = %1$s.tenant_id AND tm.user_id = auth.uid() AND tm.role IN (''owner'', ''admin'') AND tm.is_active = true));
         ', t_name);
         
         EXECUTE format('DROP POLICY IF EXISTS "delete_%1$s" ON public.%1$s;', t_name);
@@ -1578,6 +1578,8 @@ CREATE INDEX IF NOT EXISTS idx_partners_tenant_type
 --
 -- p_items shape: jsonb array → [{ "product_id": uuid, "quantity": numeric, "unit_cost": numeric }, ...]
 
+DROP FUNCTION IF EXISTS public.receive_purchase_order(uuid, uuid, text, text, date, text, jsonb);
+
 CREATE OR REPLACE FUNCTION public.receive_purchase_order(
   p_supplier_id      uuid,
   p_warehouse_id     uuid,
@@ -1585,7 +1587,11 @@ CREATE OR REPLACE FUNCTION public.receive_purchase_order(
   p_payment_status   text,
   p_payment_due_date date,
   p_notes            text,
-  p_items            jsonb
+  p_items            jsonb,
+  p_tax_rate         numeric,
+  p_subtotal         numeric,
+  p_tax_amount       numeric,
+  p_grand_total      numeric
 )
 RETURNS uuid
 LANGUAGE plpgsql
@@ -1596,12 +1602,9 @@ DECLARE
   v_user_id    uuid := auth.uid();
   v_tenant_id  uuid;
   v_po_id      uuid;
-  v_subtotal   numeric(12,2) := 0;
-  v_tax_total  numeric(12,2) := 0;
-  v_total      numeric(12,2) := 0;
   v_item       jsonb;
-  v_qty        numeric(12,2);
-  v_unit_cost  numeric(12,2);
+  v_qty        numeric(12,4);
+  v_unit_cost  numeric(12,4);
   v_line_total numeric(12,2);
   v_product_id uuid;
   v_pay_status text;
@@ -1618,7 +1621,17 @@ BEGIN
     RAISE EXCEPTION 'Método de pago inválido';
   END IF;
 
-  -- Resolver tenant_id del usuario activo (debe ser owner/admin)
+  IF p_tax_rate IS NULL OR p_tax_rate < 0 OR p_tax_rate > 100 THEN
+    RAISE EXCEPTION 'Tasa de IVA inválida';
+  END IF;
+
+  IF p_subtotal IS NULL OR p_subtotal < 0
+     OR p_tax_amount IS NULL OR p_tax_amount < 0
+     OR p_grand_total IS NULL OR p_grand_total < 0 THEN
+    RAISE EXCEPTION 'Totales fiscales inválidos';
+  END IF;
+
+  -- Resolver tenant del usuario activo (owner/admin)
   SELECT tenant_id INTO v_tenant_id
     FROM public.tenant_memberships
    WHERE user_id = v_user_id
@@ -1631,7 +1644,6 @@ BEGIN
     RAISE EXCEPTION 'Sin tenant activo o sin permisos';
   END IF;
 
-  -- Validar proveedor pertenece al tenant
   IF NOT EXISTS (
     SELECT 1 FROM public.business_partners
      WHERE id = p_supplier_id
@@ -1649,45 +1661,43 @@ BEGIN
     RAISE EXCEPTION 'Bodega inválida';
   END IF;
 
-  -- Calcular totales
-  FOR v_item IN SELECT * FROM jsonb_array_elements(p_items)
-  LOOP
-    v_qty       := (v_item->>'quantity')::numeric;
-    v_unit_cost := (v_item->>'unit_cost')::numeric;
-    IF v_qty IS NULL OR v_qty <= 0 OR v_unit_cost IS NULL OR v_unit_cost < 0 THEN
-      RAISE EXCEPTION 'Cantidad y costo deben ser > 0';
-    END IF;
-    v_subtotal := v_subtotal + (v_qty * v_unit_cost);
-  END LOOP;
-  v_total := v_subtotal + v_tax_total;
-
   v_pay_status := CASE
     WHEN p_payment_method IN ('cash', 'transfer') THEN COALESCE(p_payment_status, 'paid')
     ELSE COALESCE(p_payment_status, 'pending')
   END;
 
-  -- 1. Cabecera
+  -- 1. Cabecera con totales fiscales exactos (pre-calculados con big.js).
+  --    'total' legacy se mantiene = grand_total para compat con consumidores
+  --    existentes; 'tax_total' legacy se sincroniza con tax_amount.
   INSERT INTO public.purchase_orders (
     tenant_id, supplier_id, warehouse_id,
     subtotal, tax_total, total,
+    tax_rate, tax_amount, grand_total,
     status, notes, created_by,
     payment_method, payment_status, payment_due_date
   ) VALUES (
     v_tenant_id, p_supplier_id, p_warehouse_id,
-    v_subtotal, v_tax_total, v_total,
+    p_subtotal, p_tax_amount, p_grand_total,
+    p_tax_rate, p_tax_amount, p_grand_total,
     'received', p_notes, v_user_id,
     p_payment_method, v_pay_status,
     CASE WHEN p_payment_method = 'credit' THEN p_payment_due_date ELSE NULL END
   )
   RETURNING id INTO v_po_id;
 
-  -- 2-4. Por cada ítem: detalle, movimiento y balance
+  -- 2-4. Ítems: detalle + movimiento + balance
   FOR v_item IN SELECT * FROM jsonb_array_elements(p_items)
   LOOP
     v_product_id := (v_item->>'product_id')::uuid;
     v_qty        := (v_item->>'quantity')::numeric;
     v_unit_cost  := (v_item->>'unit_cost')::numeric;
-    v_line_total := v_qty * v_unit_cost;
+
+    IF v_qty IS NULL OR v_qty <= 0 OR v_unit_cost IS NULL OR v_unit_cost < 0 THEN
+      RAISE EXCEPTION 'Cantidad y costo deben ser > 0';
+    END IF;
+
+    -- line_total redondeado a 2 decimales (consistente con big.js lineTotal).
+    v_line_total := round(v_qty * v_unit_cost, 2);
 
     IF NOT EXISTS (
       SELECT 1 FROM public.products
@@ -1696,7 +1706,6 @@ BEGIN
       RAISE EXCEPTION 'Producto inválido (%)', v_product_id;
     END IF;
 
-    -- 2. Detalle
     INSERT INTO public.purchase_order_items (
       tenant_id, purchase_order_id, product_id,
       quantity, unit_cost, line_total
@@ -1705,7 +1714,6 @@ BEGIN
       v_qty, v_unit_cost, v_line_total
     );
 
-    -- 3. Movimiento de inventario
     INSERT INTO public.inventory_movements (
       tenant_id, warehouse_id, product_id,
       movement_type, quantity, unit_cost, reason,
@@ -1716,7 +1724,6 @@ BEGIN
       'purchase_order', v_po_id, v_user_id
     );
 
-    -- 4. UPSERT balance (sumando)
     IF p_warehouse_id IS NOT NULL THEN
       INSERT INTO public.inventory_balances (
         tenant_id, warehouse_id, product_id, quantity_on_hand
@@ -1733,8 +1740,8 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.receive_purchase_order(uuid, uuid, text, text, date, text, jsonb) FROM public;
-GRANT EXECUTE ON FUNCTION public.receive_purchase_order(uuid, uuid, text, text, date, text, jsonb) TO authenticated;
+REVOKE ALL ON FUNCTION public.receive_purchase_order(uuid, uuid, text, text, date, text, jsonb, numeric, numeric, numeric, numeric) FROM public;
+GRANT EXECUTE ON FUNCTION public.receive_purchase_order(uuid, uuid, text, text, date, text, jsonb, numeric, numeric, numeric, numeric) TO authenticated;
 
 -- =========================================================================
 -- H. INVENTARIO · BODEGAS · RLS anti-recursivo + índice de búsqueda

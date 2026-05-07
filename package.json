@@ -12,6 +12,7 @@
   "dependencies": {
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.45.4",
+    "big.js": "^7.0.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.14.0",
     "next": "^15.1.6",
@@ -22,6 +23,7 @@
     "zod": "^4.4.1"
   },
   "devDependencies": {
+    "@types/big.js": "^6.2.2",
     "@types/node": "^22.9.0",
     "@types/react": "^19.0.7",
     "@types/react-dom": "^19.0.3",

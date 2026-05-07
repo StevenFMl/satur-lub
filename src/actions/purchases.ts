@@ -7,6 +7,13 @@ import {
   purchaseSchema,
   type PurchaseFieldErrors,
 } from "@/lib/validations/purchase";
+import {
+  grandTotal,
+  sumAll,
+  taxAmount,
+  toFixedStr,
+  lineTotal,
+} from "@/lib/math";
 
 export type PurchaseState = {
   ok?: boolean;
@@ -36,6 +43,10 @@ export async function receivePurchaseAction(
     payment_due_date: formData.get("payment_due_date"),
     notes: formData.get("notes"),
     items,
+    tax_rate: formData.get("tax_rate"),
+    subtotal: formData.get("subtotal"),
+    tax_amount: formData.get("tax_amount"),
+    grand_total: formData.get("grand_total"),
   });
 
   if (!parsed.success) {
@@ -59,6 +70,15 @@ export async function receivePurchaseAction(
   const payment_status =
     data.payment_method === "credit" ? "pending" : "paid";
 
+  // ── Recalcular totales server-side con big.js (NO confiar en el cliente).
+  //    El cliente envía los valores para UX, pero la fuente de verdad fiscal
+  //    se deriva aquí a partir de los ítems ya validados por Zod.
+  const serverSubtotal = sumAll(
+    data.items.map((i) => lineTotal(i.quantity, i.unit_cost))
+  );
+  const serverTax = taxAmount(serverSubtotal, data.tax_rate);
+  const serverGrand = grandTotal(serverSubtotal, serverTax);
+
   // RPC SECURITY INVOKER + transacción atómica:
   // INSERT purchase_orders → INSERT purchase_order_items → INSERT inventory_movements
   // → UPSERT inventory_balances. Cualquier excepción aborta TODO.
@@ -72,6 +92,10 @@ export async function receivePurchaseAction(
       p_payment_due_date: data.payment_due_date,
       p_notes: data.notes,
       p_items: data.items,
+      p_tax_rate: data.tax_rate,
+      p_subtotal: toFixedStr(serverSubtotal, 2),
+      p_tax_amount: toFixedStr(serverTax, 2),
+      p_grand_total: toFixedStr(serverGrand, 2),
     } as never
   );
 
