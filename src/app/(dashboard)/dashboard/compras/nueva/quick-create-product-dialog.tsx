@@ -42,7 +42,7 @@ export function QuickCreateProductDialog({ open, onClose, onCreated, editProduct
   }, [state, onCreated, onClose]);
 
   // Auto-focus al abrir
-  const [includesTax, setIncludesTax] = React.useState(false);
+  const [includesTax, setIncludesTax] = React.useState(true);
   const [displayPrice, setDisplayPrice] = React.useState("");
 
   useEffect(() => {
@@ -52,7 +52,7 @@ export function QuickCreateProductDialog({ open, onClose, onCreated, editProduct
         setIncludesTax(false); // In edit mode, the base cost is already the base cost.
       } else {
         setDisplayPrice("");
-        setIncludesTax(false);
+        setIncludesTax(true);
       }
       // Pequeño delay para que el portal monte
       const t = setTimeout(() => nameRef.current?.focus(), 50);
@@ -151,6 +151,11 @@ export function QuickCreateProductDialog({ open, onClose, onCreated, editProduct
                     }
                   })()}
                 />
+                <input 
+                  type="hidden" 
+                  name="tax_rate" 
+                  value={includesTax ? "15" : "0"} 
+                />
                 <Input
                   id="qc-cost"
                   type="number"
@@ -178,21 +183,7 @@ export function QuickCreateProductDialog({ open, onClose, onCreated, editProduct
               <FieldError fieldId="qc-cost" message={errors.cost_price} />
             </div>
             
-            <div className="space-y-2 col-span-2">
-              <Label htmlFor="qc-tax" required>
-                Impuesto (IVA)
-              </Label>
-              <select
-                id="qc-tax_rate"
-                name="tax_rate"
-                defaultValue={editProduct?.tax_rate != null ? String(editProduct.tax_rate) : "15"}
-                className="flex h-12 w-full rounded-sm border-2 border-steel-700 bg-steel-950 px-3 py-2 font-mono text-[13px] text-foreground outline-none transition-colors focus:border-safety-500/60 focus:ring-2 focus:ring-safety-500/20"
-              >
-                <option value="15">IVA 15%</option>
-                <option value="0">IVA 0%</option>
-              </select>
-              <FieldError fieldId="qc-tax_rate" message={errors.tax_rate} />
-            </div>
+
           </div>
 
           {state?.error && !state.fieldErrors ? (

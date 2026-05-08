@@ -136,12 +136,11 @@ export async function receivePurchaseAction(
   const serverTax = toMoney(serverTaxBig);
   const serverGrand = add(grandTotal(serverSubtotal, serverTax), data.other_charges);
 
-  // RPC SECURITY INVOKER + transacción atómica:
-  // INSERT purchase_orders → INSERT purchase_order_items → INSERT inventory_movements
-  // → UPSERT inventory_balances. Cualquier excepción aborta TODO.
+  // RPC SECURITY INVOKER + transacción atómica
   const { data: poId, error } = await supabase.rpc(
     "receive_purchase_order",
     {
+      p_tenant_id: membership.tenant_id,
       p_supplier_id: data.supplier_id,
       p_warehouse_id: data.warehouse_id,
       p_payment_method: data.payment_method,
@@ -211,6 +210,7 @@ export async function cancelPurchaseAction(
   const supabase = await createClient();
 
   const { error } = await supabase.rpc("cancel_purchase_order", {
+    p_tenant_id: membership.tenant_id,
     p_po_id: poId,
   } as never);
 

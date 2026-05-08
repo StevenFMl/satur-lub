@@ -178,6 +178,7 @@ export async function createInitialBalanceAction(
   const supabase = await createClient();
 
   const { error } = await supabase.rpc("record_stock_adjustment", {
+    p_tenant_id: membership.tenant_id,
     p_warehouse_id: warehouseId,
     p_product_id: productId,
     p_quantity: quantity,
