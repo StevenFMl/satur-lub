@@ -50,8 +50,6 @@ type PaymentMethod = "cash" | "transfer" | "credit";
 type Row = {
   uid: string;
   product_id: string;
-  is_new_product?: boolean;
-  new_product_name?: string;
   quantity: string;
   total_cost: string;
   unit: string;
@@ -135,7 +133,6 @@ export function PurchaseForm({
 
   // Quick-create dialog state
   const [quickCreateOpen, setQuickCreateOpen] = useState(false);
-  const [activeRowUid, setActiveRowUid] = useState<string | null>(null);
 
   useEffect(() => {
     if (state?.ok) router.push("/dashboard");
@@ -160,60 +157,42 @@ export function PurchaseForm({
     return localProducts.find(p => p.sku.toLowerCase() === term);
   }, [searchTerm, localProducts]);
 
-  const addToCart = useCallback((product: LookupProduct | { isNew: true, name: string }) => {
-    if ("isNew" in product) {
-      setRows((prev) => [
-        ...prev,
-        {
-          uid: crypto.randomUUID(),
-          product_id: "",
-          is_new_product: true,
-          new_product_name: product.name,
-          quantity: "1",
-          total_cost: "0",
-          unit: "galón",
-          is_gift: false,
+  const addToCart = useCallback((product: LookupProduct) => {
+    setRows((prev) => {
+      const existingIndex = prev.findIndex(r => r.product_id === product.id && !r.is_gift);
+      if (existingIndex >= 0) {
+        const newRows = [...prev];
+        const row = newRows[existingIndex];
+        const newQtyNum = Number(row.quantity) + 1;
+        const newQtyStr = String(newQtyNum);
+        
+        let newTotal = row.total_cost;
+        if (!manualTotalEdited.current.has(row.uid) && product.cost_price != null) {
+          newTotal = toFixedStr(lineTotal(newQtyStr, product.cost_price), 2);
         }
-      ]);
-    } else {
-      setRows((prev) => {
-        const existingIndex = prev.findIndex(r => r.product_id === product.id && !r.is_gift);
-        if (existingIndex >= 0) {
-          const newRows = [...prev];
-          const row = newRows[existingIndex];
-          const newQtyNum = Number(row.quantity) + 1;
-          const newQtyStr = String(newQtyNum);
-          
-          let newTotal = row.total_cost;
-          if (!manualTotalEdited.current.has(row.uid) && product.cost_price != null) {
-            newTotal = toFixedStr(lineTotal(newQtyStr, product.cost_price), 2);
+        
+        newRows[existingIndex] = {
+          ...row,
+          quantity: newQtyStr,
+          total_cost: newTotal,
+        };
+        return newRows;
+      } else {
+        const costPrice = product.cost_price ?? null;
+        const totalCostStr = costPrice != null ? toFixedStr(lineTotal("1", costPrice), 2) : "0";
+        return [
+          ...prev,
+          {
+            uid: crypto.randomUUID(),
+            product_id: product.id,
+            quantity: "1",
+            total_cost: totalCostStr,
+            unit: product.unit,
+            is_gift: false,
           }
-          
-          newRows[existingIndex] = {
-            ...row,
-            quantity: newQtyStr,
-            total_cost: newTotal,
-          };
-          return newRows;
-        } else {
-          const costPrice = product.cost_price ?? null;
-          const totalCostStr = costPrice != null ? toFixedStr(lineTotal("1", costPrice), 2) : "0";
-          return [
-            ...prev,
-            {
-              uid: crypto.randomUUID(),
-              product_id: product.id,
-              is_new_product: false,
-              new_product_name: "",
-              quantity: "1",
-              total_cost: totalCostStr,
-              unit: product.unit,
-              is_gift: false,
-            }
-          ];
-        }
-      });
-    }
+        ];
+      }
+    });
     
     setSearchTerm("");
     setIsDropdownOpen(false);
@@ -232,8 +211,6 @@ export function PurchaseForm({
         addToCart(exactSkuMatch);
       } else if (searchResults.length === 1) {
         addToCart(searchResults[0]);
-      } else if (searchResults.length === 0) {
-        addToCart({ isNew: true, name: searchTerm });
       }
     } else if (e.key === "Escape") {
       setIsDropdownOpen(false);
@@ -251,13 +228,11 @@ export function PurchaseForm({
   const itemsJson = useMemo(() => {
     return JSON.stringify(
       rows
-        .filter((r) => r.product_id || (r.is_new_product && r.new_product_name))
+        .filter((r) => r.product_id)
         .map((r) => {
           const unitCostBig = unitCostFromTotal(r.total_cost, r.quantity);
           return {
-            product_id: r.product_id || null,
-            is_new_product: r.is_new_product,
-            new_product_name: r.new_product_name,
+            product_id: r.product_id,
             quantity: Number(r.quantity) || 0,
             unit_cost: Number(toFixedStr(unitCostBig, 4)),
           };
@@ -271,34 +246,15 @@ export function PurchaseForm({
   const removeRow = (uid: string) =>
     setRows((prev) => prev.filter((r) => r.uid !== uid));
 
-  const openQuickCreate = useCallback((rowUid: string) => {
-    setActiveRowUid(rowUid);
-    setQuickCreateOpen(true);
-  }, []);
-
   const onProductCreated = useCallback(
     (product: LookupProduct) => {
       setLocalProducts((prev) => {
         if (prev.some((p) => p.id === product.id)) return prev;
         return [...prev, product].sort((a, b) => a.name.localeCompare(b.name));
       });
-      if (activeRowUid) {
-        const row = rows.find((r) => r.uid === activeRowUid);
-        const qty = row ? row.quantity : "1";
-        const costPrice = product.cost_price ?? null;
-        manualTotalEdited.current.delete(activeRowUid);
-        const totalCostStr = costPrice != null ? toFixedStr(lineTotal(qty, costPrice), 2) : "0";
-        updateRow(activeRowUid, {
-          product_id: product.id,
-          is_new_product: false,
-          new_product_name: "",
-          total_cost: totalCostStr,
-          unit: product.unit,
-          is_gift: false,
-        });
-      }
+      addToCart(product);
     },
-    [activeRowUid, rows]
+    [addToCart]
   );
 
   // Cálculo A: usuario cambia cantidad → si NO ha tocado el total manualmente,
@@ -481,74 +437,72 @@ export function PurchaseForm({
           </header>
 
           <div className="relative border-b border-steel-700 bg-steel-900/40 p-4">
-            <div className="relative">
-              <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-                <Search className="h-5 w-5 text-muted-foreground" />
-              </div>
-              <Input
-                ref={searchInputRef}
-                value={searchTerm}
-                onChange={(e) => {
-                  setSearchTerm(e.target.value);
-                  setIsDropdownOpen(e.target.value.trim().length > 0);
-                }}
-                onFocus={() => setIsDropdownOpen(searchTerm.trim().length > 0)}
-                onBlur={() => setTimeout(() => setIsDropdownOpen(false), 200)}
-                onKeyDown={handleSearchKeyDown}
-                placeholder="Buscar por nombre o escanear código (SKU)..."
-                className="h-12 pl-10 text-[15px] shadow-inner"
-              />
-              {searchTerm && (
-                <button
-                  type="button"
-                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-muted-foreground hover:text-foreground"
-                  onClick={() => {
-                    setSearchTerm("");
-                    searchInputRef.current?.focus();
+            <div className="flex items-center gap-3">
+              <div className="relative flex-1">
+                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                  <Search className="h-5 w-5 text-muted-foreground" />
+                </div>
+                <Input
+                  ref={searchInputRef}
+                  value={searchTerm}
+                  onChange={(e) => {
+                    setSearchTerm(e.target.value);
+                    setIsDropdownOpen(e.target.value.trim().length > 0);
                   }}
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              )}
-            </div>
-            
-            {/* Dropdown Omni-Buscador */}
-            {isDropdownOpen && searchTerm.trim().length > 0 && (
-              <div className="absolute left-4 right-4 top-[64px] z-50 overflow-hidden rounded-md border border-steel-600 bg-steel-800 shadow-xl">
-                <ul className="max-h-[300px] overflow-y-auto py-1">
-                  {searchResults.map((p) => (
-                    <li key={p.id}>
-                      <button
-                        type="button"
-                        className="flex w-full items-center justify-between px-4 py-2.5 text-left transition-colors hover:bg-steel-700 focus:bg-steel-700"
-                        onClick={() => addToCart(p)}
-                      >
-                        <div className="flex flex-col">
-                          <span className="font-semibold text-foreground">{p.name}</span>
-                          <span className="font-mono text-[11px] text-muted-foreground">{p.sku}</span>
-                        </div>
-                        <Badge tone="neutral">Enter</Badge>
-                      </button>
-                    </li>
-                  ))}
-                  {searchResults.length === 0 && (
-                    <li>
-                      <button
-                        type="button"
-                        className="flex w-full items-center gap-2 px-4 py-3 text-left transition-colors hover:bg-steel-700 focus:bg-steel-700 text-safety-400"
-                        onClick={() => addToCart({ isNew: true, name: searchTerm })}
-                      >
-                        <PlusCircle className="h-5 w-5" />
-                        <div>
-                          <span className="block font-semibold">Crear nuevo producto:</span>
-                          <span className="block truncate text-[13px]">{searchTerm}</span>
-                        </div>
-                      </button>
-                    </li>
-                  )}
-                </ul>
+                  onFocus={() => setIsDropdownOpen(searchTerm.trim().length > 0)}
+                  onBlur={() => setTimeout(() => setIsDropdownOpen(false), 200)}
+                  onKeyDown={handleSearchKeyDown}
+                  placeholder="Buscar por nombre o escanear código (SKU)..."
+                  className="h-12 pl-10 text-[15px] shadow-inner"
+                />
+                {searchTerm && (
+                  <button
+                    type="button"
+                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-muted-foreground hover:text-foreground"
+                    onClick={() => {
+                      setSearchTerm("");
+                      searchInputRef.current?.focus();
+                    }}
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+
+                {/* Dropdown Omni-Buscador */}
+                {isDropdownOpen && searchTerm.trim().length > 0 && searchResults.length > 0 && (
+                  <div className="absolute left-0 right-0 top-[100%] mt-1 z-50 overflow-hidden rounded-md border border-steel-600 bg-steel-800 shadow-xl">
+                    <ul className="max-h-[300px] overflow-y-auto py-1">
+                      {searchResults.map((p) => (
+                        <li key={p.id}>
+                          <button
+                            type="button"
+                            className="flex w-full items-center justify-between px-4 py-2.5 text-left transition-colors hover:bg-steel-700 focus:bg-steel-700"
+                            onClick={() => addToCart(p)}
+                          >
+                            <div className="flex flex-col">
+                              <span className="font-semibold text-foreground">{p.name}</span>
+                              <span className="font-mono text-[11px] text-muted-foreground">{p.sku}</span>
+                            </div>
+                            <Badge tone="neutral">Enter</Badge>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
-            )}
+
+              <div className="w-[20%] shrink-0 min-w-[200px]">
+                <Button
+                  type="button"
+                  className="h-12 w-full text-[14px]"
+                  onClick={() => setQuickCreateOpen(true)}
+                >
+                  <PlusCircle className="mr-2 h-5 w-5" />
+                  Crear Producto
+                </Button>
+              </div>
+            </div>
           </div>
 
           <div className="overflow-x-auto">
@@ -573,22 +527,14 @@ export function PurchaseForm({
                       <td className="px-4 py-3 align-top">
                         <div className="flex flex-col items-start gap-1">
                           <span className="font-semibold leading-tight text-foreground">
-                            {r.is_new_product ? r.new_product_name : (productById.get(r.product_id)?.name || "Desconocido")}
+                            {productById.get(r.product_id)?.name || "Desconocido"}
                           </span>
                           
-                          {r.is_new_product ? (
-                            <div className="flex items-center gap-1.5 mt-0.5">
-                              <Badge tone="info" className="text-[9px]">Nuevo</Badge>
-                              <span className="text-[10px] text-muted-foreground">Se creará al guardar</span>
-                            </div>
-                          ) : (
-                            <Badge tone="neutral" className="text-[10px] mt-0.5">
-                              {productById.get(r.product_id)?.sku || "-"}
-                            </Badge>
-                          )}
+                          <Badge tone="neutral" className="text-[10px] mt-0.5">
+                            {productById.get(r.product_id)?.sku || "-"}
+                          </Badge>
                           
                           {(() => {
-                            if (r.is_new_product) return null;
                             const product = productById.get(r.product_id);
                             if (!product || product.best_cost == null) return null;
                             const currentUnitCostBig = unitCostFromTotal(r.total_cost, r.quantity);

@@ -68,19 +68,36 @@ export function QuickCreateProductDialog({ open, onClose, onCreated }: Props) {
           disabled={pending}
           className="m-0 min-w-0 space-y-5 border-0 px-6 py-6 disabled:opacity-95"
         >
-          <div className="space-y-2">
-            <Label htmlFor="qc-name" required>
-              Nombre del producto
-            </Label>
-            <Input
-              ref={nameRef}
-              id="qc-name"
-              name="name"
-              placeholder="Aceite 20W-50 mineral 1L"
-              invalid={Boolean(errors.name)}
-              autoComplete="off"
-            />
-            <FieldError fieldId="qc-name" message={errors.name} />
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="qc-name" required>
+                Nombre del producto
+              </Label>
+              <Input
+                ref={nameRef}
+                id="qc-name"
+                name="name"
+                placeholder="Aceite 20W-50 mineral 1L"
+                invalid={Boolean(errors.name)}
+                autoComplete="off"
+              />
+              <FieldError fieldId="qc-name" message={errors.name} />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="qc-sku" required>
+                SKU (Código)
+              </Label>
+              <Input
+                id="qc-sku"
+                name="sku"
+                placeholder="ACE-20W50-1L"
+                invalid={Boolean(errors.sku)}
+                autoComplete="off"
+                mono
+              />
+              <FieldError fieldId="qc-sku" message={errors.sku} />
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
