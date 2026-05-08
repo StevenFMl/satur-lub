@@ -181,7 +181,7 @@ export function ProductForm({ initial, onSuccess }: Props) {
               name="cost_price"
               type="number"
               min="0"
-              step="0.01"
+              step="0.0001"
               defaultValue={
                 initial?.cost_price != null ? String(initial.cost_price) : "0"
               }

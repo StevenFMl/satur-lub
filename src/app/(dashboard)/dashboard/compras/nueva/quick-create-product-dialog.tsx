@@ -110,7 +110,7 @@ export function QuickCreateProductDialog({ open, onClose, onCreated }: Props) {
                   name="cost_price"
                   type="number"
                   min="0"
-                  step="0.01"
+                  step="0.0001"
                   defaultValue="0"
                   placeholder="0.00"
                   mono

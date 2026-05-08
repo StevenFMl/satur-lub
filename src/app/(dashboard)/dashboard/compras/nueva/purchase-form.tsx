@@ -24,6 +24,7 @@ import {
   toNum,
   toMoney,
   toUnitPrice,
+  add,
 } from "@/lib/math";
 import { QuickCreateProductDialog } from "./quick-create-product-dialog";
 
@@ -49,6 +50,7 @@ type Row = {
   quantity: string;
   total_cost: string;
   unit: string;
+  is_gift?: boolean;
 };
 
 const newRow = (): Row => ({
@@ -60,6 +62,7 @@ const newRow = (): Row => ({
   quantity: "1",
   total_cost: "0",
   unit: "unidad",
+  is_gift: false,
 });
 
 // Totales (subtotal, IVA, total factura): 2 decimales fijos.
@@ -112,6 +115,7 @@ export function PurchaseForm({
 
   // IVA selector (15% default Ecuador 2024+).
   const [taxRate, setTaxRate] = useState<number>(15);
+  const [otherCharges, setOtherCharges] = useState("0");
 
   // Productos locales: se alimenta con la prop SSR pero se extiende con
   // productos creados inline sin recargar la página.
@@ -134,7 +138,8 @@ export function PurchaseForm({
   // Subtotal = suma segura de total_cost (big.js)
   const subtotalBig = useMemo(() => sumAll(rows.map((r) => r.total_cost)), [rows]);
   const taxBig = useMemo(() => taxAmount(subtotalBig, taxRate), [subtotalBig, taxRate]);
-  const grandBig = useMemo(() => grandTotal(subtotalBig, taxBig), [subtotalBig, taxBig]);
+  const otherBig = useMemo(() => toMoney(otherCharges || "0"), [otherCharges]);
+  const grandBig = useMemo(() => add(grandTotal(subtotalBig, taxBig), otherBig), [subtotalBig, taxBig, otherBig]);
 
   // Serialización: el backend espera { product_id, quantity, unit_cost }
   // unit_cost se calcula con precisión y redondeo a 4 decimales.
@@ -173,6 +178,7 @@ export function PurchaseForm({
       product_id: productId,
       total_cost: totalCostStr,
       unit: product?.unit ?? "unidad",
+      is_gift: false,
     });
   };
 
@@ -197,6 +203,7 @@ export function PurchaseForm({
           product_id: product.id,
           total_cost: totalCostStr,
           unit: product.unit,
+          is_gift: false,
         });
       }
     },
@@ -210,6 +217,7 @@ export function PurchaseForm({
     updateRow(uid, { quantity: qStr });
     const row = rows.find((r) => r.uid === uid);
     if (!row) return;
+    if (row.is_gift) return; // Mantiene el costo total en 0.00
     const product = productById.get(row.product_id);
     if (!product || product.cost_price == null) return;
     if (manualTotalEdited.current.has(uid)) return;
@@ -217,12 +225,28 @@ export function PurchaseForm({
     updateRow(uid, { total_cost: tc });
   };
 
-  // Cálculo B: usuario edita el total manualmente (ej. cuadrar 44.76 → 44.73
-  // para que coincida con la factura física del proveedor). Marcamos la fila
-  // como "manual" y dejamos que el render derive el costo unitario real.
   const onTotalCostChange = (uid: string, value: string) => {
+    const row = rows.find((r) => r.uid === uid);
+    if (row?.is_gift) return;
     manualTotalEdited.current.add(uid);
     updateRow(uid, { total_cost: value });
+  };
+
+  const toggleGift = (uid: string) => {
+    setRows((prev) =>
+      prev.map((r) => {
+        if (r.uid !== uid) return r;
+        if (r.is_gift) {
+          const product = productById.get(r.product_id);
+          const costPrice = product?.cost_price ?? null;
+          const tc = costPrice != null ? toFixedStr(lineTotal(r.quantity, costPrice), 2) : "0";
+          return { ...r, is_gift: false, total_cost: tc };
+        } else {
+          return { ...r, is_gift: true, total_cost: "0.00" };
+        }
+      })
+    );
+    manualTotalEdited.current.delete(uid);
   };
 
   const errors = state?.fieldErrors ?? {};
@@ -258,6 +282,7 @@ export function PurchaseForm({
         <input type="hidden" name="tax_rate" value={String(taxRate)} />
         <input type="hidden" name="subtotal" value={toFixedStr(subtotalBig, 2)} />
         <input type="hidden" name="tax_amount" value={toFixedStr(taxBig, 2)} />
+        <input type="hidden" name="other_charges" value={toFixedStr(otherBig, 2)} />
         <input type="hidden" name="grand_total" value={toFixedStr(grandBig, 2)} />
 
         {blocked || (noProducts && localProducts.length === 0) ? (
@@ -371,7 +396,7 @@ export function PurchaseForm({
                   <Th>Producto</Th>
                   <Th className="w-[220px]">Cantidad / Unidad</Th>
                   <Th className="w-[160px] text-right">Costo Unitario</Th>
-                  <Th className="w-[160px] text-right">Costo Total</Th>
+                  <Th className="w-[200px] text-right">Costo Total</Th>
                   <Th className="w-[60px]"> </Th>
                 </tr>
               </thead>
@@ -460,21 +485,44 @@ export function PurchaseForm({
                         </span>
                       </td>
                       <td className="px-4 py-3 align-top">
-                        <Input
-                          type="text"
-                          inputMode="decimal"
-                          mono
-                          className="text-right"
-                          value={r.total_cost}
-                          onFocus={(e) => e.target.select()}
-                          onChange={(e) => onTotalCostChange(r.uid, e.target.value)}
-                          aria-label="Costo total de la fila"
-                        />
-                        {isManual ? (
-                          <span className="mt-1 block text-right font-mono text-[10px] uppercase tracking-[0.1em] text-safety-500/80">
-                            ajuste manual
-                          </span>
-                        ) : null}
+                        <div className="flex items-start gap-2">
+                          <button
+                            type="button"
+                            onClick={() => toggleGift(r.uid)}
+                            title={r.is_gift ? "Quitar bonificación" : "Marcar como bonificación"}
+                            className={`mt-1 grid h-8 w-8 shrink-0 place-items-center rounded-sm border transition-colors ${
+                              r.is_gift 
+                                ? "border-emerald-500 bg-emerald-500/10 text-emerald-400" 
+                                : "border-steel-700 bg-steel-900 text-muted-foreground hover:border-emerald-500/50 hover:text-emerald-400"
+                            }`}
+                          >
+                            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                              <polyline points="20 12 20 22 4 22 4 12" />
+                              <rect x="2" y="7" width="20" height="5" />
+                              <line x1="12" y1="22" x2="12" y2="7" />
+                              <path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z" />
+                              <path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z" />
+                            </svg>
+                          </button>
+                          <div className="w-full">
+                            <Input
+                              type="text"
+                              inputMode="decimal"
+                              mono
+                              className="text-right"
+                              value={r.total_cost}
+                              disabled={r.is_gift}
+                              onFocus={(e) => e.target.select()}
+                              onChange={(e) => onTotalCostChange(r.uid, e.target.value)}
+                              aria-label="Costo total de la fila"
+                            />
+                            {isManual ? (
+                              <span className="mt-1 block text-right font-mono text-[10px] uppercase tracking-[0.1em] text-safety-500/80">
+                                ajuste manual
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
                       </td>
                       <td className="px-4 py-3 align-top text-right">
                         <button
@@ -574,6 +622,23 @@ export function PurchaseForm({
                 <span className="font-mono text-[15px] tabular-nums text-foreground">
                   {moneyFmt.format(toNum(toMoney(taxBig)))}
                 </span>
+              </div>
+
+              <div className="my-2 h-px bg-steel-700" />
+              
+              <div className="flex items-center justify-between gap-4">
+                <span className="font-mono text-[12px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                  Otros Cargos (Ecovalor, Fletes)
+                </span>
+                <Input
+                  type="text"
+                  inputMode="decimal"
+                  mono
+                  className="h-9 w-[120px] text-right text-[15px]"
+                  value={otherCharges}
+                  onFocus={(e) => e.target.select()}
+                  onChange={(e) => setOtherCharges(e.target.value)}
+                />
               </div>
 
               <div className="my-2 h-px bg-steel-700" />

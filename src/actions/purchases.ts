@@ -13,6 +13,7 @@ import {
   taxAmount,
   toFixedStr,
   lineTotal,
+  add,
 } from "@/lib/math";
 
 export type PurchaseState = {
@@ -46,6 +47,7 @@ export async function receivePurchaseAction(
     tax_rate: formData.get("tax_rate"),
     subtotal: formData.get("subtotal"),
     tax_amount: formData.get("tax_amount"),
+    other_charges: formData.get("other_charges"),
     grand_total: formData.get("grand_total"),
   });
 
@@ -77,7 +79,7 @@ export async function receivePurchaseAction(
     data.items.map((i) => lineTotal(i.quantity, i.unit_cost))
   );
   const serverTax = taxAmount(serverSubtotal, data.tax_rate);
-  const serverGrand = grandTotal(serverSubtotal, serverTax);
+  const serverGrand = add(grandTotal(serverSubtotal, serverTax), data.other_charges);
 
   // RPC SECURITY INVOKER + transacción atómica:
   // INSERT purchase_orders → INSERT purchase_order_items → INSERT inventory_movements
@@ -96,6 +98,7 @@ export async function receivePurchaseAction(
       p_subtotal: toFixedStr(serverSubtotal, 2),
       p_tax_amount: toFixedStr(serverTax, 2),
       p_grand_total: toFixedStr(serverGrand, 2),
+      p_other_charges: toFixedStr(data.other_charges, 2),
     } as never
   );
 

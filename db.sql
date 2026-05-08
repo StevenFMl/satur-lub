@@ -1591,7 +1591,8 @@ CREATE OR REPLACE FUNCTION public.receive_purchase_order(
   p_tax_rate         numeric,
   p_subtotal         numeric,
   p_tax_amount       numeric,
-  p_grand_total      numeric
+  p_grand_total      numeric,
+  p_other_charges    numeric
 )
 RETURNS uuid
 LANGUAGE plpgsql
@@ -1672,13 +1673,13 @@ BEGIN
   INSERT INTO public.purchase_orders (
     tenant_id, supplier_id, warehouse_id,
     subtotal, tax_total, total,
-    tax_rate, tax_amount, grand_total,
+    tax_rate, tax_amount, grand_total, other_charges,
     status, notes, created_by,
     payment_method, payment_status, payment_due_date
   ) VALUES (
     v_tenant_id, p_supplier_id, p_warehouse_id,
     p_subtotal, p_tax_amount, p_grand_total,
-    p_tax_rate, p_tax_amount, p_grand_total,
+    p_tax_rate, p_tax_amount, p_grand_total, p_other_charges,
     'received', p_notes, v_user_id,
     p_payment_method, v_pay_status,
     CASE WHEN p_payment_method = 'credit' THEN p_payment_due_date ELSE NULL END
@@ -1740,8 +1741,8 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.receive_purchase_order(uuid, uuid, text, text, date, text, jsonb, numeric, numeric, numeric, numeric) FROM public;
-GRANT EXECUTE ON FUNCTION public.receive_purchase_order(uuid, uuid, text, text, date, text, jsonb, numeric, numeric, numeric, numeric) TO authenticated;
+REVOKE ALL ON FUNCTION public.receive_purchase_order(uuid, uuid, text, text, date, text, jsonb, numeric, numeric, numeric, numeric, numeric) FROM public;
+GRANT EXECUTE ON FUNCTION public.receive_purchase_order(uuid, uuid, text, text, date, text, jsonb, numeric, numeric, numeric, numeric, numeric) TO authenticated;
 
 -- =========================================================================
 -- H. INVENTARIO · BODEGAS · RLS anti-recursivo + índice de búsqueda
@@ -1896,3 +1897,7 @@ ALTER TABLE public.purchase_order_items
 
 ALTER TABLE public.inventory_movements 
   ALTER COLUMN unit_cost TYPE numeric(12,4);
+
+-- 3. Añadir otros cargos a compras
+ALTER TABLE public.purchase_orders 
+  ADD COLUMN IF NOT EXISTS other_charges numeric(12,2) DEFAULT 0;

@@ -76,6 +76,7 @@ export const purchaseSchema = z
     ),
     subtotal: money,
     tax_amount: money,
+    other_charges: z.preprocess((v) => (v === "" || v == null ? 0 : v), money),
     grand_total: money,
   })
   .superRefine((d, ctx) => {
