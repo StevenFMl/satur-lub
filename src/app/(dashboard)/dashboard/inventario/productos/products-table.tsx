@@ -18,6 +18,7 @@ export type ProductRow = {
   unit: string;
   cost_price: number | null;
   product_kind: "item" | "service" | "kit";
+  tax_rate: number;
   is_active: boolean;
   created_at: string;
 };

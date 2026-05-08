@@ -78,6 +78,8 @@ export const purchaseSchema = z
           (n): n is TaxRate => (TAX_RATES as readonly number[]).includes(n),
           "Tasa IVA inválida (permitidas: 0, 12, 15)."
         )
+        .optional()
+        .nullable()
     ),
     subtotal: money,
     tax_amount: money,

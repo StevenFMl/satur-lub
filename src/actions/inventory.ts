@@ -128,3 +128,69 @@ export async function toggleWarehouseActiveAction(
   revalidatePath("/dashboard/compras/nueva");
   return { ok: true };
 }
+
+
+/* ------------------------------------------------------------------ */
+/* Saldo Inicial / Ajuste de Inventario                               */
+/* ------------------------------------------------------------------ */
+
+export type InitialBalanceState = {
+  ok?: boolean;
+  error?: string;
+  fieldErrors?: Record<string, string>;
+} | null;
+
+export async function createInitialBalanceAction(
+  _prev: InitialBalanceState,
+  formData: FormData
+): Promise<InitialBalanceState> {
+  const productId = formData.get("product_id") as string;
+  const warehouseId = formData.get("warehouse_id") as string;
+  const quantityRaw = formData.get("quantity") as string;
+  const unitCostRaw = formData.get("unit_cost") as string;
+
+  const fieldErrors: Record<string, string> = {};
+
+  if (!productId) fieldErrors.product_id = "Producto requerido.";
+  if (!warehouseId) fieldErrors.warehouse_id = "Bodega requerida.";
+
+  const quantity = Number(quantityRaw);
+  if (!quantityRaw || isNaN(quantity) || quantity <= 0) {
+    fieldErrors.quantity = "Cantidad debe ser mayor a 0.";
+  }
+
+  const unitCost = Number(unitCostRaw);
+  if (!unitCostRaw || isNaN(unitCost) || unitCost < 0) {
+    fieldErrors.unit_cost = "Costo unitario inválido.";
+  }
+
+  if (Object.keys(fieldErrors).length > 0) {
+    return { fieldErrors, error: "Revisa los campos marcados." };
+  }
+
+  const { user, membership } = await getActiveMembership();
+  if (!user || !membership) return { error: "Sesión expirada." };
+
+  if (membership.role !== "owner" && membership.role !== "admin") {
+    return { error: "No tienes permisos para realizar ajustes de stock." };
+  }
+
+  const supabase = await createClient();
+
+  const { error } = await supabase.rpc("record_stock_adjustment", {
+    p_warehouse_id: warehouseId,
+    p_product_id: productId,
+    p_quantity: quantity,
+    p_unit_cost: unitCost,
+    p_reason: "Saldo Inicial / Ajuste",
+    p_performed_by_user_id: user.id,
+  });
+
+  if (error) {
+    console.error("createInitialBalanceAction:", error);
+    return { error: "Ocurrió un error al registrar el saldo inicial." };
+  }
+
+  revalidatePath("/dashboard/inventario/stock");
+  return { ok: true };
+}

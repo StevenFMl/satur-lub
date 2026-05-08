@@ -36,6 +36,21 @@ export default async function StockPage() {
     console.error("StockPage · inventory_balances query:", error);
   }
 
+  const { data: rawProducts } = await supabase
+    .from("products")
+    .select("id, name, sku, cost_price")
+    .eq("is_active", true)
+    .order("name");
+
+  const { data: rawWarehouses } = await supabase
+    .from("warehouses")
+    .select("id, name")
+    .eq("is_active", true)
+    .order("name");
+
+  const products = rawProducts ?? [];
+  const warehouses = rawWarehouses ?? [];
+
   // Aplanar los joins. Conservamos product_id/warehouse_id como claves duras
   // para construir links al kárdex sin depender del embed.
   const rows: StockRow[] = ((data ?? []) as unknown as RawBalance[]).map(
@@ -71,7 +86,7 @@ export default async function StockPage() {
         </p>
       </header>
 
-      <StockTable initialRows={rows} />
+      <StockTable initialRows={rows} products={products} warehouses={warehouses} />
     </div>
   );
 }

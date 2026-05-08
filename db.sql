@@ -1913,4 +1913,72 @@ ALTER TABLE public.inventory_movements
 
 -- 3. Añadir otros cargos a compras
 ALTER TABLE public.purchase_orders 
-  ADD COLUMN IF NOT EXISTS other_charges numeric(12,2) DEFAULT 0;
+  ADD COLUMN IF NOT EXISTS other_charges numeric(12,2) DEFAULT 0;-- Función RPC para registrar un ajuste de inventario (Saldo Inicial / Ajuste) de forma atómica.
+-- Este RPC inserta el registro en inventory_movements y actualiza inventory_balances,
+-- asegurando que ambas operaciones ocurran dentro de la misma transacción.
+
+CREATE OR REPLACE FUNCTION public.record_stock_adjustment(
+  p_warehouse_id uuid,
+  p_product_id uuid,
+  p_quantity numeric,
+  p_unit_cost numeric,
+  p_reason text,
+  p_performed_by_user_id uuid
+) RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_tenant_id uuid;
+BEGIN
+  -- 1. Obtener el tenant_id del usuario que realiza la operación
+  SELECT tenant_id INTO v_tenant_id
+  FROM public.tenant_memberships
+  WHERE user_id = p_performed_by_user_id
+  LIMIT 1;
+
+  IF v_tenant_id IS NULL THEN
+    RAISE EXCEPTION 'Usuario no autorizado o sin tenant asignado.';
+  END IF;
+
+  -- 2. Insertar el movimiento de inventario ('adjustment')
+  INSERT INTO public.inventory_movements (
+    tenant_id,
+    warehouse_id,
+    product_id,
+    movement_type,
+    quantity,
+    unit_cost,
+    reason,
+    performed_by_user_id
+  ) VALUES (
+    v_tenant_id,
+    p_warehouse_id,
+    p_product_id,
+    'adjustment',
+    p_quantity,
+    p_unit_cost,
+    p_reason,
+    p_performed_by_user_id
+  );
+
+  -- 3. Actualizar el saldo (inventory_balances) usando UPSERT
+  INSERT INTO public.inventory_balances (
+    tenant_id,
+    warehouse_id,
+    product_id,
+    quantity_on_hand
+  ) VALUES (
+    v_tenant_id,
+    p_warehouse_id,
+    p_product_id,
+    p_quantity
+  )
+  ON CONFLICT (tenant_id, warehouse_id, product_id)
+  DO UPDATE SET 
+    quantity_on_hand = public.inventory_balances.quantity_on_hand + EXCLUDED.quantity_on_hand,
+    updated_at = now();
+
+END;
+$$;

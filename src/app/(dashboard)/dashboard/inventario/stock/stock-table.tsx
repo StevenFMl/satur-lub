@@ -5,6 +5,9 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { KardexSheet, type KardexMovement } from "./kardex-sheet";
+import { InitialBalanceDialog } from "./initial-balance-dialog";
+import { Button } from "@/components/ui/button";
+import { PlusCircle } from "lucide-react";
 
 export type StockRow = {
   id: string;
@@ -24,7 +27,15 @@ const numberFmt = new Intl.NumberFormat("es-EC", {
   maximumFractionDigits: 2,
 });
 
-export function StockTable({ initialRows }: { initialRows: StockRow[] }) {
+export function StockTable({ 
+  initialRows, 
+  products = [], 
+  warehouses = [] 
+}: { 
+  initialRows: StockRow[];
+  products?: { id: string; name: string; sku: string; cost_price: number | null }[];
+  warehouses?: { id: string; name: string }[];
+}) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [query, setQuery] = React.useState("");
@@ -36,6 +47,7 @@ export function StockTable({ initialRows }: { initialRows: StockRow[] }) {
 
   const [movements, setMovements] = React.useState<KardexMovement[]>([]);
   const [loadingKardex, setLoadingKardex] = React.useState(false);
+  const [initialBalanceOpen, setInitialBalanceOpen] = React.useState(false);
 
   // La fila activa para mostrar nombre en el Sheet
   const activeRow = React.useMemo(
@@ -133,14 +145,20 @@ export function StockTable({ initialRows }: { initialRows: StockRow[] }) {
             aria-label="Buscar existencia"
           />
         </div>
-        {lowCount > 0 ? (
-          <div className="flex items-center gap-2">
-            <WarningIcon className="h-4 w-4 text-red-400" />
-            <span className="font-mono text-[12px] font-bold uppercase tracking-[0.12em] text-red-300">
-              {lowCount} producto{lowCount !== 1 ? "s" : ""} con stock bajo
-            </span>
-          </div>
-        ) : null}
+        <div className="flex items-center gap-3">
+          {lowCount > 0 ? (
+            <div className="flex items-center gap-2">
+              <WarningIcon className="h-4 w-4 text-red-400" />
+              <span className="font-mono text-[12px] font-bold uppercase tracking-[0.12em] text-red-300">
+                {lowCount} producto{lowCount !== 1 ? "s" : ""} con stock bajo
+              </span>
+            </div>
+          ) : null}
+          <Button size="md" onClick={() => setInitialBalanceOpen(true)}>
+            <PlusCircle className="mr-2 h-4 w-4" />
+            Ajuste / Saldo Inicial
+          </Button>
+        </div>
       </div>
 
       <div className="panel overflow-hidden rounded-sm">
@@ -254,6 +272,13 @@ export function StockTable({ initialRows }: { initialRows: StockRow[] }) {
         warehouseName={activeRow?.warehouse_name ?? "—"}
         movements={movements}
         loading={loadingKardex}
+      />
+      {/* Modal de Ajuste / Saldo Inicial */}
+      <InitialBalanceDialog
+        open={initialBalanceOpen}
+        onClose={() => setInitialBalanceOpen(false)}
+        products={products}
+        warehouses={warehouses}
       />
     </div>
   );

@@ -59,6 +59,14 @@ export const productSchema = z.object({
       .nonnegative("El costo no puede ser negativo.")
       .max(99_999_999.99, "Costo demasiado alto.")
   ),
+  tax_rate: z.preprocess(
+    toNumberOrNaN,
+    z
+      .number({ error: "Impuesto inválido." })
+      .refine((val) => val === 0 || val === 15, {
+        message: "El IVA debe ser 0% o 15%.",
+      })
+  ),
 });
 
 export type ProductInput = z.infer<typeof productSchema>;

@@ -195,6 +195,22 @@ export function ProductForm({ initial, onSuccess }: Props) {
           <FieldError fieldId="cost_price" message={errors.cost_price} />
         </div>
 
+        <div className="space-y-2">
+          <Label htmlFor="tax_rate" required>
+            Impuesto (IVA)
+          </Label>
+          <select
+            id="tax_rate"
+            name="tax_rate"
+            defaultValue={initial?.tax_rate != null ? String(initial.tax_rate) : "15"}
+            className="flex h-10 w-full rounded-sm border-2 border-steel-700 bg-steel-800 px-3 py-2 font-mono text-[13px] text-foreground outline-none transition-colors focus:border-safety-500/60 focus:ring-2 focus:ring-safety-500/20"
+          >
+            <option value="15">IVA 15%</option>
+            <option value="0">IVA 0%</option>
+          </select>
+          <FieldError fieldId="tax_rate" message={errors.tax_rate} />
+        </div>
+
         {state?.error && !state.fieldErrors ? (
           <Alert tone="error">{state.error}</Alert>
         ) : null}

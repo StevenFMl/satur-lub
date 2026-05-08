@@ -3,7 +3,8 @@
 import * as React from "react";
 import { useActionState, useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Search, X, PlusCircle } from "lucide-react";
+import Big from "big.js";
+import { Search, X, PlusCircle, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -40,6 +41,7 @@ export type LookupProduct = {
   name: string;
   unit: string;
   cost_price: number | null;
+  tax_rate: number;
   best_cost?: number;
   best_supplier?: string;
 };
@@ -124,7 +126,6 @@ export function PurchaseForm({
   const manualTotalEdited = useRef(new Set<string>());
 
   // IVA selector (15% default Ecuador 2024+).
-  const [taxRate, setTaxRate] = useState<number>(15);
   const [otherCharges, setOtherCharges] = useState("0");
 
   // Productos locales: se alimenta con la prop SSR pero se extiende con
@@ -133,6 +134,7 @@ export function PurchaseForm({
 
   // Quick-create dialog state
   const [quickCreateOpen, setQuickCreateOpen] = useState(false);
+  const [productToEdit, setProductToEdit] = useState<LookupProduct | null>(null);
 
   useEffect(() => {
     if (state?.ok) router.push("/dashboard");
@@ -219,7 +221,20 @@ export function PurchaseForm({
 
   // Subtotal = suma segura de total_cost (big.js)
   const subtotalBig = useMemo(() => sumAll(rows.map((r) => r.total_cost)), [rows]);
-  const taxBig = useMemo(() => taxAmount(subtotalBig, taxRate), [subtotalBig, taxRate]);
+  
+  const taxBig = useMemo(() => {
+    let totalTax = Big(0);
+    for (const r of rows) {
+      const product = productById.get(r.product_id);
+      if (!product) continue;
+      // Solo aplicamos el 15% de IVA a los ítems que tengan tax_rate > 0
+      if (product.tax_rate > 0) {
+        totalTax = totalTax.plus(taxAmount(r.total_cost, product.tax_rate));
+      }
+    }
+    return toMoney(totalTax);
+  }, [rows, productById]);
+
   const otherBig = useMemo(() => toMoney(otherCharges || "0"), [otherCharges]);
   const grandBig = useMemo(() => add(grandTotal(subtotalBig, taxBig), otherBig), [subtotalBig, taxBig, otherBig]);
 
@@ -249,12 +264,17 @@ export function PurchaseForm({
   const onProductCreated = useCallback(
     (product: LookupProduct) => {
       setLocalProducts((prev) => {
-        if (prev.some((p) => p.id === product.id)) return prev;
+        const exists = prev.find((p) => p.id === product.id);
+        if (exists) {
+          return prev.map((p) => (p.id === product.id ? product : p));
+        }
         return [...prev, product].sort((a, b) => a.name.localeCompare(b.name));
       });
-      addToCart(product);
+      if (!productToEdit) {
+        addToCart(product);
+      }
     },
-    [addToCart]
+    [addToCart, productToEdit]
   );
 
   // Cálculo A: usuario cambia cantidad → si NO ha tocado el total manualmente,
@@ -326,7 +346,6 @@ export function PurchaseForm({
           name="payment_due_date"
           value={paymentMethod === "credit" ? dueDate : ""}
         />
-        <input type="hidden" name="tax_rate" value={String(taxRate)} />
         <input type="hidden" name="subtotal" value={toFixedStr(subtotalBig, 2)} />
         <input type="hidden" name="tax_amount" value={toFixedStr(taxBig, 2)} />
         <input type="hidden" name="other_charges" value={toFixedStr(otherBig, 2)} />
@@ -496,7 +515,10 @@ export function PurchaseForm({
                 <Button
                   type="button"
                   className="h-12 w-full text-[14px]"
-                  onClick={() => setQuickCreateOpen(true)}
+                  onClick={() => {
+                    setProductToEdit(null);
+                    setQuickCreateOpen(true);
+                  }}
                 >
                   <PlusCircle className="mr-2 h-5 w-5" />
                   Crear Producto
@@ -526,9 +548,25 @@ export function PurchaseForm({
                     <tr key={r.uid} className="border-b border-steel-800">
                       <td className="px-4 py-3 align-top">
                         <div className="flex flex-col items-start gap-1">
-                          <span className="font-semibold leading-tight text-foreground">
-                            {productById.get(r.product_id)?.name || "Desconocido"}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold leading-tight text-foreground">
+                              {productById.get(r.product_id)?.name || "Desconocido"}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const p = productById.get(r.product_id);
+                                if (p) {
+                                  setProductToEdit(p);
+                                  setQuickCreateOpen(true);
+                                }
+                              }}
+                              className="grid h-6 w-6 place-items-center rounded-sm text-muted-foreground hover:bg-steel-800 hover:text-foreground transition-colors"
+                              title="Editar producto"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
                           
                           <Badge tone="neutral" className="text-[10px] mt-0.5">
                             {productById.get(r.product_id)?.sku || "-"}
@@ -690,18 +728,8 @@ export function PurchaseForm({
               <div className="flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
                   <span className="font-mono text-[12px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                    IVA
+                    Impuestos
                   </span>
-                  <Select
-                    value={String(taxRate)}
-                    onChange={(e) => setTaxRate(Number(e.target.value))}
-                    aria-label="Tasa de IVA"
-                    className="h-9 min-w-[90px] text-[13px]"
-                  >
-                    <option value="15">15%</option>
-                    <option value="12">12%</option>
-                    <option value="0">0%</option>
-                  </Select>
                 </div>
                 <span className="font-mono text-[15px] tabular-nums text-foreground">
                   {moneyFmt.format(toNum(toMoney(taxBig)))}
@@ -797,11 +825,15 @@ export function PurchaseForm({
         </div>
       </form>
 
-      {/* Dialog de creación rápida de producto — fuera del <form> para evitar submit conflicts */}
+      {/* Dialog de creación rápida / edición de producto */}
       <QuickCreateProductDialog
         open={quickCreateOpen}
-        onClose={() => setQuickCreateOpen(false)}
+        onClose={() => {
+          setQuickCreateOpen(false);
+          setProductToEdit(null);
+        }}
         onCreated={onProductCreated}
+        editProduct={productToEdit}
       />
     </>
   );

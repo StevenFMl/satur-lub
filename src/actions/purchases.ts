@@ -14,7 +14,9 @@ import {
   toFixedStr,
   lineTotal,
   add,
+  toMoney,
 } from "@/lib/math";
+import Big from "big.js";
 
 export type PurchaseState = {
   ok?: boolean;
@@ -109,12 +111,29 @@ export async function receivePurchaseAction(
   }
 
   // ── Recalcular totales server-side con big.js (NO confiar en el cliente).
-  //    El cliente envía los valores para UX, pero la fuente de verdad fiscal
-  //    se deriva aquí a partir de los ítems ya validados por Zod.
+  //    Obtenemos el tax_rate de cada producto desde la Base de Datos para
+  //    calcular el IVA de forma granular.
+  const productIds = data.items.map(i => i.product_id).filter(Boolean) as string[];
+  const { data: dbProducts } = await supabase
+    .from("products")
+    .select("id, tax_rate")
+    .in("id", productIds);
+    
+  const dbProductMap = new Map(dbProducts?.map(p => [p.id, p.tax_rate ?? 15]) || []);
+
+  let serverTaxBig = Big(0);
   const serverSubtotal = sumAll(
-    data.items.map((i) => lineTotal(i.quantity, i.unit_cost))
+    data.items.map((i) => {
+      const lineT = lineTotal(i.quantity, i.unit_cost);
+      const pRate = dbProductMap.get(i.product_id as string) || 15;
+      if (pRate > 0) {
+        serverTaxBig = serverTaxBig.plus(taxAmount(lineT, pRate));
+      }
+      return lineT;
+    })
   );
-  const serverTax = taxAmount(serverSubtotal, data.tax_rate);
+  
+  const serverTax = toMoney(serverTaxBig);
   const serverGrand = add(grandTotal(serverSubtotal, serverTax), data.other_charges);
 
   // RPC SECURITY INVOKER + transacción atómica:
@@ -134,7 +153,7 @@ export async function receivePurchaseAction(
         quantity: item.quantity,
         unit_cost: item.unit_cost
       })),
-      p_tax_rate: data.tax_rate,
+      p_tax_rate: 15, // Legacy field in RPC, can just pass 15. Real tax is handled implicitly by totals.
       p_subtotal: toFixedStr(serverSubtotal, 2),
       p_tax_amount: toFixedStr(serverTax, 2),
       p_grand_total: toFixedStr(serverGrand, 2),

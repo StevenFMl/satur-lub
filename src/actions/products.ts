@@ -42,6 +42,7 @@ export async function upsertProductAction(
     sku: formData.get("sku"),
     unit: formData.get("unit"),
     cost_price: formData.get("cost_price"),
+    tax_rate: formData.get("tax_rate"),
   });
 
   if (!parsed.success) {
@@ -75,6 +76,7 @@ export async function upsertProductAction(
     sku,
     unit: data.unit,
     cost_price: data.cost_price,
+    tax_rate: data.tax_rate,
     product_kind: "item" as const,
   };
 
@@ -115,6 +117,7 @@ export type QuickCreateProductState = {
     sku: string;
     unit: string;
     cost_price: number | null;
+    tax_rate: number;
   };
   error?: string;
   fieldErrors?: ProductFieldErrors;
@@ -129,10 +132,12 @@ export async function quickCreateProductAction(
   formData: FormData
 ): Promise<QuickCreateProductState> {
   const parsed = productSchema.safeParse({
+    id: formData.get("id"),
     name: formData.get("name"),
     sku: formData.get("sku"),
     unit: formData.get("unit"),
     cost_price: formData.get("cost_price"),
+    tax_rate: formData.get("tax_rate"),
   });
 
   if (!parsed.success) {
@@ -165,14 +170,23 @@ export async function quickCreateProductAction(
     sku,
     unit: data.unit,
     cost_price: data.cost_price,
+    tax_rate: data.tax_rate,
     product_kind: "item" as const,
   };
 
-  const { data: inserted, error } = await supabase
-    .from("products")
-    .insert(payload)
-    .select("id, name, sku, unit, cost_price")
-    .single();
+  const { data: inserted, error } = data.id
+    ? await supabase
+        .from("products")
+        .update(payload)
+        .eq("id", data.id)
+        .eq("tenant_id", tenantId)
+        .select("id, name, sku, unit, cost_price, tax_rate")
+        .single()
+    : await supabase
+        .from("products")
+        .insert(payload)
+        .select("id, name, sku, unit, cost_price, tax_rate")
+        .single();
 
   if (error) {
     const m = error.message.toLowerCase();
@@ -197,6 +211,7 @@ export async function quickCreateProductAction(
           sku: inserted.sku as string,
           unit: inserted.unit as string,
           cost_price: inserted.cost_price as number | null,
+          tax_rate: inserted.tax_rate as number,
         }
       : undefined,
   };

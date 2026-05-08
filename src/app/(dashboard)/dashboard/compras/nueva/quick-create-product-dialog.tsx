@@ -20,9 +20,10 @@ type Props = {
   open: boolean;
   onClose: () => void;
   onCreated: (product: LookupProduct) => void;
+  editProduct?: LookupProduct | null;
 };
 
-export function QuickCreateProductDialog({ open, onClose, onCreated }: Props) {
+export function QuickCreateProductDialog({ open, onClose, onCreated, editProduct }: Props) {
   const formRef = useRef<HTMLFormElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
 
@@ -46,13 +47,18 @@ export function QuickCreateProductDialog({ open, onClose, onCreated }: Props) {
 
   useEffect(() => {
     if (open) {
-      setDisplayPrice("");
-      setIncludesTax(false);
+      if (editProduct) {
+        setDisplayPrice(editProduct.cost_price != null ? String(editProduct.cost_price) : "");
+        setIncludesTax(false); // In edit mode, the base cost is already the base cost.
+      } else {
+        setDisplayPrice("");
+        setIncludesTax(false);
+      }
       // Pequeño delay para que el portal monte
       const t = setTimeout(() => nameRef.current?.focus(), 50);
       return () => clearTimeout(t);
     }
-  }, [open]);
+  }, [open, editProduct]);
 
   const errors = state?.fieldErrors ?? {};
 
@@ -60,10 +66,11 @@ export function QuickCreateProductDialog({ open, onClose, onCreated }: Props) {
     <Dialog
       open={open}
       onClose={onClose}
-      title="Crear Producto Rápido"
-      description="Registra un producto con los datos mínimos. Podrás completar la información después."
+      title={editProduct ? "Editar Producto" : "Crear Producto Rápido"}
+      description={editProduct ? "Modifica los datos base del producto seleccionado." : "Registra un producto con los datos mínimos. Podrás completar la información después."}
     >
       <form ref={formRef} action={formAction} className="flex flex-col">
+        {editProduct ? <input type="hidden" name="id" value={editProduct.id} /> : null}
         <fieldset
           disabled={pending}
           className="m-0 min-w-0 space-y-5 border-0 px-6 py-6 disabled:opacity-95"
@@ -77,6 +84,7 @@ export function QuickCreateProductDialog({ open, onClose, onCreated }: Props) {
                 ref={nameRef}
                 id="qc-name"
                 name="name"
+                defaultValue={editProduct?.name ?? ""}
                 placeholder="Aceite 20W-50 mineral 1L"
                 invalid={Boolean(errors.name)}
                 autoComplete="off"
@@ -91,6 +99,7 @@ export function QuickCreateProductDialog({ open, onClose, onCreated }: Props) {
               <Input
                 id="qc-sku"
                 name="sku"
+                defaultValue={editProduct?.sku ?? ""}
                 placeholder="ACE-20W50-1L"
                 invalid={Boolean(errors.sku)}
                 autoComplete="off"
@@ -106,7 +115,7 @@ export function QuickCreateProductDialog({ open, onClose, onCreated }: Props) {
               <select
                 id="qc-unit"
                 name="unit"
-                defaultValue="unidad"
+                defaultValue={editProduct?.unit ?? "unidad"}
                 className="flex h-12 w-full rounded-sm border-2 border-steel-700 bg-steel-950 px-3 py-2 font-mono text-[13px] text-foreground outline-none transition-colors focus:border-safety-500/60 focus:ring-2 focus:ring-safety-500/20"
               >
                 <option value="unidad">Unidad</option>
@@ -168,6 +177,22 @@ export function QuickCreateProductDialog({ open, onClose, onCreated }: Props) {
               </div>
               <FieldError fieldId="qc-cost" message={errors.cost_price} />
             </div>
+            
+            <div className="space-y-2 col-span-2">
+              <Label htmlFor="qc-tax" required>
+                Impuesto (IVA)
+              </Label>
+              <select
+                id="qc-tax_rate"
+                name="tax_rate"
+                defaultValue={editProduct?.tax_rate != null ? String(editProduct.tax_rate) : "15"}
+                className="flex h-12 w-full rounded-sm border-2 border-steel-700 bg-steel-950 px-3 py-2 font-mono text-[13px] text-foreground outline-none transition-colors focus:border-safety-500/60 focus:ring-2 focus:ring-safety-500/20"
+              >
+                <option value="15">IVA 15%</option>
+                <option value="0">IVA 0%</option>
+              </select>
+              <FieldError fieldId="qc-tax_rate" message={errors.tax_rate} />
+            </div>
           </div>
 
           {state?.error && !state.fieldErrors ? (
@@ -186,7 +211,7 @@ export function QuickCreateProductDialog({ open, onClose, onCreated }: Props) {
             Cancelar
           </Button>
           <Button type="submit" size="md" loading={pending}>
-            Crear producto
+            {editProduct ? "Guardar cambios" : "Crear producto"}
           </Button>
         </div>
       </form>
