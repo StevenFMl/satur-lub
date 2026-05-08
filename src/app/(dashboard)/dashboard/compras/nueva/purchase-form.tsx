@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useActionState, useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { Search, X, PlusCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -111,7 +112,12 @@ export function PurchaseForm({
   );
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
   const [dueDate, setDueDate] = useState("");
-  const [rows, setRows] = useState<Row[]>([newRow()]);
+  const [rows, setRows] = useState<Row[]>([]);
+
+  // Omni-Buscador state
+  const [searchTerm, setSearchTerm] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
   // Track filas cuyo costo total fue editado manualmente para evitar
   // sobrescribirlas al cambiar cantidad. Es la pieza clave del cálculo
@@ -140,6 +146,99 @@ export function PurchaseForm({
     for (const p of localProducts) m.set(p.id, p);
     return m;
   }, [localProducts]);
+
+  const searchResults = useMemo(() => {
+    if (!searchTerm.trim()) return [];
+    const term = searchTerm.toLowerCase();
+    return localProducts.filter(
+      p => p.name.toLowerCase().includes(term) || p.sku.toLowerCase().includes(term)
+    ).slice(0, 5); // Limit to 5 results for speed
+  }, [searchTerm, localProducts]);
+  
+  const exactSkuMatch = useMemo(() => {
+    const term = searchTerm.toLowerCase();
+    return localProducts.find(p => p.sku.toLowerCase() === term);
+  }, [searchTerm, localProducts]);
+
+  const addToCart = useCallback((product: LookupProduct | { isNew: true, name: string }) => {
+    if ("isNew" in product) {
+      setRows((prev) => [
+        ...prev,
+        {
+          uid: crypto.randomUUID(),
+          product_id: "",
+          is_new_product: true,
+          new_product_name: product.name,
+          quantity: "1",
+          total_cost: "0",
+          unit: "galón",
+          is_gift: false,
+        }
+      ]);
+    } else {
+      setRows((prev) => {
+        const existingIndex = prev.findIndex(r => r.product_id === product.id && !r.is_gift);
+        if (existingIndex >= 0) {
+          const newRows = [...prev];
+          const row = newRows[existingIndex];
+          const newQtyNum = Number(row.quantity) + 1;
+          const newQtyStr = String(newQtyNum);
+          
+          let newTotal = row.total_cost;
+          if (!manualTotalEdited.current.has(row.uid) && product.cost_price != null) {
+            newTotal = toFixedStr(lineTotal(newQtyStr, product.cost_price), 2);
+          }
+          
+          newRows[existingIndex] = {
+            ...row,
+            quantity: newQtyStr,
+            total_cost: newTotal,
+          };
+          return newRows;
+        } else {
+          const costPrice = product.cost_price ?? null;
+          const totalCostStr = costPrice != null ? toFixedStr(lineTotal("1", costPrice), 2) : "0";
+          return [
+            ...prev,
+            {
+              uid: crypto.randomUUID(),
+              product_id: product.id,
+              is_new_product: false,
+              new_product_name: "",
+              quantity: "1",
+              total_cost: totalCostStr,
+              unit: product.unit,
+              is_gift: false,
+            }
+          ];
+        }
+      });
+    }
+    
+    setSearchTerm("");
+    setIsDropdownOpen(false);
+    
+    setTimeout(() => {
+      searchInputRef.current?.focus();
+    }, 0);
+  }, []);
+
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (!searchTerm.trim()) return;
+      
+      if (exactSkuMatch) {
+        addToCart(exactSkuMatch);
+      } else if (searchResults.length === 1) {
+        addToCart(searchResults[0]);
+      } else if (searchResults.length === 0) {
+        addToCart({ isNew: true, name: searchTerm });
+      }
+    } else if (e.key === "Escape") {
+      setIsDropdownOpen(false);
+    }
+  };
 
   // Subtotal = suma segura de total_cost (big.js)
   const subtotalBig = useMemo(() => sumAll(rows.map((r) => r.total_cost)), [rows]);
@@ -170,35 +269,7 @@ export function PurchaseForm({
     setRows((prev) => prev.map((r) => (r.uid === uid ? { ...r, ...patch } : r)));
 
   const removeRow = (uid: string) =>
-    setRows((prev) => (prev.length === 1 ? prev : prev.filter((r) => r.uid !== uid)));
-
-  const addRow = () => setRows((prev) => [...prev, newRow()]);
-
-  const onProductChange = (uid: string, text: string) => {
-    const product = localProducts.find((p) => p.name.toLowerCase() === text.toLowerCase());
-    
-    if (product) {
-      const row = rows.find((r) => r.uid === uid);
-      const qty = row ? row.quantity : "1";
-      const costPrice = product.cost_price ?? null;
-      manualTotalEdited.current.delete(uid);
-      const totalCostStr = costPrice != null ? toFixedStr(lineTotal(qty, costPrice), 2) : "0";
-      updateRow(uid, {
-        product_id: product.id,
-        is_new_product: false,
-        new_product_name: "",
-        total_cost: totalCostStr,
-        unit: product.unit,
-        is_gift: false,
-      });
-    } else {
-      updateRow(uid, {
-        product_id: "",
-        is_new_product: text.trim().length > 0,
-        new_product_name: text,
-      });
-    }
-  };
+    setRows((prev) => prev.filter((r) => r.uid !== uid));
 
   const openQuickCreate = useCallback((rowUid: string) => {
     setActiveRowUid(rowUid);
@@ -409,6 +480,77 @@ export function PurchaseForm({
             </Badge>
           </header>
 
+          <div className="relative border-b border-steel-700 bg-steel-900/40 p-4">
+            <div className="relative">
+              <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                <Search className="h-5 w-5 text-muted-foreground" />
+              </div>
+              <Input
+                ref={searchInputRef}
+                value={searchTerm}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  setIsDropdownOpen(e.target.value.trim().length > 0);
+                }}
+                onFocus={() => setIsDropdownOpen(searchTerm.trim().length > 0)}
+                onBlur={() => setTimeout(() => setIsDropdownOpen(false), 200)}
+                onKeyDown={handleSearchKeyDown}
+                placeholder="Buscar por nombre o escanear código (SKU)..."
+                className="h-12 pl-10 text-[15px] shadow-inner"
+              />
+              {searchTerm && (
+                <button
+                  type="button"
+                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-muted-foreground hover:text-foreground"
+                  onClick={() => {
+                    setSearchTerm("");
+                    searchInputRef.current?.focus();
+                  }}
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+            
+            {/* Dropdown Omni-Buscador */}
+            {isDropdownOpen && searchTerm.trim().length > 0 && (
+              <div className="absolute left-4 right-4 top-[64px] z-50 overflow-hidden rounded-md border border-steel-600 bg-steel-800 shadow-xl">
+                <ul className="max-h-[300px] overflow-y-auto py-1">
+                  {searchResults.map((p) => (
+                    <li key={p.id}>
+                      <button
+                        type="button"
+                        className="flex w-full items-center justify-between px-4 py-2.5 text-left transition-colors hover:bg-steel-700 focus:bg-steel-700"
+                        onClick={() => addToCart(p)}
+                      >
+                        <div className="flex flex-col">
+                          <span className="font-semibold text-foreground">{p.name}</span>
+                          <span className="font-mono text-[11px] text-muted-foreground">{p.sku}</span>
+                        </div>
+                        <Badge tone="neutral">Enter</Badge>
+                      </button>
+                    </li>
+                  ))}
+                  {searchResults.length === 0 && (
+                    <li>
+                      <button
+                        type="button"
+                        className="flex w-full items-center gap-2 px-4 py-3 text-left transition-colors hover:bg-steel-700 focus:bg-steel-700 text-safety-400"
+                        onClick={() => addToCart({ isNew: true, name: searchTerm })}
+                      >
+                        <PlusCircle className="h-5 w-5" />
+                        <div>
+                          <span className="block font-semibold">Crear nuevo producto:</span>
+                          <span className="block truncate text-[13px]">{searchTerm}</span>
+                        </div>
+                      </button>
+                    </li>
+                  )}
+                </ul>
+              </div>
+            )}
+          </div>
+
           <div className="overflow-x-auto">
             <table className="w-full text-left">
               <thead className="border-b border-steel-800 bg-steel-950/60">
@@ -429,59 +571,36 @@ export function PurchaseForm({
                   return (
                     <tr key={r.uid} className="border-b border-steel-800">
                       <td className="px-4 py-3 align-top">
-                        <div className="relative flex flex-col gap-1">
-                          <Input
-                            list={`products-list-${r.uid}`}
-                            value={r.product_id ? (productById.get(r.product_id)?.name || "") : (r.new_product_name || "")}
-                            onChange={(e) => onProductChange(r.uid, e.target.value)}
-                            aria-label="Producto"
-                            placeholder="Busca o escribe un producto..."
-                          />
-                          <datalist id={`products-list-${r.uid}`}>
-                            {localProducts.map((p) => (
-                              <option key={p.id} value={p.name} />
-                            ))}
-                          </datalist>
-                          {r.is_new_product && r.new_product_name ? (
-                            <div className="mt-1 flex items-center gap-1.5">
+                        <div className="flex flex-col items-start gap-1">
+                          <span className="font-semibold leading-tight text-foreground">
+                            {r.is_new_product ? r.new_product_name : (productById.get(r.product_id)?.name || "Desconocido")}
+                          </span>
+                          
+                          {r.is_new_product ? (
+                            <div className="flex items-center gap-1.5 mt-0.5">
                               <Badge tone="info" className="text-[9px]">Nuevo</Badge>
-                              <span className="text-[10.5px] text-muted-foreground">Se creará al guardar</span>
+                              <span className="text-[10px] text-muted-foreground">Se creará al guardar</span>
                             </div>
-                          ) : null}
+                          ) : (
+                            <Badge tone="neutral" className="text-[10px] mt-0.5">
+                              {productById.get(r.product_id)?.sku || "-"}
+                            </Badge>
+                          )}
+                          
+                          {(() => {
+                            if (r.is_new_product) return null;
+                            const product = productById.get(r.product_id);
+                            if (!product || product.best_cost == null) return null;
+                            const currentUnitCostBig = unitCostFromTotal(r.total_cost, r.quantity);
+                            // unitCostBig is big.js instance
+                            const isHigher = currentUnitCostBig.gt(product.best_cost);
+                            return (
+                              <div className={`mt-1.5 text-[10px] ${isHigher ? "text-red-500 font-semibold" : "text-muted-foreground"}`}>
+                                Mejor histórico: ${product.best_cost.toFixed(2)}
+                              </div>
+                            );
+                          })()}
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => openQuickCreate(r.uid)}
-                          className="mt-1.5 inline-flex items-center gap-1 rounded-sm px-2 py-1 text-[11.5px] font-semibold uppercase tracking-[0.1em] text-safety-500 transition-colors hover:bg-safety-500/10 hover:text-safety-400"
-                        >
-                          <svg
-                            viewBox="0 0 24 24"
-                            className="h-3 w-3"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2.5"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            aria-hidden
-                          >
-                            <path d="M12 5v14" />
-                            <path d="M5 12h14" />
-                          </svg>
-                          Crear Producto Rápido
-                        </button>
-                        {(() => {
-                          if (r.is_new_product) return null;
-                          const product = productById.get(r.product_id);
-                          if (!product || product.best_cost == null) return null;
-                          const currentUnitCostBig = unitCostFromTotal(r.total_cost, r.quantity);
-                          // unitCostBig is big.js instance
-                          const isHigher = currentUnitCostBig.gt(product.best_cost);
-                          return (
-                            <div className={`mt-2 text-[10.5px] ${isHigher ? "text-red-500 font-semibold" : "text-muted-foreground"}`}>
-                              Mejor precio histórico: ${product.best_cost.toFixed(2)} ({product.best_supplier})
-                            </div>
-                          );
-                        })()}
                       </td>
                       <td className="px-4 py-3 align-top">
                         <div className="flex items-center gap-2">
@@ -569,7 +688,6 @@ export function PurchaseForm({
                         <button
                           type="button"
                           onClick={() => removeRow(r.uid)}
-                          disabled={rows.length === 1}
                           aria-label="Quitar ítem"
                           className="grid h-9 w-9 place-items-center rounded-sm border border-steel-700 bg-steel-800 text-muted-foreground transition-colors hover:border-hazard-500/60 hover:text-hazard-500 disabled:opacity-40"
                         >
@@ -596,29 +714,8 @@ export function PurchaseForm({
             </table>
           </div>
 
-          <div className="flex items-center justify-between border-t border-steel-800 bg-steel-950/40 px-6 py-4">
-            <Button
-              type="button"
-              variant="outline"
-              size="md"
-              onClick={addRow}
-            >
-              <svg
-                viewBox="0 0 24 24"
-                className="h-4 w-4"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden
-              >
-                <path d="M12 5v14" />
-                <path d="M5 12h14" />
-              </svg>
-              Agregar ítem
-            </Button>
-            <p className="industrial-label hidden sm:block">
+          <div className="flex items-center justify-end border-t border-steel-800 bg-steel-950/40 px-6 py-4">
+            <p className="industrial-label hidden sm:block text-right">
               Edita el costo total para cuadrar con la factura del proveedor.
             </p>
           </div>
