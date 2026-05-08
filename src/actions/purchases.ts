@@ -72,6 +72,42 @@ export async function receivePurchaseAction(
   const payment_status =
     data.payment_method === "credit" ? "pending" : "paid";
 
+  // ── 1. Creación Inline de Productos Nuevos ──
+  for (let i = 0; i < data.items.length; i++) {
+    const item = data.items[i];
+    if (item.is_new_product && item.new_product_name) {
+      // El usuario pidió: costo base neto sin IVA dividiendo el unitario ingresado para 1.15
+      const netBaseCost = Number((item.unit_cost / 1.15).toFixed(4));
+      
+      // Generar un SKU determinista simple para el nuevo producto
+      const shortName = item.new_product_name.replace(/[^a-zA-Z0-9]/g, "").substring(0, 4).toUpperCase();
+      const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+      const sku = `${shortName}-${randomSuffix}`;
+      
+      const payload = {
+        tenant_id: membership.tenant_id,
+        name: item.new_product_name,
+        sku: sku,
+        unit: "galón", // Unidad por defecto según el requerimiento
+        cost_price: netBaseCost,
+        product_kind: "item"
+      };
+
+      const { data: inserted, error: insertError } = await supabase
+        .from("products")
+        .insert(payload)
+        .select("id")
+        .single();
+
+      if (insertError || !inserted) {
+        console.error("Error creando producto inline:", insertError);
+        return { error: `No se pudo crear el producto nuevo: ${item.new_product_name}` };
+      }
+      
+      item.product_id = inserted.id;
+    }
+  }
+
   // ── Recalcular totales server-side con big.js (NO confiar en el cliente).
   //    El cliente envía los valores para UX, pero la fuente de verdad fiscal
   //    se deriva aquí a partir de los ítems ya validados por Zod.
@@ -93,7 +129,11 @@ export async function receivePurchaseAction(
       p_payment_status: payment_status,
       p_payment_due_date: data.payment_due_date,
       p_notes: data.notes,
-      p_items: data.items,
+      p_items: data.items.map(item => ({
+        product_id: item.product_id,
+        quantity: item.quantity,
+        unit_cost: item.unit_cost
+      })),
       p_tax_rate: data.tax_rate,
       p_subtotal: toFixedStr(serverSubtotal, 2),
       p_tax_amount: toFixedStr(serverTax, 2),

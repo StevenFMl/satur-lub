@@ -272,7 +272,9 @@ export async function bulkImportProductsAction(
     product_kind: "item" as const,
   }));
 
-  const { error } = await supabase.from("products").insert(payload);
+  const { error } = await supabase
+    .from("products")
+    .upsert(payload, { onConflict: 'tenant_id, sku', ignoreDuplicates: false });
 
   if (error) {
     console.error("bulkImportProductsAction:", error);

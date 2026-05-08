@@ -39,6 +39,8 @@ export type LookupProduct = {
   name: string;
   unit: string;
   cost_price: number | null;
+  best_cost?: number;
+  best_supplier?: string;
 };
 export type LookupWarehouse = { id: string; name: string };
 
@@ -47,6 +49,8 @@ type PaymentMethod = "cash" | "transfer" | "credit";
 type Row = {
   uid: string;
   product_id: string;
+  is_new_product?: boolean;
+  new_product_name?: string;
   quantity: string;
   total_cost: string;
   unit: string;
@@ -59,9 +63,11 @@ const newRow = (): Row => ({
       ? crypto.randomUUID()
       : Math.random().toString(36).slice(2),
   product_id: "",
+  is_new_product: false,
+  new_product_name: "",
   quantity: "1",
   total_cost: "0",
-  unit: "unidad",
+  unit: "galón", // Changed default to galón to match the requirement for new products
   is_gift: false,
 });
 
@@ -146,11 +152,13 @@ export function PurchaseForm({
   const itemsJson = useMemo(() => {
     return JSON.stringify(
       rows
-        .filter((r) => r.product_id)
+        .filter((r) => r.product_id || (r.is_new_product && r.new_product_name))
         .map((r) => {
           const unitCostBig = unitCostFromTotal(r.total_cost, r.quantity);
           return {
-            product_id: r.product_id,
+            product_id: r.product_id || null,
+            is_new_product: r.is_new_product,
+            new_product_name: r.new_product_name,
             quantity: Number(r.quantity) || 0,
             unit_cost: Number(toFixedStr(unitCostBig, 4)),
           };
@@ -166,20 +174,30 @@ export function PurchaseForm({
 
   const addRow = () => setRows((prev) => [...prev, newRow()]);
 
-  const onProductChange = (uid: string, productId: string) => {
-    const product = productById.get(productId);
-    const row = rows.find((r) => r.uid === uid);
-    const qty = row ? row.quantity : "1";
-    const costPrice = product?.cost_price ?? null;
-    // Al seleccionar producto (o crearlo), reseteamos la marca de edición manual
-    manualTotalEdited.current.delete(uid);
-    const totalCostStr = costPrice != null ? toFixedStr(lineTotal(qty, costPrice), 2) : "0";
-    updateRow(uid, {
-      product_id: productId,
-      total_cost: totalCostStr,
-      unit: product?.unit ?? "unidad",
-      is_gift: false,
-    });
+  const onProductChange = (uid: string, text: string) => {
+    const product = localProducts.find((p) => p.name.toLowerCase() === text.toLowerCase());
+    
+    if (product) {
+      const row = rows.find((r) => r.uid === uid);
+      const qty = row ? row.quantity : "1";
+      const costPrice = product.cost_price ?? null;
+      manualTotalEdited.current.delete(uid);
+      const totalCostStr = costPrice != null ? toFixedStr(lineTotal(qty, costPrice), 2) : "0";
+      updateRow(uid, {
+        product_id: product.id,
+        is_new_product: false,
+        new_product_name: "",
+        total_cost: totalCostStr,
+        unit: product.unit,
+        is_gift: false,
+      });
+    } else {
+      updateRow(uid, {
+        product_id: "",
+        is_new_product: text.trim().length > 0,
+        new_product_name: text,
+      });
+    }
   };
 
   const openQuickCreate = useCallback((rowUid: string) => {
@@ -201,6 +219,8 @@ export function PurchaseForm({
         const totalCostStr = costPrice != null ? toFixedStr(lineTotal(qty, costPrice), 2) : "0";
         updateRow(activeRowUid, {
           product_id: product.id,
+          is_new_product: false,
+          new_product_name: "",
           total_cost: totalCostStr,
           unit: product.unit,
           is_gift: false,
@@ -409,18 +429,26 @@ export function PurchaseForm({
                   return (
                     <tr key={r.uid} className="border-b border-steel-800">
                       <td className="px-4 py-3 align-top">
-                        <Select
-                          value={r.product_id}
-                          onChange={(e) => onProductChange(r.uid, e.target.value)}
-                          aria-label="Producto"
-                        >
-                          <option value="">— Selecciona producto —</option>
-                          {localProducts.map((p) => (
-                            <option key={p.id} value={p.id}>
-                              {p.name} · {p.sku}
-                            </option>
-                          ))}
-                        </Select>
+                        <div className="relative flex flex-col gap-1">
+                          <Input
+                            list={`products-list-${r.uid}`}
+                            value={r.product_id ? (productById.get(r.product_id)?.name || "") : (r.new_product_name || "")}
+                            onChange={(e) => onProductChange(r.uid, e.target.value)}
+                            aria-label="Producto"
+                            placeholder="Busca o escribe un producto..."
+                          />
+                          <datalist id={`products-list-${r.uid}`}>
+                            {localProducts.map((p) => (
+                              <option key={p.id} value={p.name} />
+                            ))}
+                          </datalist>
+                          {r.is_new_product && r.new_product_name ? (
+                            <div className="mt-1 flex items-center gap-1.5">
+                              <Badge tone="info" className="text-[9px]">Nuevo</Badge>
+                              <span className="text-[10.5px] text-muted-foreground">Se creará al guardar</span>
+                            </div>
+                          ) : null}
+                        </div>
                         <button
                           type="button"
                           onClick={() => openQuickCreate(r.uid)}
@@ -441,6 +469,19 @@ export function PurchaseForm({
                           </svg>
                           Crear Producto Rápido
                         </button>
+                        {(() => {
+                          if (r.is_new_product) return null;
+                          const product = productById.get(r.product_id);
+                          if (!product || product.best_cost == null) return null;
+                          const currentUnitCostBig = unitCostFromTotal(r.total_cost, r.quantity);
+                          // unitCostBig is big.js instance
+                          const isHigher = currentUnitCostBig.gt(product.best_cost);
+                          return (
+                            <div className={`mt-2 text-[10.5px] ${isHigher ? "text-red-500 font-semibold" : "text-muted-foreground"}`}>
+                              Mejor precio histórico: ${product.best_cost.toFixed(2)} ({product.best_supplier})
+                            </div>
+                          );
+                        })()}
                       </td>
                       <td className="px-4 py-3 align-top">
                         <div className="flex items-center gap-2">

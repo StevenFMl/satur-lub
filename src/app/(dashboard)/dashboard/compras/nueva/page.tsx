@@ -20,7 +20,7 @@ export default async function NuevaCompraPage() {
   const supabase = await createClient();
 
   // Lookups en paralelo. RLS los filtra al tenant del usuario.
-  const [suppliersRes, productsRes, warehousesRes] = await Promise.all([
+  const [suppliersRes, productsRes, warehousesRes, historyRes] = await Promise.all([
     supabase
       .from("business_partners")
       .select("id, full_name, document_number")
@@ -38,11 +38,37 @@ export default async function NuevaCompraPage() {
       .select("id, name")
       .eq("is_active", true)
       .order("name"),
+    supabase
+      .from("product_supplier_history")
+      .select("product_id, last_cost, business_partners(full_name)")
   ]);
 
   const suppliers = (suppliersRes.data ?? []) as unknown as LookupSupplier[];
-  const products = (productsRes.data ?? []) as unknown as LookupProduct[];
+  const productsRaw = (productsRes.data ?? []) as unknown as LookupProduct[];
   const warehouses = (warehousesRes.data ?? []) as unknown as LookupWarehouse[];
+  const historyRaw = historyRes.data ?? [];
+
+  // Map lowest price per product
+  const historyMap = new Map<string, { cost: number; supplier: string }>();
+  for (const h of historyRaw) {
+    const prev = historyMap.get(h.product_id);
+    const cost = Number(h.last_cost);
+    if (!prev || cost < prev.cost) {
+      historyMap.set(h.product_id, {
+        cost,
+        supplier: h.business_partners?.full_name || "Desconocido",
+      });
+    }
+  }
+
+  const products = productsRaw.map((p) => {
+    const hist = historyMap.get(p.id);
+    return {
+      ...p,
+      best_cost: hist?.cost,
+      best_supplier: hist?.supplier,
+    };
+  });
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-8">

@@ -1,9 +1,14 @@
 import { z } from "zod";
 
 const itemSchema = z.object({
-  product_id: z.string().uuid("Producto inválido."),
+  product_id: z.string().uuid("Producto inválido.").nullable(),
+  is_new_product: z.boolean().optional(),
+  new_product_name: z.string().optional(),
   quantity: z.number().positive("Cantidad debe ser > 0."),
   unit_cost: z.number().nonnegative("Costo no puede ser negativo."),
+}).refine(data => data.product_id || (data.is_new_product && data.new_product_name), {
+  message: "Debes seleccionar o ingresar un producto.",
+  path: ["product_id"]
 });
 
 const trimmedOrUndef = (v: unknown): string | undefined => {

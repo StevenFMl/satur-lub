@@ -329,13 +329,26 @@ create table if not exists public.products (
   attributes jsonb not null default '{}'::jsonb,
   is_active boolean not null default true,
   created_by uuid,
+  last_supplier_id uuid,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (tenant_id, sku),
   unique (tenant_id, id),
   foreign key (tenant_id, category_id) references public.product_categories(tenant_id, id) on delete restrict,
   foreign key (tenant_id, brand_id) references public.product_brands(tenant_id, id) on delete restrict,
-  foreign key (tenant_id, created_by) references public.tenant_memberships(tenant_id, user_id) on delete restrict
+  foreign key (tenant_id, created_by) references public.tenant_memberships(tenant_id, user_id) on delete restrict,
+  foreign key (tenant_id, last_supplier_id) references public.business_partners(tenant_id, id) on delete restrict
+);
+
+create table if not exists public.product_supplier_history (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.tenants(id) on delete restrict,
+  product_id uuid not null,
+  supplier_id uuid not null,
+  last_cost numeric(12,2) not null check (last_cost >= 0),
+  purchase_date timestamptz not null default now(),
+  foreign key (tenant_id, product_id) references public.products(tenant_id, id) on delete restrict,
+  foreign key (tenant_id, supplier_id) references public.business_partners(tenant_id, id) on delete restrict
 );
 
 drop trigger if exists trg_products_updated_at on public.products;
