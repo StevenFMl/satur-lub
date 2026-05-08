@@ -7,8 +7,9 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Sheet } from "@/components/ui/sheet";
 import { DropdownMenu, DropdownItem } from "@/components/ui/dropdown-menu";
-import { toggleProductActiveAction } from "@/actions/products";
+import { toggleProductActiveAction, bulkImportProductsAction } from "@/actions/products";
 import { ProductForm } from "./product-form";
+import Big from "big.js";
 
 export type ProductRow = {
   id: string;
@@ -39,6 +40,99 @@ export function ProductsTable({
   const [editing, setEditing] = React.useState<ProductRow | null>(null);
   const [open, setOpen] = React.useState(false);
   const [pendingId, setPendingId] = React.useState<string | null>(null);
+  const [isImporting, setIsImporting] = React.useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleImportClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    setIsImporting(true);
+    try {
+      const text = await file.text();
+      const lines = text.split(/\r?\n/).filter(line => line.trim() !== "");
+      if (lines.length < 2) throw new Error("CSV vacío o sin datos");
+      
+      const parseLine = (line: string) => {
+        const result = [];
+        let cur = "";
+        let inQuotes = false;
+        for (let i = 0; i < line.length; i++) {
+          const c = line[i];
+          if (c === '"') {
+            inQuotes = !inQuotes;
+          } else if (c === ',' && !inQuotes) {
+            result.push(cur.trim());
+            cur = "";
+          } else {
+            cur += c;
+          }
+        }
+        result.push(cur.trim());
+        return result.map(s => s.replace(/^"|"$/g, "").trim());
+      };
+
+      const headers = parseLine(lines[0]).map(h => h.toLowerCase());
+      
+      const idxName = headers.indexOf("name");
+      const idxCode = headers.indexOf("code");
+      const idxUnit = headers.indexOf("unit");
+      const idxCost = headers.indexOf("cost_price");
+      const idxTax = headers.indexOf("has_tax");
+
+      if (idxName === -1) throw new Error("Falta la columna 'name'");
+
+      const itemsToImport = [];
+
+      for (let i = 1; i < lines.length; i++) {
+        const row = parseLine(lines[i]);
+        if (row.length < headers.length && row.join("") === "") continue;
+        
+        const name = row[idxName];
+        if (!name) continue;
+
+        const sku = idxCode !== -1 ? row[idxCode] : "";
+        const unit = idxUnit !== -1 ? (row[idxUnit] || "unidad") : "unidad";
+        const rawCost = idxCost !== -1 ? row[idxCost] : "0";
+        const hasTax = idxTax !== -1 ? (row[idxTax] === "true" || row[idxTax] === "1") : false;
+
+        let finalCost = 0;
+        try {
+          let c = new Big(rawCost || "0");
+          if (hasTax) {
+            c = c.div(1.15);
+          }
+          finalCost = Number(c.round(4).toString());
+        } catch {
+          finalCost = 0;
+        }
+
+        itemsToImport.push({
+          name,
+          sku,
+          unit,
+          cost_price: finalCost
+        });
+      }
+
+      if (itemsToImport.length === 0) throw new Error("No hay productos para importar");
+
+      const res = await bulkImportProductsAction(itemsToImport);
+      if (res?.error) throw new Error(res.error);
+      
+      window.alert(`Se importaron ${itemsToImport.length} productos correctamente.`);
+      router.refresh();
+    } catch (err: any) {
+      window.alert("Error al importar: " + (err.message || "Revisa el formato del CSV"));
+    } finally {
+      setIsImporting(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
 
   const onInactivate = (row: ProductRow) => {
     if (
@@ -91,10 +185,16 @@ export function ProductsTable({
           />
         </div>
         {canManage ? (
-          <Button onClick={openNew} size="md" className="sm:min-w-[200px]">
-            <PlusIcon className="h-4 w-4" />
-            Nuevo producto
-          </Button>
+          <div className="flex items-center gap-2">
+            <input type="file" accept=".csv" className="hidden" ref={fileInputRef} onChange={handleFileChange} />
+            <Button variant="outline" size="md" onClick={handleImportClick} disabled={isImporting}>
+              {isImporting ? "Importando..." : "Importar CSV"}
+            </Button>
+            <Button onClick={openNew} size="md" className="sm:min-w-[200px]">
+              <PlusIcon className="h-4 w-4" />
+              Nuevo producto
+            </Button>
+          </div>
         ) : null}
       </div>
 

@@ -15,6 +15,12 @@ export type ProductState = {
   fieldErrors?: ProductFieldErrors;
 } | null;
 
+export type BulkImportResult = {
+  ok?: boolean;
+  error?: string;
+};
+
+
 /**
  * Crea o actualiza un producto del catálogo.
  *
@@ -232,5 +238,48 @@ export async function toggleProductActiveAction(
   revalidatePath("/dashboard/inventario/productos");
   revalidatePath("/dashboard/compras/nueva");
   revalidatePath("/dashboard/inventario/stock");
+  return { ok: true };
+}
+
+/* ------------------------------------------------------------------ */
+/* Importación Masiva (CSV)                                           */
+/* ------------------------------------------------------------------ */
+
+export async function bulkImportProductsAction(
+  items: Array<{
+    name: string;
+    sku: string;
+    unit: string;
+    cost_price: number;
+  }>
+): Promise<BulkImportResult> {
+  const { user, membership } = await getActiveMembership();
+  if (!user || !membership) return { error: "Sesión expirada." };
+
+  if (membership.role !== "owner" && membership.role !== "admin") {
+    return { error: "No tienes permisos para gestionar productos." };
+  }
+
+  const tenantId = membership.tenant_id;
+  const supabase = await createClient();
+
+  const payload = items.map((item) => ({
+    tenant_id: tenantId,
+    name: item.name,
+    sku: item.sku || makeSkuFromName(item.name),
+    unit: item.unit,
+    cost_price: item.cost_price,
+    product_kind: "item" as const,
+  }));
+
+  const { error } = await supabase.from("products").insert(payload);
+
+  if (error) {
+    console.error("bulkImportProductsAction:", error);
+    return { error: "Error al importar productos masivamente. Revisa si hay SKUs duplicados." };
+  }
+
+  revalidatePath("/dashboard/inventario/productos");
+  revalidatePath("/dashboard/compras/nueva");
   return { ok: true };
 }

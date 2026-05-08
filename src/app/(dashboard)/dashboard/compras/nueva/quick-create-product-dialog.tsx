@@ -6,6 +6,8 @@ import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import Big from "big.js";
 import { Alert } from "@/components/ui/alert";
 import { FieldError } from "@/components/ui/field-error";
 import {
@@ -39,8 +41,13 @@ export function QuickCreateProductDialog({ open, onClose, onCreated }: Props) {
   }, [state, onCreated, onClose]);
 
   // Auto-focus al abrir
+  const [includesTax, setIncludesTax] = React.useState(false);
+  const [displayPrice, setDisplayPrice] = React.useState("");
+
   useEffect(() => {
     if (open) {
+      setDisplayPrice("");
+      setIncludesTax(false);
       // Pequeño delay para que el portal monte
       const t = setTimeout(() => nameRef.current?.focus(), 50);
       return () => clearTimeout(t);
@@ -105,19 +112,42 @@ export function QuickCreateProductDialog({ open, onClose, onCreated }: Props) {
                 <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-mono text-[12px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
                   USD
                 </span>
+                <input
+                  type="hidden"
+                  name="cost_price"
+                  value={(() => {
+                    if (!displayPrice) return "";
+                    try {
+                      const p = new Big(displayPrice);
+                      return includesTax ? p.div(1.15).round(4).toString() : p.round(4).toString();
+                    } catch {
+                      return "";
+                    }
+                  })()}
+                />
                 <Input
                   id="qc-cost"
-                  name="cost_price"
                   type="number"
                   min="0"
                   step="0.0001"
-                  defaultValue="0"
+                  value={displayPrice}
+                  onChange={(e) => setDisplayPrice(e.target.value)}
                   placeholder="0.00"
                   mono
                   className="pl-14 text-right"
                   invalid={Boolean(errors.cost_price)}
                   onFocus={(e) => e.target.select()}
                 />
+              </div>
+              <div className="mt-3 flex items-center gap-2">
+                <Switch
+                  id="qc-tax"
+                  checked={includesTax}
+                  onCheckedChange={setIncludesTax}
+                />
+                <Label htmlFor="qc-tax" className="text-[12px] font-medium text-muted-foreground cursor-pointer">
+                  El precio ingresado ya incluye IVA (15%)
+                </Label>
               </div>
               <FieldError fieldId="qc-cost" message={errors.cost_price} />
             </div>
