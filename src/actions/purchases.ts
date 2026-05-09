@@ -81,6 +81,9 @@ export async function receivePurchaseAction(
   //    Obtenemos el has_tax de cada producto desde la Base de Datos para
   //    calcular el IVA de forma granular usando el tax_rate.
   const invoiceTaxRate = data.tax_rate ?? 15;
+  const isTaxInclusive = data.is_tax_inclusive;
+  const taxRateBig = Big(invoiceTaxRate).div(100);
+
   const productIds = data.items.map(i => i.product_id).filter(Boolean) as string[];
   const { data: dbProducts } = await supabase
     .from("products")
@@ -89,20 +92,44 @@ export async function receivePurchaseAction(
     
   const dbProductMap = new Map(dbProducts?.map(p => [p.id, p.has_tax ?? true]) || []);
 
+  let serverSubtotalBig = Big(0);
   let serverTaxBig = Big(0);
-  const serverSubtotal = sumAll(
-    data.items.map((i) => {
-      const lineT = lineTotal(i.quantity, i.unit_cost);
-      const isTaxable = dbProductMap.get(i.product_id as string) ?? true;
-      if (isTaxable && invoiceTaxRate > 0) {
-        serverTaxBig = serverTaxBig.plus(taxAmount(lineT, invoiceTaxRate));
-      }
-      return lineT;
-    })
-  );
-  
-  const serverTax = toMoney(serverTaxBig);
-  const serverGrand = add(grandTotal(serverSubtotal, serverTax), data.other_charges);
+
+  const p_items = data.items.map((item) => {
+    const isTaxable = dbProductMap.get(item.product_id as string) ?? true;
+    
+    // item.unit_cost received from client is GROSS if isTaxInclusive is true
+    let unitCostBig = Big(item.unit_cost);
+    
+    if (isTaxInclusive && isTaxable && invoiceTaxRate > 0) {
+      unitCostBig = unitCostBig.div(Big(1).plus(taxRateBig));
+    }
+    
+    // Preserve sufficient precision for inventory (4 decimals)
+    const netUnitCostStr = toFixedStr(unitCostBig, 4);
+    const netUnitCostBig = Big(netUnitCostStr);
+    const qtyBig = Big(item.quantity);
+    
+    // Server recalculates line total based on net cost (rounds to 2 decimals)
+    const lineTotalBig = toMoney(netUnitCostBig.times(qtyBig));
+    serverSubtotalBig = serverSubtotalBig.plus(lineTotalBig);
+    
+    if (isTaxable && invoiceTaxRate > 0) {
+      serverTaxBig = serverTaxBig.plus(taxAmount(lineTotalBig, invoiceTaxRate));
+    }
+    
+    return {
+      product_id: item.product_id,
+      quantity: Number(item.quantity),
+      unit_cost: Number(netUnitCostStr),
+      is_taxable: isTaxable
+    };
+  });
+
+  const serverSubtotalStr = toFixedStr(serverSubtotalBig, 2);
+  const serverTaxStr = toFixedStr(serverTaxBig, 2);
+  const serverGrandBig = Big(serverSubtotalStr).plus(Big(serverTaxStr)).plus(Big(data.other_charges || 0));
+  const serverGrandStr = toFixedStr(serverGrandBig, 2);
 
   // RPC SECURITY INVOKER + transacción atómica
   const { data: poId, error } = await supabase.rpc(
@@ -115,17 +142,12 @@ export async function receivePurchaseAction(
       p_payment_status: payment_status,
       p_payment_due_date: data.payment_due_date,
       p_notes: data.notes,
-      p_items: data.items.map(item => ({
-        product_id: item.product_id,
-        quantity: item.quantity,
-        unit_cost: item.unit_cost,
-        is_taxable: dbProductMap.get(item.product_id as string) ?? true
-      })),
+      p_items: p_items,
       p_tax_rate: invoiceTaxRate,
-      p_is_tax_inclusive: data.is_tax_inclusive,
-      p_subtotal: Number(toFixedStr(serverSubtotal, 2)),
-      p_tax_amount: Number(toFixedStr(serverTax, 2)),
-      p_grand_total: Number(toFixedStr(serverGrand, 2)),
+      p_is_tax_inclusive: isTaxInclusive,
+      p_subtotal: Number(serverSubtotalStr),
+      p_tax_amount: Number(serverTaxStr),
+      p_grand_total: Number(serverGrandStr),
       p_other_charges: Number(toFixedStr(data.other_charges, 2)),
     } as never
   );

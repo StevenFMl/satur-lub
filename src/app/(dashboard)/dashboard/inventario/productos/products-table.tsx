@@ -18,7 +18,8 @@ export type ProductRow = {
   unit: string;
   cost_price: number | null;
   product_kind: "item" | "service" | "kit";
-  tax_rate: number;
+  tax_rate: number | null;
+  has_tax: boolean;
   is_active: boolean;
   created_at: string;
 };
@@ -93,12 +94,12 @@ export function ProductsTable({
         const row = parseLine(lines[i]);
         if (row.length < headers.length && row.join("") === "") continue;
         
-        const name = row[idxName];
+        const name = row[idxName] || "";
         if (!name) continue;
 
-        const sku = idxCode !== -1 ? row[idxCode] : "";
-        const unit = idxUnit !== -1 ? (row[idxUnit] || "unidad") : "unidad";
-        const rawCost = idxCost !== -1 ? row[idxCost] : "0";
+        const sku = idxCode !== -1 && row[idxCode] ? row[idxCode] : "";
+        const unit = idxUnit !== -1 && row[idxUnit] ? row[idxUnit] : "unidad";
+        const rawCost = idxCost !== -1 && row[idxCost] ? row[idxCost] : "0";
         const hasTax = idxTax !== -1 ? (row[idxTax] === "true" || row[idxTax] === "1") : false;
 
         let finalCost = 0;

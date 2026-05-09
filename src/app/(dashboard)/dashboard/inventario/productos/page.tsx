@@ -18,7 +18,7 @@ export default async function ProductosPage() {
   // Solo activos — los inactivados (soft-delete) desaparecen de la UI.
   const { data } = await supabase
     .from("products")
-    .select("id, name, sku, unit, cost_price, product_kind, is_active, created_at")
+    .select("id, name, sku, unit, cost_price, product_kind, is_active, has_tax, tax_rate, created_at")
     .eq("is_active", true)
     .order("created_at", { ascending: false });
 

@@ -165,7 +165,7 @@ export function PurchaseForm({
       const existingIndex = prev.findIndex(r => r.product_id === product.id && !r.is_gift);
       if (existingIndex >= 0) {
         const newRows = [...prev];
-        const row = newRows[existingIndex];
+        const row = newRows[existingIndex] as Row;
         const newQtyNum = Number(row.quantity) + 1;
         const newQtyStr = String(newQtyNum);
         
@@ -213,7 +213,7 @@ export function PurchaseForm({
       if (exactSkuMatch) {
         addToCart(exactSkuMatch);
       } else if (searchResults.length === 1) {
-        addToCart(searchResults[0]);
+        addToCart(searchResults[0] as LookupProduct);
       }
     } else if (e.key === "Escape") {
       setIsDropdownOpen(false);
@@ -264,31 +264,25 @@ export function PurchaseForm({
   const otherBig = useMemo(() => toMoney(otherCharges || "0"), [otherCharges]);
   const grandBig = useMemo(() => add(grandTotal(subtotalBig, taxBig), otherBig), [subtotalBig, taxBig, otherBig]);
 
-  // Serialización: el backend espera { product_id, quantity, unit_cost }
-  // unit_cost se calcula con precisión y redondeo a 4 decimales como costo base (sin IVA).
   const itemsJson = useMemo(() => {
-    const taxRateBig = Big(invoiceTaxRate).div(100);
     return JSON.stringify(
       rows
         .filter((r) => r.product_id)
         .map((r) => {
-          const isTaxable = productById.get(r.product_id)?.has_tax ?? true;
-          let baseRowTotal = Big(r.total_cost || 0);
-          if (isTaxInclusive && isTaxable && invoiceTaxRate > 0) {
-            baseRowTotal = baseRowTotal.div(Big(1).plus(taxRateBig));
-          }
           const qtyNum = Number(r.quantity) || 0;
-          const unitCostBig = qtyNum > 0 ? baseRowTotal.div(qtyNum) : Big(0);
+          const totalBig = Big(r.total_cost || 0);
+          // Send raw unit_cost (Gross or Net based on user input).
+          // Server Action will extract tax using authoritative DB has_tax flag.
+          const rawUnitCostBig = qtyNum > 0 ? totalBig.div(qtyNum) : Big(0);
 
           return {
             product_id: r.product_id,
             quantity: qtyNum,
-            unit_cost: Number(toFixedStr(unitCostBig, 4)),
-            is_taxable: isTaxable,
+            unit_cost: Number(toFixedStr(rawUnitCostBig, 4)),
           };
         })
     );
-  }, [rows, isTaxInclusive, invoiceTaxRate, productById]);
+  }, [rows]);
 
   const updateRow = (uid: string, patch: Partial<Row>) =>
     setRows((prev) => prev.map((r) => (r.uid === uid ? { ...r, ...patch } : r)));
