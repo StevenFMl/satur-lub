@@ -196,19 +196,24 @@ export function ProductForm({ initial, onSuccess }: Props) {
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="tax_rate" required>
+          <Label htmlFor="has_tax" className="mb-2 block">
             Impuesto (IVA)
           </Label>
-          <select
-            id="tax_rate"
-            name="tax_rate"
-            defaultValue={initial?.tax_rate != null ? String(initial.tax_rate) : "15"}
-            className="flex h-10 w-full rounded-sm border-2 border-steel-700 bg-steel-800 px-3 py-2 font-mono text-[13px] text-foreground outline-none transition-colors focus:border-safety-500/60 focus:ring-2 focus:ring-safety-500/20"
-          >
-            <option value="15">IVA 15%</option>
-            <option value="0">IVA 0%</option>
-          </select>
-          <FieldError fieldId="tax_rate" message={errors.tax_rate} />
+          <div className="flex items-center gap-3">
+            <Switch
+              id="has_tax"
+              name="has_tax"
+              defaultChecked={initial ? initial.has_tax ?? true : true}
+              value="true"
+            />
+            <Label
+              htmlFor="has_tax"
+              className="text-[13px] font-medium text-muted-foreground cursor-pointer normal-case tracking-normal"
+            >
+              Este producto lleva IVA
+            </Label>
+          </div>
+          <FieldError fieldId="has_tax" message={errors.has_tax} />
         </div>
 
         {state?.error && !state.fieldErrors ? (

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useActionState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,40 +27,49 @@ export function QuickCreateProductDialog({ open, onClose, onCreated, editProduct
   const formRef = useRef<HTMLFormElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
 
-  const [state, formAction, pending] =
-    useActionState<QuickCreateProductState, FormData>(
-      quickCreateProductAction,
-      null
-    );
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<any>({});
 
-  // Cuando el producto se crea OK, notificar al parent y cerrar
-  useEffect(() => {
-    if (state?.ok && state.product) {
-      onCreated(state.product);
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setPending(true);
+    setError(null);
+    setFieldErrors({});
+    
+    const formData = new FormData(e.currentTarget);
+    const result = await quickCreateProductAction(null, formData);
+    
+    setPending(false);
+    if (result?.ok && result.product) {
+      onCreated(result.product);
       onClose();
+    } else {
+      setError(result?.error || null);
+      setFieldErrors(result?.fieldErrors || {});
     }
-  }, [state, onCreated, onClose]);
+  }
 
   // Auto-focus al abrir
-  const [includesTax, setIncludesTax] = React.useState(true);
-  const [displayPrice, setDisplayPrice] = React.useState("");
+  const [displayPrice, setDisplayPrice] = useState("");
 
   useEffect(() => {
     if (open) {
       if (editProduct) {
         setDisplayPrice(editProduct.cost_price != null ? String(editProduct.cost_price) : "");
-        setIncludesTax(false); // In edit mode, the base cost is already the base cost.
       } else {
         setDisplayPrice("");
-        setIncludesTax(true);
       }
       // Pequeño delay para que el portal monte
       const t = setTimeout(() => nameRef.current?.focus(), 50);
       return () => clearTimeout(t);
+    } else {
+      setError(null);
+      setFieldErrors({});
     }
   }, [open, editProduct]);
 
-  const errors = state?.fieldErrors ?? {};
+  const errors = fieldErrors;
 
   return (
     <Dialog
@@ -69,7 +78,7 @@ export function QuickCreateProductDialog({ open, onClose, onCreated, editProduct
       title={editProduct ? "Editar Producto" : "Crear Producto Rápido"}
       description={editProduct ? "Modifica los datos base del producto seleccionado." : "Registra un producto con los datos mínimos. Podrás completar la información después."}
     >
-      <form ref={formRef} action={formAction} className="flex flex-col">
+      <form ref={formRef} onSubmit={handleSubmit} className="flex flex-col">
         {editProduct ? <input type="hidden" name="id" value={editProduct.id} /> : null}
         <fieldset
           disabled={pending}
@@ -133,7 +142,7 @@ export function QuickCreateProductDialog({ open, onClose, onCreated, editProduct
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="qc-cost">Costo base</Label>
+              <Label htmlFor="qc-cost">Costo base (Neto)</Label>
               <div className="relative">
                 <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-mono text-[12px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
                   USD
@@ -141,20 +150,7 @@ export function QuickCreateProductDialog({ open, onClose, onCreated, editProduct
                 <input
                   type="hidden"
                   name="cost_price"
-                  value={(() => {
-                    if (!displayPrice) return "";
-                    try {
-                      const p = new Big(displayPrice);
-                      return includesTax ? p.div(1.15).round(4).toString() : p.round(4).toString();
-                    } catch {
-                      return "";
-                    }
-                  })()}
-                />
-                <input 
-                  type="hidden" 
-                  name="tax_rate" 
-                  value={includesTax ? "15" : "0"} 
+                  value={displayPrice}
                 />
                 <Input
                   id="qc-cost"
@@ -170,14 +166,15 @@ export function QuickCreateProductDialog({ open, onClose, onCreated, editProduct
                   onFocus={(e) => e.target.select()}
                 />
               </div>
-              <div className="mt-3 flex items-center gap-2">
+              <div className="mt-3 flex items-center gap-3">
                 <Switch
                   id="qc-tax"
-                  checked={includesTax}
-                  onCheckedChange={setIncludesTax}
+                  name="has_tax"
+                  value="true"
+                  defaultChecked={editProduct ? (editProduct as any).has_tax ?? true : true}
                 />
-                <Label htmlFor="qc-tax" className="text-[12px] font-medium text-muted-foreground cursor-pointer">
-                  El precio ingresado ya incluye IVA (15%)
+                <Label htmlFor="qc-tax" className="text-[13px] font-medium text-muted-foreground cursor-pointer normal-case tracking-normal">
+                  Este producto lleva IVA
                 </Label>
               </div>
               <FieldError fieldId="qc-cost" message={errors.cost_price} />
@@ -186,8 +183,8 @@ export function QuickCreateProductDialog({ open, onClose, onCreated, editProduct
 
           </div>
 
-          {state?.error && !state.fieldErrors ? (
-            <Alert tone="error">{state.error}</Alert>
+          {error && !Object.keys(fieldErrors).length ? (
+            <Alert tone="error">{error}</Alert>
           ) : null}
         </fieldset>
 

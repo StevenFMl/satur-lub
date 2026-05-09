@@ -46,7 +46,7 @@ export async function receivePurchaseAction(
     payment_due_date: formData.get("payment_due_date"),
     notes: formData.get("notes"),
     items,
-    tax_rate: formData.get("tax_rate"),
+    invoice_tax_rate: formData.get("invoice_tax_rate"),
     subtotal: formData.get("subtotal"),
     tax_amount: formData.get("tax_amount"),
     other_charges: formData.get("other_charges"),
@@ -111,23 +111,24 @@ export async function receivePurchaseAction(
   }
 
   // ── Recalcular totales server-side con big.js (NO confiar en el cliente).
-  //    Obtenemos el tax_rate de cada producto desde la Base de Datos para
-  //    calcular el IVA de forma granular.
+  //    Obtenemos el has_tax de cada producto desde la Base de Datos para
+  //    calcular el IVA de forma granular usando el invoice_tax_rate.
+  const invoiceTaxRate = data.invoice_tax_rate ?? 15;
   const productIds = data.items.map(i => i.product_id).filter(Boolean) as string[];
   const { data: dbProducts } = await supabase
     .from("products")
-    .select("id, tax_rate")
+    .select("id, has_tax")
     .in("id", productIds);
     
-  const dbProductMap = new Map(dbProducts?.map(p => [p.id, p.tax_rate ?? 15]) || []);
+  const dbProductMap = new Map(dbProducts?.map(p => [p.id, p.has_tax ?? true]) || []);
 
   let serverTaxBig = Big(0);
   const serverSubtotal = sumAll(
     data.items.map((i) => {
       const lineT = lineTotal(i.quantity, i.unit_cost);
-      const pRate = dbProductMap.get(i.product_id as string) || 15;
-      if (pRate > 0) {
-        serverTaxBig = serverTaxBig.plus(taxAmount(lineT, pRate));
+      const isTaxable = i.is_new_product ? i.is_taxable : dbProductMap.get(i.product_id as string) ?? true;
+      if (isTaxable && invoiceTaxRate > 0) {
+        serverTaxBig = serverTaxBig.plus(taxAmount(lineT, invoiceTaxRate));
       }
       return lineT;
     })
@@ -150,9 +151,10 @@ export async function receivePurchaseAction(
       p_items: data.items.map(item => ({
         product_id: item.product_id,
         quantity: item.quantity,
-        unit_cost: item.unit_cost
+        unit_cost: item.unit_cost,
+        is_taxable: item.is_new_product ? item.is_taxable : dbProductMap.get(item.product_id as string) ?? true
       })),
-      p_tax_rate: 15, // Legacy field in RPC, can just pass 15. Real tax is handled implicitly by totals.
+      p_tax_rate: invoiceTaxRate,
       p_subtotal: toFixedStr(serverSubtotal, 2),
       p_tax_amount: toFixedStr(serverTax, 2),
       p_grand_total: toFixedStr(serverGrand, 2),

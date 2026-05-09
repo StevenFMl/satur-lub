@@ -1619,6 +1619,7 @@ DECLARE
   v_item       jsonb;
   v_qty        numeric(12,4);
   v_unit_cost  numeric(12,4);
+  v_is_taxable boolean;
   v_line_total numeric(12,2);
   v_product_id uuid;
   v_pay_status text;
@@ -1705,6 +1706,7 @@ BEGIN
     v_product_id := (v_item->>'product_id')::uuid;
     v_qty        := (v_item->>'quantity')::numeric;
     v_unit_cost  := (v_item->>'unit_cost')::numeric;
+    v_is_taxable := COALESCE((v_item->>'is_taxable')::boolean, true);
 
     IF v_qty IS NULL OR v_qty <= 0 OR v_unit_cost IS NULL OR v_unit_cost < 0 THEN
       RAISE EXCEPTION 'Cantidad y costo deben ser > 0';
@@ -1722,10 +1724,10 @@ BEGIN
 
     INSERT INTO public.purchase_order_items (
       tenant_id, purchase_order_id, product_id,
-      quantity, unit_cost, line_total
+      quantity, unit_cost, line_total, is_taxable
     ) VALUES (
       v_tenant_id, v_po_id, v_product_id,
-      v_qty, v_unit_cost, v_line_total
+      v_qty, v_unit_cost, v_line_total, v_is_taxable
     );
 
     INSERT INTO public.inventory_movements (

@@ -6,6 +6,7 @@ const itemSchema = z.object({
   new_product_name: z.string().optional(),
   quantity: z.number().positive("Cantidad debe ser > 0."),
   unit_cost: z.number().nonnegative("Costo no puede ser negativo."),
+  is_taxable: z.boolean().default(true),
 }).refine(data => data.product_id || (data.is_new_product && data.new_product_name), {
   message: "Debes seleccionar o ingresar un producto.",
   path: ["product_id"]
@@ -70,8 +71,8 @@ export const purchaseSchema = z
     items: z.array(itemSchema).min(1, "Debe incluir al menos un ítem."),
 
     // ── Totales fiscales (calculados en UI con big.js, re-verificados aquí) ──
-    tax_rate: z.preprocess(
-      (v) => (v === "" || v == null ? undefined : Number(v)),
+    invoice_tax_rate: z.preprocess(
+      (v) => (v === "" || v == null ? 15 : Number(v)),
       z
         .number()
         .refine(
@@ -79,7 +80,6 @@ export const purchaseSchema = z
           "Tasa IVA inválida (permitidas: 0, 12, 15)."
         )
         .optional()
-        .nullable()
     ),
     subtotal: money,
     tax_amount: money,

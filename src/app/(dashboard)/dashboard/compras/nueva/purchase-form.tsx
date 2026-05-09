@@ -41,7 +41,7 @@ export type LookupProduct = {
   name: string;
   unit: string;
   cost_price: number | null;
-  tax_rate: number;
+  has_tax: boolean;
   best_cost?: number;
   best_supplier?: string;
 };
@@ -126,6 +126,7 @@ export function PurchaseForm({
   const manualTotalEdited = useRef(new Set<string>());
 
   // IVA selector (15% default Ecuador 2024+).
+  const [invoiceTaxRate, setInvoiceTaxRate] = useState(15);
   const [otherCharges, setOtherCharges] = useState("0");
 
   // Productos locales: se alimenta con la prop SSR pero se extiende con
@@ -224,16 +225,19 @@ export function PurchaseForm({
   
   const taxBig = useMemo(() => {
     let totalTax = Big(0);
+    const taxRateBig = Big(invoiceTaxRate).div(100);
     for (const r of rows) {
+      if (r.is_gift) continue;
       const product = productById.get(r.product_id);
       if (!product) continue;
-      // Solo aplicamos el 15% de IVA a los ítems que tengan tax_rate > 0
-      if (product.tax_rate > 0) {
-        totalTax = totalTax.plus(taxAmount(r.total_cost, product.tax_rate));
+      // Solo aplicamos el IVA a los ítems que tengan has_tax === true
+      if (product.has_tax) {
+        const itemTax = Big(r.total_cost).times(taxRateBig);
+        totalTax = totalTax.plus(itemTax);
       }
     }
     return toMoney(totalTax);
-  }, [rows, productById]);
+  }, [rows, productById, invoiceTaxRate]);
 
   const otherBig = useMemo(() => toMoney(otherCharges || "0"), [otherCharges]);
   const grandBig = useMemo(() => add(grandTotal(subtotalBig, taxBig), otherBig), [subtotalBig, taxBig, otherBig]);
@@ -246,10 +250,12 @@ export function PurchaseForm({
         .filter((r) => r.product_id)
         .map((r) => {
           const unitCostBig = unitCostFromTotal(r.total_cost, r.quantity);
+          const isTaxable = r.is_new_product ? r.is_taxable : (productById.get(r.product_id)?.has_tax ?? true);
           return {
             product_id: r.product_id,
             quantity: Number(r.quantity) || 0,
             unit_cost: Number(toFixedStr(unitCostBig, 4)),
+            is_taxable: isTaxable,
           };
         })
     );
@@ -341,12 +347,9 @@ export function PurchaseForm({
       <form action={formAction} className="space-y-8">
         <input type="hidden" name="items_json" value={itemsJson} />
         <input type="hidden" name="payment_method" value={paymentMethod} />
-        <input
-          type="hidden"
-          name="payment_due_date"
-          value={paymentMethod === "credit" ? dueDate : ""}
-        />
+        <input type="hidden" name="payment_due_date" value={paymentMethod === "credit" ? dueDate : ""} />
         <input type="hidden" name="subtotal" value={toFixedStr(subtotalBig, 2)} />
+        <input type="hidden" name="invoice_tax_rate" value={invoiceTaxRate} />
         <input type="hidden" name="tax_amount" value={toFixedStr(taxBig, 2)} />
         <input type="hidden" name="other_charges" value={toFixedStr(otherBig, 2)} />
         <input type="hidden" name="grand_total" value={toFixedStr(grandBig, 2)} />
@@ -728,8 +731,20 @@ export function PurchaseForm({
               <div className="flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
                   <span className="font-mono text-[12px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                    Impuestos
+                    IVA
                   </span>
+                  <div className="flex items-center">
+                    <Input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={invoiceTaxRate}
+                      onChange={(e) => setInvoiceTaxRate(Number(e.target.value) || 0)}
+                      className="h-8 w-16 text-right text-[13px] px-2 font-mono"
+                      mono
+                    />
+                    <span className="ml-1 text-[13px] text-muted-foreground font-mono">%</span>
+                  </div>
                 </div>
                 <span className="font-mono text-[15px] tabular-nums text-foreground">
                   {moneyFmt.format(toNum(toMoney(taxBig)))}
