@@ -37,6 +37,7 @@ export function ProductForm({ initial, onSuccess }: Props) {
   // Key para forzar re-render del formulario en modo continuo
   const [formKey, setFormKey] = useState(0);
   const [hasProcessedSuccess, setHasProcessedSuccess] = useState(false);
+  const [hasTax, setHasTax] = useState(initial ? initial.has_tax ?? true : true);
 
   useEffect(() => {
     if (!state?.ok || hasProcessedSuccess) return;
@@ -200,11 +201,11 @@ export function ProductForm({ initial, onSuccess }: Props) {
             Impuesto (IVA)
           </Label>
           <div className="flex items-center gap-3">
+            <input type="hidden" name="has_tax" value={hasTax ? "on" : "off"} />
             <Switch
               id="has_tax"
-              name="has_tax"
-              defaultChecked={initial ? initial.has_tax ?? true : true}
-              value="true"
+              checked={hasTax}
+              onCheckedChange={setHasTax}
             />
             <Label
               htmlFor="has_tax"

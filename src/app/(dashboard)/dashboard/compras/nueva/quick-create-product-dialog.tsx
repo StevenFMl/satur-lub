@@ -52,11 +52,13 @@ export function QuickCreateProductDialog({ open, onClose, onCreated, editProduct
 
   // Auto-focus al abrir
   const [displayPrice, setDisplayPrice] = useState("");
+  const [hasTax, setHasTax] = useState(true);
 
   useEffect(() => {
     if (open) {
       if (editProduct) {
         setDisplayPrice(editProduct.cost_price != null ? String(editProduct.cost_price) : "");
+        setHasTax((editProduct as any).has_tax ?? true);
       } else {
         setDisplayPrice("");
       }
@@ -167,11 +169,11 @@ export function QuickCreateProductDialog({ open, onClose, onCreated, editProduct
                 />
               </div>
               <div className="mt-3 flex items-center gap-3">
+                <input type="hidden" name="has_tax" value={hasTax ? "on" : "off"} />
                 <Switch
                   id="qc-tax"
-                  name="has_tax"
-                  value="true"
-                  defaultChecked={editProduct ? (editProduct as any).has_tax ?? true : true}
+                  checked={hasTax}
+                  onCheckedChange={setHasTax}
                 />
                 <Label htmlFor="qc-tax" className="text-[13px] font-medium text-muted-foreground cursor-pointer normal-case tracking-normal">
                   Este producto lleva IVA

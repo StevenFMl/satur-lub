@@ -46,7 +46,7 @@ export async function receivePurchaseAction(
     payment_due_date: formData.get("payment_due_date"),
     notes: formData.get("notes"),
     items,
-    invoice_tax_rate: formData.get("invoice_tax_rate"),
+    tax_rate: formData.get("tax_rate"),
     subtotal: formData.get("subtotal"),
     tax_amount: formData.get("tax_amount"),
     other_charges: formData.get("other_charges"),
@@ -112,8 +112,8 @@ export async function receivePurchaseAction(
 
   // ── Recalcular totales server-side con big.js (NO confiar en el cliente).
   //    Obtenemos el has_tax de cada producto desde la Base de Datos para
-  //    calcular el IVA de forma granular usando el invoice_tax_rate.
-  const invoiceTaxRate = data.invoice_tax_rate ?? 15;
+  //    calcular el IVA de forma granular usando el tax_rate.
+  const invoiceTaxRate = data.tax_rate ?? 15;
   const productIds = data.items.map(i => i.product_id).filter(Boolean) as string[];
   const { data: dbProducts } = await supabase
     .from("products")

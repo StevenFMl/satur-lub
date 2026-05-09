@@ -349,7 +349,7 @@ export function PurchaseForm({
         <input type="hidden" name="payment_method" value={paymentMethod} />
         <input type="hidden" name="payment_due_date" value={paymentMethod === "credit" ? dueDate : ""} />
         <input type="hidden" name="subtotal" value={toFixedStr(subtotalBig, 2)} />
-        <input type="hidden" name="invoice_tax_rate" value={invoiceTaxRate} />
+        <input type="hidden" name="tax_rate" value={invoiceTaxRate} />
         <input type="hidden" name="tax_amount" value={toFixedStr(taxBig, 2)} />
         <input type="hidden" name="other_charges" value={toFixedStr(otherBig, 2)} />
         <input type="hidden" name="grand_total" value={toFixedStr(grandBig, 2)} />

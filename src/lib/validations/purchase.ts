@@ -71,7 +71,7 @@ export const purchaseSchema = z
     items: z.array(itemSchema).min(1, "Debe incluir al menos un ítem."),
 
     // ── Totales fiscales (calculados en UI con big.js, re-verificados aquí) ──
-    invoice_tax_rate: z.preprocess(
+    tax_rate: z.preprocess(
       (v) => (v === "" || v == null ? 15 : Number(v)),
       z
         .number()
