@@ -15,6 +15,7 @@ ALTER TABLE public.sale_items ADD COLUMN IF NOT EXISTS is_taxable boolean not nu
 -- Añadir tax_rate por default en la cabecera de la orden
 ALTER TABLE public.purchase_orders ADD COLUMN IF NOT EXISTS tax_rate numeric(5,2) default 15.00;
 ALTER TABLE public.purchase_orders ALTER COLUMN tax_rate SET DEFAULT 15.00;
+ALTER TABLE public.purchase_orders ADD COLUMN IF NOT EXISTS is_tax_inclusive boolean not null default true;
 
 -- ==============================================================================
 -- 2. CORRECCIÓN DE SEGURIDAD RPC: Resolución Explícita del Tenant + IVA Booleano
@@ -36,6 +37,7 @@ CREATE OR REPLACE FUNCTION public.receive_purchase_order(
   p_notes            text,
   p_items            jsonb,
   p_tax_rate         numeric,
+  p_is_tax_inclusive boolean,
   p_subtotal         numeric,
   p_tax_amount       numeric,
   p_grand_total      numeric,
@@ -108,13 +110,13 @@ BEGIN
   INSERT INTO public.purchase_orders (
     tenant_id, supplier_id, warehouse_id,
     subtotal, tax_total, total,
-    tax_rate, tax_amount, grand_total, other_charges,
+    tax_rate, is_tax_inclusive, tax_amount, grand_total, other_charges,
     status, notes, created_by,
     payment_method, payment_status, payment_due_date
   ) VALUES (
     p_tenant_id, p_supplier_id, p_warehouse_id,
     p_subtotal, p_tax_amount, p_grand_total,
-    p_tax_rate, p_tax_amount, p_grand_total, p_other_charges,
+    p_tax_rate, p_is_tax_inclusive, p_tax_amount, p_grand_total, p_other_charges,
     'received', p_notes, v_user_id,
     p_payment_method, v_pay_status,
     CASE WHEN p_payment_method = 'credit' THEN p_payment_due_date ELSE NULL END
@@ -175,5 +177,5 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.receive_purchase_order(uuid, uuid, uuid, text, text, date, text, jsonb, numeric, numeric, numeric, numeric, numeric) FROM public;
-GRANT EXECUTE ON FUNCTION public.receive_purchase_order(uuid, uuid, uuid, text, text, date, text, jsonb, numeric, numeric, numeric, numeric, numeric) TO authenticated;
+REVOKE ALL ON FUNCTION public.receive_purchase_order(uuid, uuid, uuid, text, text, date, text, jsonb, numeric, boolean, numeric, numeric, numeric, numeric) FROM public;
+GRANT EXECUTE ON FUNCTION public.receive_purchase_order(uuid, uuid, uuid, text, text, date, text, jsonb, numeric, boolean, numeric, numeric, numeric, numeric) TO authenticated;

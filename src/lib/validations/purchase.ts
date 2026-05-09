@@ -81,6 +81,7 @@ export const purchaseSchema = z
         )
         .optional()
     ),
+    is_tax_inclusive: z.preprocess((v) => v === "on" || v === true, z.boolean()),
     subtotal: money,
     tax_amount: money,
     other_charges: z.preprocess((v) => (v === "" || v == null ? 0 : v), money),

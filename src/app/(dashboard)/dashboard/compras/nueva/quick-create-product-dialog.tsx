@@ -31,6 +31,10 @@ export function QuickCreateProductDialog({ open, onClose, onCreated, editProduct
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<any>({});
 
+  // Auto-focus al abrir
+  const [displayPrice, setDisplayPrice] = useState(editProduct?.cost_price != null ? String(editProduct.cost_price) : "");
+  const [hasTax, setHasTax] = useState(editProduct ? (editProduct as any).has_tax ?? true : true);
+
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setPending(true);
@@ -49,27 +53,6 @@ export function QuickCreateProductDialog({ open, onClose, onCreated, editProduct
       setFieldErrors(result?.fieldErrors || {});
     }
   }
-
-  // Auto-focus al abrir
-  const [displayPrice, setDisplayPrice] = useState("");
-  const [hasTax, setHasTax] = useState(true);
-
-  useEffect(() => {
-    if (open) {
-      if (editProduct) {
-        setDisplayPrice(editProduct.cost_price != null ? String(editProduct.cost_price) : "");
-        setHasTax((editProduct as any).has_tax ?? true);
-      } else {
-        setDisplayPrice("");
-      }
-      // Pequeño delay para que el portal monte
-      const t = setTimeout(() => nameRef.current?.focus(), 50);
-      return () => clearTimeout(t);
-    } else {
-      setError(null);
-      setFieldErrors({});
-    }
-  }, [open, editProduct]);
 
   const errors = fieldErrors;
 
@@ -173,7 +156,7 @@ export function QuickCreateProductDialog({ open, onClose, onCreated, editProduct
                 <Switch
                   id="qc-tax"
                   checked={hasTax}
-                  onCheckedChange={setHasTax}
+                  onCheckedChange={(val) => setHasTax(val)}
                 />
                 <Label htmlFor="qc-tax" className="text-[13px] font-medium text-muted-foreground cursor-pointer normal-case tracking-normal">
                   Este producto lleva IVA

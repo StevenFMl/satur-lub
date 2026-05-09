@@ -47,6 +47,7 @@ export async function receivePurchaseAction(
     notes: formData.get("notes"),
     items,
     tax_rate: formData.get("tax_rate"),
+    is_tax_inclusive: formData.get("is_tax_inclusive"),
     subtotal: formData.get("subtotal"),
     tax_amount: formData.get("tax_amount"),
     other_charges: formData.get("other_charges"),
@@ -155,6 +156,7 @@ export async function receivePurchaseAction(
         is_taxable: item.is_new_product ? item.is_taxable : dbProductMap.get(item.product_id as string) ?? true
       })),
       p_tax_rate: invoiceTaxRate,
+      p_is_tax_inclusive: data.is_tax_inclusive,
       p_subtotal: toFixedStr(serverSubtotal, 2),
       p_tax_amount: toFixedStr(serverTax, 2),
       p_grand_total: toFixedStr(serverGrand, 2),

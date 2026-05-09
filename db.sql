@@ -507,6 +507,8 @@ create table if not exists public.purchase_orders (
   subtotal numeric(12,2) not null default 0 check (subtotal >= 0),
   tax_total numeric(12,2) not null default 0 check (tax_total >= 0),
   total numeric(12,2) not null default 0 check (total >= 0),
+  tax_rate numeric(5,2) not null default 15.00,
+  is_tax_inclusive boolean not null default true,
   status text not null default 'draft' check (status in ('draft', 'confirmed', 'received', 'cancelled')),
   notes text,
   created_by uuid,
@@ -1602,6 +1604,7 @@ CREATE OR REPLACE FUNCTION public.receive_purchase_order(
   p_notes            text,
   p_items            jsonb,
   p_tax_rate         numeric,
+  p_is_tax_inclusive boolean,
   p_subtotal         numeric,
   p_tax_amount       numeric,
   p_grand_total      numeric,
@@ -1682,18 +1685,16 @@ BEGIN
   END;
 
   -- 1. Cabecera con totales fiscales exactos (pre-calculados con big.js).
-  --    'total' legacy se mantiene = grand_total para compat con consumidores
-  --    existentes; 'tax_total' legacy se sincroniza con tax_amount.
   INSERT INTO public.purchase_orders (
     tenant_id, supplier_id, warehouse_id,
     subtotal, tax_total, total,
-    tax_rate, tax_amount, grand_total, other_charges,
+    tax_rate, is_tax_inclusive, tax_amount, grand_total, other_charges,
     status, notes, created_by,
     payment_method, payment_status, payment_due_date
   ) VALUES (
     v_tenant_id, p_supplier_id, p_warehouse_id,
     p_subtotal, p_tax_amount, p_grand_total,
-    p_tax_rate, p_tax_amount, p_grand_total, p_other_charges,
+    p_tax_rate, p_is_tax_inclusive, p_tax_amount, p_grand_total, p_other_charges,
     'received', p_notes, v_user_id,
     p_payment_method, v_pay_status,
     CASE WHEN p_payment_method = 'credit' THEN p_payment_due_date ELSE NULL END
@@ -1756,8 +1757,8 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.receive_purchase_order(uuid, uuid, text, text, date, text, jsonb, numeric, numeric, numeric, numeric, numeric) FROM public;
-GRANT EXECUTE ON FUNCTION public.receive_purchase_order(uuid, uuid, text, text, date, text, jsonb, numeric, numeric, numeric, numeric, numeric) TO authenticated;
+REVOKE ALL ON FUNCTION public.receive_purchase_order(uuid, uuid, uuid, text, text, date, text, jsonb, numeric, boolean, numeric, numeric, numeric, numeric) FROM public;
+GRANT EXECUTE ON FUNCTION public.receive_purchase_order(uuid, uuid, uuid, text, text, date, text, jsonb, numeric, boolean, numeric, numeric, numeric, numeric) TO authenticated;
 
 -- =========================================================================
 -- H. INVENTARIO · BODEGAS · RLS anti-recursivo + índice de búsqueda

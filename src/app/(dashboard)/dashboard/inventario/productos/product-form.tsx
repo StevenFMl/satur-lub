@@ -205,7 +205,7 @@ export function ProductForm({ initial, onSuccess }: Props) {
             <Switch
               id="has_tax"
               checked={hasTax}
-              onCheckedChange={setHasTax}
+              onCheckedChange={(val) => setHasTax(val)}
             />
             <Label
               htmlFor="has_tax"

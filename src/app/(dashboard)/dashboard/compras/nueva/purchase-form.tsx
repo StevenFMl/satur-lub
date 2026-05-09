@@ -12,6 +12,7 @@ import { Select } from "@/components/ui/select";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { FieldError } from "@/components/ui/field-error";
+import { Switch } from "@/components/ui/switch";
 import {
   receivePurchaseAction,
   type PurchaseState,
@@ -127,6 +128,7 @@ export function PurchaseForm({
 
   // IVA selector (15% default Ecuador 2024+).
   const [invoiceTaxRate, setInvoiceTaxRate] = useState(15);
+  const [isTaxInclusive, setIsTaxInclusive] = useState(true);
   const [otherCharges, setOtherCharges] = useState("0");
 
   // Productos locales: se alimenta con la prop SSR pero se extiende con
@@ -220,9 +222,25 @@ export function PurchaseForm({
     }
   };
 
-  // Subtotal = suma segura de total_cost (big.js)
-  const subtotalBig = useMemo(() => sumAll(rows.map((r) => r.total_cost)), [rows]);
-  
+  // Cálculo de Subtotal y Tax basado en isTaxInclusive
+  const subtotalBig = useMemo(() => {
+    let subtotal = Big(0);
+    const taxRateBig = Big(invoiceTaxRate).div(100);
+    for (const r of rows) {
+      if (r.is_gift) continue;
+      const product = productById.get(r.product_id);
+      const isTaxable = r.is_new_product ? r.is_taxable : (product?.has_tax ?? true);
+      const totalRow = Big(r.total_cost || 0);
+      
+      if (isTaxInclusive && isTaxable && invoiceTaxRate > 0) {
+        subtotal = subtotal.plus(totalRow.div(Big(1).plus(taxRateBig)));
+      } else {
+        subtotal = subtotal.plus(totalRow);
+      }
+    }
+    return toMoney(subtotal);
+  }, [rows, productById, isTaxInclusive, invoiceTaxRate]);
+
   const taxBig = useMemo(() => {
     let totalTax = Big(0);
     const taxRateBig = Big(invoiceTaxRate).div(100);
@@ -230,36 +248,49 @@ export function PurchaseForm({
       if (r.is_gift) continue;
       const product = productById.get(r.product_id);
       if (!product) continue;
-      // Solo aplicamos el IVA a los ítems que tengan has_tax === true
-      if (product.has_tax) {
-        const itemTax = Big(r.total_cost).times(taxRateBig);
-        totalTax = totalTax.plus(itemTax);
+      const isTaxable = r.is_new_product ? r.is_taxable : (product.has_tax ?? true);
+      
+      if (isTaxable && invoiceTaxRate > 0) {
+        const totalRow = Big(r.total_cost || 0);
+        if (isTaxInclusive) {
+          const base = totalRow.div(Big(1).plus(taxRateBig));
+          totalTax = totalTax.plus(totalRow.minus(base));
+        } else {
+          totalTax = totalTax.plus(totalRow.times(taxRateBig));
+        }
       }
     }
     return toMoney(totalTax);
-  }, [rows, productById, invoiceTaxRate]);
+  }, [rows, productById, invoiceTaxRate, isTaxInclusive]);
 
   const otherBig = useMemo(() => toMoney(otherCharges || "0"), [otherCharges]);
   const grandBig = useMemo(() => add(grandTotal(subtotalBig, taxBig), otherBig), [subtotalBig, taxBig, otherBig]);
 
   // Serialización: el backend espera { product_id, quantity, unit_cost }
-  // unit_cost se calcula con precisión y redondeo a 4 decimales.
+  // unit_cost se calcula con precisión y redondeo a 4 decimales como costo base (sin IVA).
   const itemsJson = useMemo(() => {
+    const taxRateBig = Big(invoiceTaxRate).div(100);
     return JSON.stringify(
       rows
         .filter((r) => r.product_id)
         .map((r) => {
-          const unitCostBig = unitCostFromTotal(r.total_cost, r.quantity);
           const isTaxable = r.is_new_product ? r.is_taxable : (productById.get(r.product_id)?.has_tax ?? true);
+          let baseRowTotal = Big(r.total_cost || 0);
+          if (isTaxInclusive && isTaxable && invoiceTaxRate > 0) {
+            baseRowTotal = baseRowTotal.div(Big(1).plus(taxRateBig));
+          }
+          const qtyNum = Number(r.quantity) || 0;
+          const unitCostBig = qtyNum > 0 ? baseRowTotal.div(qtyNum) : Big(0);
+
           return {
             product_id: r.product_id,
-            quantity: Number(r.quantity) || 0,
+            quantity: qtyNum,
             unit_cost: Number(toFixedStr(unitCostBig, 4)),
             is_taxable: isTaxable,
           };
         })
     );
-  }, [rows]);
+  }, [rows, isTaxInclusive, invoiceTaxRate, productById]);
 
   const updateRow = (uid: string, patch: Partial<Row>) =>
     setRows((prev) => prev.map((r) => (r.uid === uid ? { ...r, ...patch } : r)));
@@ -350,6 +381,7 @@ export function PurchaseForm({
         <input type="hidden" name="payment_due_date" value={paymentMethod === "credit" ? dueDate : ""} />
         <input type="hidden" name="subtotal" value={toFixedStr(subtotalBig, 2)} />
         <input type="hidden" name="tax_rate" value={invoiceTaxRate} />
+        <input type="hidden" name="is_tax_inclusive" value={isTaxInclusive ? "on" : "off"} />
         <input type="hidden" name="tax_amount" value={toFixedStr(taxBig, 2)} />
         <input type="hidden" name="other_charges" value={toFixedStr(otherBig, 2)} />
         <input type="hidden" name="grand_total" value={toFixedStr(grandBig, 2)} />
@@ -377,8 +409,18 @@ export function PurchaseForm({
 
         {/* Cabecera */}
         <section className="panel rounded-sm">
-          <header className="top-highlight border-b-2 border-steel-700 bg-steel-900/70 px-6 py-4">
+          <header className="top-highlight flex items-center justify-between border-b-2 border-steel-700 bg-steel-900/70 px-6 py-4">
             <h2 className="font-display text-[18px] tracking-[0.04em]">CABECERA</h2>
+            <div className="flex items-center gap-3">
+              <Switch
+                id="is_tax_inclusive"
+                checked={isTaxInclusive}
+                onCheckedChange={(val) => setIsTaxInclusive(val)}
+              />
+              <Label htmlFor="is_tax_inclusive" className="text-[13px] font-medium text-muted-foreground cursor-pointer normal-case tracking-normal">
+                Los precios ingresados incluyen IVA
+              </Label>
+            </div>
           </header>
           <div className="grid grid-cols-1 gap-5 px-6 py-6 md:grid-cols-2">
             <div className="space-y-2 md:col-span-2">
