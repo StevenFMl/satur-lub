@@ -75,41 +75,7 @@ export async function receivePurchaseAction(
   const payment_status =
     data.payment_method === "credit" ? "pending" : "paid";
 
-  // ── 1. Creación Inline de Productos Nuevos ──
-  for (let i = 0; i < data.items.length; i++) {
-    const item = data.items[i];
-    if (item.is_new_product && item.new_product_name) {
-      // El usuario pidió: costo base neto sin IVA dividiendo el unitario ingresado para 1.15
-      const netBaseCost = Number((item.unit_cost / 1.15).toFixed(4));
-      
-      // Generar un SKU determinista simple para el nuevo producto
-      const shortName = item.new_product_name.replace(/[^a-zA-Z0-9]/g, "").substring(0, 4).toUpperCase();
-      const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
-      const sku = `${shortName}-${randomSuffix}`;
-      
-      const payload = {
-        tenant_id: membership.tenant_id,
-        name: item.new_product_name,
-        sku: sku,
-        unit: "galón", // Unidad por defecto según el requerimiento
-        cost_price: netBaseCost,
-        product_kind: "item"
-      };
-
-      const { data: inserted, error: insertError } = await supabase
-        .from("products")
-        .insert(payload)
-        .select("id")
-        .single();
-
-      if (insertError || !inserted) {
-        console.error("Error creando producto inline:", insertError);
-        return { error: `No se pudo crear el producto nuevo: ${item.new_product_name}` };
-      }
-      
-      item.product_id = inserted.id;
-    }
-  }
+  // ── No inline creation needed here anymore, QuickCreateProductDialog handles it.
 
   // ── Recalcular totales server-side con big.js (NO confiar en el cliente).
   //    Obtenemos el has_tax de cada producto desde la Base de Datos para
@@ -127,7 +93,7 @@ export async function receivePurchaseAction(
   const serverSubtotal = sumAll(
     data.items.map((i) => {
       const lineT = lineTotal(i.quantity, i.unit_cost);
-      const isTaxable = i.is_new_product ? i.is_taxable : dbProductMap.get(i.product_id as string) ?? true;
+      const isTaxable = dbProductMap.get(i.product_id as string) ?? true;
       if (isTaxable && invoiceTaxRate > 0) {
         serverTaxBig = serverTaxBig.plus(taxAmount(lineT, invoiceTaxRate));
       }
@@ -153,14 +119,14 @@ export async function receivePurchaseAction(
         product_id: item.product_id,
         quantity: item.quantity,
         unit_cost: item.unit_cost,
-        is_taxable: item.is_new_product ? item.is_taxable : dbProductMap.get(item.product_id as string) ?? true
+        is_taxable: dbProductMap.get(item.product_id as string) ?? true
       })),
       p_tax_rate: invoiceTaxRate,
       p_is_tax_inclusive: data.is_tax_inclusive,
-      p_subtotal: toFixedStr(serverSubtotal, 2),
-      p_tax_amount: toFixedStr(serverTax, 2),
-      p_grand_total: toFixedStr(serverGrand, 2),
-      p_other_charges: toFixedStr(data.other_charges, 2),
+      p_subtotal: Number(toFixedStr(serverSubtotal, 2)),
+      p_tax_amount: Number(toFixedStr(serverTax, 2)),
+      p_grand_total: Number(toFixedStr(serverGrand, 2)),
+      p_other_charges: Number(toFixedStr(data.other_charges, 2)),
     } as never
   );
 

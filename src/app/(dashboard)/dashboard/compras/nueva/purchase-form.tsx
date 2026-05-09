@@ -65,8 +65,6 @@ const newRow = (): Row => ({
       ? crypto.randomUUID()
       : Math.random().toString(36).slice(2),
   product_id: "",
-  is_new_product: false,
-  new_product_name: "",
   quantity: "1",
   total_cost: "0",
   unit: "galón", // Changed default to galón to match the requirement for new products
@@ -229,7 +227,7 @@ export function PurchaseForm({
     for (const r of rows) {
       if (r.is_gift) continue;
       const product = productById.get(r.product_id);
-      const isTaxable = r.is_new_product ? r.is_taxable : (product?.has_tax ?? true);
+      const isTaxable = product?.has_tax ?? true;
       const totalRow = Big(r.total_cost || 0);
       
       if (isTaxInclusive && isTaxable && invoiceTaxRate > 0) {
@@ -248,7 +246,7 @@ export function PurchaseForm({
       if (r.is_gift) continue;
       const product = productById.get(r.product_id);
       if (!product) continue;
-      const isTaxable = r.is_new_product ? r.is_taxable : (product.has_tax ?? true);
+      const isTaxable = product.has_tax ?? true;
       
       if (isTaxable && invoiceTaxRate > 0) {
         const totalRow = Big(r.total_cost || 0);
@@ -274,7 +272,7 @@ export function PurchaseForm({
       rows
         .filter((r) => r.product_id)
         .map((r) => {
-          const isTaxable = r.is_new_product ? r.is_taxable : (productById.get(r.product_id)?.has_tax ?? true);
+          const isTaxable = productById.get(r.product_id)?.has_tax ?? true;
           let baseRowTotal = Big(r.total_cost || 0);
           if (isTaxInclusive && isTaxable && invoiceTaxRate > 0) {
             baseRowTotal = baseRowTotal.div(Big(1).plus(taxRateBig));
