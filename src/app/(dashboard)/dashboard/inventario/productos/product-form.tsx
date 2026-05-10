@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useActionState, useEffect, useRef, useState } from "react";
+import { useActionState, useEffect, useRef, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,10 +15,34 @@ import {
 } from "@/actions/products";
 import type { ProductRow } from "./products-table";
 
-type Props = {
-  initial: ProductRow | null;
-  onSuccess: () => void;
-};
+const IVA_RATE = 15;
+const IVA_MULT = 1 + IVA_RATE / 100; // 1.15
+
+/**
+ * Calcula el preview del precio según el modo de entrada.
+ *
+ * priceIncludesIva = false → el usuario escribe precio base (neto).
+ *   Preview: "= $X.XX c/IVA"  (le sumamos el IVA para mostrar el precio final)
+ *
+ * priceIncludesIva = true → el usuario escribe precio final (ya con IVA).
+ *   Preview: "sin IVA: $X.XX" (dividimos para mostrar la base que se va a guardar)
+ */
+function pricePreview(val: string, includesIva: boolean): string | null {
+  const n = parseFloat(val.replace(",", "."));
+  if (!isFinite(n) || n <= 0) return null;
+  return includesIva
+    ? "sin IVA: $" + (n / IVA_MULT).toFixed(2)
+    : "= $" + (n * IVA_MULT).toFixed(2) + " c/IVA";
+}
+
+/** Convierte precio bruto a neto para persistir en DB cuando includesIva=true. */
+function toNet(val: string): string {
+  const n = parseFloat(val.replace(",", "."));
+  if (!isFinite(n) || n <= 0) return "";
+  return (n / IVA_MULT).toFixed(2);
+}
+
+type Props = { initial: ProductRow | null; onSuccess: () => void };
 
 export function ProductForm({ initial, onSuccess }: Props) {
   const router = useRouter();
@@ -30,21 +54,30 @@ export function ProductForm({ initial, onSuccess }: Props) {
     null
   );
 
-  // "Guardar y añadir otro" — solo en modo creación
+  // ── Estado controlado ──────────────────────────────────────────────────
+  // priceIncludesIva: si es true, el número escrito ya lleva IVA.
+  // Preservado en "Guardar y agregar otro" para consistencia en batch.
+  const [priceIncludesIva, setPriceIncludesIva] = useState(false);
+  const [unit, setUnit] = useState(initial?.unit ?? "unidad");
+  const [pricePublico, setPricePublico] = useState(
+    initial?.default_price != null ? String(initial.default_price) : ""
+  );
+  const [priceMayorista, setPriceMayorista] = useState(
+    initial?.price_mayorista != null ? String(initial.price_mayorista) : ""
+  );
+  const [priceDistribuidor, setPriceDistribuidor] = useState(
+    initial?.price_distribuidor != null ? String(initial.price_distribuidor) : ""
+  );
+
+  // ── Flujo de estado ────────────────────────────────────────────────────
   const [keepOpen, setKeepOpen] = useState(false);
-  // Flash de confirmación efímero
   const [savedFlash, setSavedFlash] = useState(false);
-  // Key para forzar re-render del formulario en modo continuo
   const [formKey, setFormKey] = useState(0);
   const [hasProcessedSuccess, setHasProcessedSuccess] = useState(false);
-  const [hasTax, setHasTax] = useState(initial ? initial.has_tax ?? true : true);
 
   useEffect(() => {
     if (!state?.ok || hasProcessedSuccess) return;
 
-    // Notifica a otras pestañas abiertas que el catálogo cambió. Los
-    // listeners (p.ej. /compras/nueva) hacen router.refresh() y se
-    // re-sincronizan automáticamente.
     if (typeof BroadcastChannel !== "undefined") {
       const ch = new BroadcastChannel("saturlub:products");
       ch.postMessage({ type: "product-updated" });
@@ -52,20 +85,19 @@ export function ProductForm({ initial, onSuccess }: Props) {
     }
 
     if (keepOpen && !initial?.id) {
-      // Modo continuo: resetear form, mantener Sheet abierto
       setHasProcessedSuccess(true);
+      // Limpia nombre, sku, costo y precios.
+      // Preserva: unit, priceIncludesIva (contexto útil en batch).
+      setPricePublico("");
+      setPriceMayorista("");
+      setPriceDistribuidor("");
       setFormKey((k) => k + 1);
       setSavedFlash(true);
       router.refresh();
-      // Focus al nombre tras el reset
       setTimeout(() => nameRef.current?.focus(), 60);
-      // Ocultar flash después de 2.5s
       const t = setTimeout(() => setSavedFlash(false), 2500);
       return () => clearTimeout(t);
     } else {
-      // Comportamiento normal: refrescar lista y cerrar Sheet. router.refresh()
-      // garantiza que la tabla y la pantalla de Compras vean el precio nuevo.
-      // Sin esto los Server Components no se re-renderizan.
       router.refresh();
       onSuccess();
     }
@@ -73,6 +105,18 @@ export function ProductForm({ initial, onSuccess }: Props) {
 
   const errors = state?.fieldErrors ?? {};
   const isEditing = Boolean(initial?.id);
+
+  // ── Precios que se envían al servidor (siempre en base neta) ───────────
+  // Si priceIncludesIva=true, el usuario ingresó precio bruto; dividimos
+  // por IVA_MULT antes de persistir en product_prices.
+  const netPublico = priceIncludesIva ? toNet(pricePublico) : pricePublico;
+  const netMayorista = priceIncludesIva ? toNet(priceMayorista) : priceMayorista;
+  const netDistribuidor = priceIncludesIva ? toNet(priceDistribuidor) : priceDistribuidor;
+
+  // ── Previews ──────────────────────────────────────────────────────────
+  const previewPublico = useMemo(() => pricePreview(pricePublico, priceIncludesIva), [pricePublico, priceIncludesIva]);
+  const previewMayorista = useMemo(() => pricePreview(priceMayorista, priceIncludesIva), [priceMayorista, priceIncludesIva]);
+  const previewDistribuidor = useMemo(() => pricePreview(priceDistribuidor, priceIncludesIva), [priceDistribuidor, priceIncludesIva]);
 
   return (
     <form
@@ -84,120 +128,110 @@ export function ProductForm({ initial, onSuccess }: Props) {
         if (hasProcessedSuccess) setHasProcessedSuccess(false);
       }}
     >
-      {initial?.id ? (
-        <input type="hidden" name="id" value={initial.id} />
-      ) : null}
+      {initial?.id ? <input type="hidden" name="id" value={initial.id} /> : null}
+      {/* has_tax = true siempre en V1 lubricadora.
+          El checkbox visible controla el MODO DE ENTRADA (bruto vs neto),
+          no la taxabilidad del producto. */}
+      <input type="hidden" name="has_tax" value="on" />
+      <input type="hidden" name="unit" value={unit} />
+      <input type="hidden" name="price_publico" value={netPublico} />
+      <input type="hidden" name="price_mayorista" value={netMayorista} />
+      <input type="hidden" name="price_distribuidor" value={netDistribuidor} />
 
       <fieldset
         disabled={pending}
-        className="m-0 min-w-0 flex-1 space-y-6 border-0 px-6 py-6 disabled:opacity-95"
+        className="m-0 min-w-0 flex-1 overflow-y-auto border-0 px-6 py-5 disabled:opacity-95 space-y-0"
       >
-        {/* Flash de confirmación */}
         {savedFlash ? (
-          <div className="flex items-center gap-2 rounded-sm border border-signal-600/60 bg-signal-700/20 px-3 py-2.5 text-[13px] font-semibold text-emerald-300 animate-in fade-in duration-200">
-            <svg
-              viewBox="0 0 24 24"
-              className="h-4 w-4 shrink-0"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden
-            >
-              <path d="M20 6 9 17l-5-5" />
-            </svg>
-            Producto creado — sigue con el siguiente
+          <div className="mb-5 flex items-center gap-2 rounded-sm border border-signal-600/60 bg-signal-700/20 px-3 py-2.5 text-[13px] font-semibold text-emerald-300 animate-in fade-in duration-200">
+            <CheckIcon className="h-4 w-4 shrink-0" />
+            Producto guardado — ingresa el siguiente
           </div>
         ) : null}
 
-        <div className="space-y-2">
-          <Label htmlFor="name" required>
-            Nombre del producto
-          </Label>
-          <Input
-            ref={nameRef}
-            id="name"
-            name="name"
-            defaultValue={initial?.name ?? ""}
-            placeholder="Aceite 20W-50 mineral 1L"
-            invalid={Boolean(errors.name)}
-            autoFocus
-          />
-          <FieldError fieldId="name" message={errors.name} />
+        {/* ── BLOQUE 1: Identificación ─────────────────────────────── */}
+        <SectionHeader label="Identificación" />
+
+        <div className="space-y-4 pb-5">
+          <div className="space-y-1.5">
+            <Label htmlFor="name" required>Nombre del producto</Label>
+            <Input
+              ref={nameRef}
+              id="name"
+              name="name"
+              defaultValue={initial?.name ?? ""}
+              placeholder="Aceite 20W-50 mineral 1L"
+              invalid={Boolean(errors.name)}
+              autoFocus
+            />
+            <FieldError fieldId="name" message={errors.name} />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="sku">
+                SKU{" "}
+                <span className="font-normal normal-case tracking-normal text-muted-foreground/70">
+                  (opcional)
+                </span>
+              </Label>
+              <Input
+                id="sku"
+                name="sku"
+                defaultValue={initial?.sku ?? ""}
+                placeholder="Auto si vacío"
+                mono
+                maxLength={60}
+                autoCapitalize="characters"
+                spellCheck={false}
+                invalid={Boolean(errors.sku)}
+              />
+              <FieldError fieldId="sku" message={errors.sku} />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="unit">Unidad</Label>
+              <select
+                id="unit"
+                value={unit}
+                onChange={(e) => setUnit(e.target.value)}
+                className="flex h-10 w-full rounded-sm border-2 border-steel-700 bg-steel-800 px-3 py-2 font-mono text-[13px] text-foreground outline-none transition-colors focus:border-safety-500/60 focus:ring-2 focus:ring-safety-500/20"
+              >
+                <option value="unidad">Unidad</option>
+                <option value="galón">Galón</option>
+                <option value="medio_galon">Medio Galón</option>
+                <option value="cuarto">Cuarto</option>
+                <option value="litro">Litro</option>
+                <option value="media_caneca">Media Caneca (2.5 gal)</option>
+                <option value="caneca">Caneca (5 gal)</option>
+                <option value="tambor">Tambor (55 gal)</option>
+                <option value="barril">Barril</option>
+                <option value="caja">Caja</option>
+                <option value="paquete">Paquete</option>
+              </select>
+            </div>
+          </div>
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="sku">
-            SKU{" "}
-            <span className="font-normal normal-case tracking-normal text-muted-foreground/80">
-              (opcional)
-            </span>
-          </Label>
-          <Input
-            id="sku"
-            name="sku"
-            defaultValue={initial?.sku ?? ""}
-            placeholder="Lo generamos por ti si lo dejas vacío"
-            mono
-            maxLength={60}
-            autoCapitalize="characters"
-            spellCheck={false}
-            invalid={Boolean(errors.sku)}
-            aria-describedby={errors.sku ? "sku-error" : "sku-hint"}
-          />
-          {errors.sku ? (
-            <FieldError fieldId="sku" message={errors.sku} />
-          ) : (
-            <p id="sku-hint" className="field-hint">
-              Único por negocio. Se genera automáticamente si lo dejas vacío.
-            </p>
-          )}
-        </div>
+        {/* ── BLOQUE 2: Costo ──────────────────────────────────────── */}
+        <SectionHeader label="Costo" />
 
-        <div className="space-y-2">
-          <Label htmlFor="unit">Unidad de medida</Label>
-          <select
-            id="unit"
-            name="unit"
-            defaultValue={initial?.unit ?? "unidad"}
-            className="flex h-10 w-full rounded-sm border-2 border-steel-700 bg-steel-800 px-3 py-2 font-mono text-[13px] text-foreground outline-none transition-colors focus:border-safety-500/60 focus:ring-2 focus:ring-safety-500/20"
-          >
-            <option value="unidad">Unidad</option>
-            <option value="galón">Galón</option>
-            <option value="medio_galon">Medio Galón</option>
-            <option value="cuarto">Cuarto</option>
-            <option value="litro">Litro</option>
-            <option value="media_caneca">Media Caneca (2.5 Galones)</option>
-            <option value="caneca">Caneca (5 Galones)</option>
-            <option value="tambor">Tambor (55 Galones)</option>
-            <option value="barril">Barril</option>
-            <option value="caja">Caja</option>
-            <option value="paquete">Paquete</option>
-          </select>
-          <FieldError fieldId="unit" message={errors.unit} />
-        </div>
-
-        <div className="space-y-2">
+        <div className="space-y-1.5 pb-5">
           <Label htmlFor="cost_price">
             Costo referencial{" "}
-            <span className="font-normal normal-case tracking-normal text-muted-foreground/80">
+            <span className="font-normal normal-case tracking-normal text-muted-foreground/70">
               (opcional)
             </span>
           </Label>
           <div className="relative">
-            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-mono text-[12px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
-              USD
-            </span>
+            <UsdPrefix />
             <Input
               id="cost_price"
               name="cost_price"
               type="number"
               min="0"
               step="0.0001"
-              defaultValue={
-                initial?.cost_price != null ? String(initial.cost_price) : "0"
-              }
+              defaultValue={initial?.cost_price != null ? String(initial.cost_price) : ""}
               placeholder="0.00"
               mono
               className="pl-14 text-right"
@@ -206,147 +240,68 @@ export function ProductForm({ initial, onSuccess }: Props) {
             />
           </div>
           <p className="field-hint">
-            El costo promedio real se actualiza automáticamente al recibir
-            compras (CPP).
+            Precio sugerido en compras. El costo promedio real se actualiza
+            automáticamente al recibir mercancía.
           </p>
           <FieldError fieldId="cost_price" message={errors.cost_price} />
         </div>
 
-        <div className="space-y-3 rounded-sm border-2 border-steel-700 bg-steel-900/40 p-4">
-          <div className="flex items-baseline justify-between">
-            <Label className="!mb-0">Precios de venta</Label>
-            <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-              por tier
-            </span>
-          </div>
+        {/* ── BLOQUE 3: Precios de venta ──────────────────────────── */}
+        <SectionHeader label="Precios de venta" />
 
-          <div className="space-y-2">
-            <Label htmlFor="price_publico" required>
-              Público
-            </Label>
-            <div className="relative">
-              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-mono text-[12px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
-                USD
-              </span>
-              <Input
-                id="price_publico"
-                name="price_publico"
-                type="number"
-                min="0"
-                step="0.01"
-                defaultValue={
-                  initial?.default_price != null
-                    ? String(initial.default_price)
-                    : ""
-                }
-                placeholder="0.00"
-                mono
-                className="pl-14 text-right"
-                invalid={Boolean(errors.price_publico)}
-                onFocus={(e) => e.target.select()}
-              />
-            </div>
-            <FieldError
-              fieldId="price_publico"
-              message={errors.price_publico}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="price_mayorista">
-              Mayorista{" "}
-              <span className="font-normal normal-case tracking-normal text-muted-foreground/80">
-                (opcional)
-              </span>
-            </Label>
-            <div className="relative">
-              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-mono text-[12px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
-                USD
-              </span>
-              <Input
-                id="price_mayorista"
-                name="price_mayorista"
-                type="number"
-                min="0"
-                step="0.01"
-                defaultValue={
-                  initial?.price_mayorista != null
-                    ? String(initial.price_mayorista)
-                    : ""
-                }
-                placeholder="—"
-                mono
-                className="pl-14 text-right"
-                invalid={Boolean(errors.price_mayorista)}
-                onFocus={(e) => e.target.select()}
-              />
-            </div>
-            <FieldError
-              fieldId="price_mayorista"
-              message={errors.price_mayorista}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="price_distribuidor">
-              Distribuidor{" "}
-              <span className="font-normal normal-case tracking-normal text-muted-foreground/80">
-                (opcional)
-              </span>
-            </Label>
-            <div className="relative">
-              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-mono text-[12px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
-                USD
-              </span>
-              <Input
-                id="price_distribuidor"
-                name="price_distribuidor"
-                type="number"
-                min="0"
-                step="0.01"
-                defaultValue={
-                  initial?.price_distribuidor != null
-                    ? String(initial.price_distribuidor)
-                    : ""
-                }
-                placeholder="—"
-                mono
-                className="pl-14 text-right"
-                invalid={Boolean(errors.price_distribuidor)}
-                onFocus={(e) => e.target.select()}
-              />
-            </div>
-            <FieldError
-              fieldId="price_distribuidor"
-              message={errors.price_distribuidor}
-            />
-          </div>
-
-          <p className="field-hint">
-            Si dejas vacío Mayorista o Distribuidor, no se actualiza el precio
-            vigente de ese tier.
-          </p>
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="has_tax" className="mb-2 block">
-            Impuesto (IVA)
-          </Label>
-          <div className="flex items-center gap-3">
-            <input type="hidden" name="has_tax" value={hasTax ? "on" : "off"} />
+        <div className="pb-5">
+          {/* Toggle de modo de entrada */}
+          <div className="mb-4 flex items-center gap-3 rounded-sm border border-steel-700/60 bg-steel-900/40 px-3 py-2.5">
             <Switch
-              id="has_tax"
-              checked={hasTax}
-              onCheckedChange={(val) => setHasTax(val)}
+              id="price_includes_iva"
+              checked={priceIncludesIva}
+              onCheckedChange={(val) => setPriceIncludesIva(val)}
             />
             <Label
-              htmlFor="has_tax"
-              className="text-[13px] font-medium text-muted-foreground cursor-pointer normal-case tracking-normal"
+              htmlFor="price_includes_iva"
+              className="cursor-pointer normal-case tracking-normal text-[13px] font-medium text-muted-foreground"
             >
-              Este producto lleva IVA
+              El precio ingresado ya incluye IVA ({IVA_RATE}%)
             </Label>
           </div>
-          <FieldError fieldId="has_tax" message={errors.has_tax} />
+
+          <div className="space-y-2">
+            {/* Encabezado de columnas */}
+            <div className="grid grid-cols-[120px_1fr_100px] items-center gap-3 pb-1">
+              <span />
+              <span className="font-mono text-[9px] font-bold uppercase tracking-[0.18em] text-muted-foreground/50">
+                {priceIncludesIva ? "Precio c/IVA" : "Precio base"}
+              </span>
+              <span className="font-mono text-[9px] font-bold uppercase tracking-[0.18em] text-right text-muted-foreground/50">
+                {priceIncludesIva ? "sin IVA" : "c/IVA"}
+              </span>
+            </div>
+
+            <TierPriceRow
+              label="Público"
+              value={pricePublico}
+              onChange={setPricePublico}
+              preview={previewPublico}
+              error={errors.price_publico}
+            />
+            <TierPriceRow
+              label="Mayorista"
+              value={priceMayorista}
+              onChange={setPriceMayorista}
+              preview={previewMayorista}
+              error={errors.price_mayorista}
+            />
+            <TierPriceRow
+              label="Distribuidor"
+              value={priceDistribuidor}
+              onChange={setPriceDistribuidor}
+              preview={previewDistribuidor}
+              error={errors.price_distribuidor}
+            />
+          </div>
+          <p className="mt-2 field-hint">
+            Todos opcionales. Vacío = sin precio asignado para ese tipo de cliente.
+          </p>
         </div>
 
         {state?.error && !state.fieldErrors ? (
@@ -354,17 +309,17 @@ export function ProductForm({ initial, onSuccess }: Props) {
         ) : null}
       </fieldset>
 
+      {/* ── FOOTER ───────────────────────────────────────────────── */}
       <div className="flex items-center justify-between gap-3 border-t-2 border-steel-700 bg-steel-900/60 px-6 py-4">
-        {/* Switch: solo en modo creación */}
         {!isEditing ? (
           <label className="flex cursor-pointer items-center gap-2.5">
             <Switch
               checked={keepOpen}
               onCheckedChange={setKeepOpen}
-              aria-label="Guardar y añadir otro"
+              aria-label="Guardar y agregar otro"
             />
             <span className="text-[12px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
-              Guardar y añadir otro
+              Guardar y agregar otro
             </span>
           </label>
         ) : (
@@ -391,5 +346,88 @@ export function ProductForm({ initial, onSuccess }: Props) {
         </div>
       </div>
     </form>
+  );
+}
+
+// ── Sub-componentes ────────────────────────────────────────────────────────
+
+function SectionHeader({ label }: { label: string }) {
+  return (
+    <div className="flex items-center gap-3 pb-3 pt-1">
+      <span className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60">
+        {label}
+      </span>
+      <div className="h-px flex-1 bg-steel-700/60" />
+    </div>
+  );
+}
+
+function UsdPrefix() {
+  return (
+    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-mono text-[12px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+      USD
+    </span>
+  );
+}
+
+function TierPriceRow({
+  label,
+  value,
+  onChange,
+  preview,
+  error,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  preview: string | null;
+  error?: string;
+}) {
+  return (
+    <div>
+      <div className="grid grid-cols-[120px_1fr_100px] items-center gap-3">
+        <span className="font-mono text-[12px] font-semibold text-muted-foreground">
+          {label}
+        </span>
+        <div className="relative">
+          <UsdPrefix />
+          <Input
+            type="number"
+            min="0"
+            step="0.01"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder="—"
+            mono
+            className="pl-14 text-right"
+            invalid={Boolean(error)}
+            onFocus={(e) => e.target.select()}
+          />
+        </div>
+        <span className="text-right font-mono text-[12px] tabular-nums text-muted-foreground/60">
+          {preview ?? ""}
+        </span>
+      </div>
+      {error ? (
+        <p className="mt-1 ml-[132px] text-[12px] text-red-400">{error}</p>
+      ) : null}
+    </div>
+  );
+}
+
+function CheckIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M20 6 9 17l-5-5" />
+    </svg>
   );
 }

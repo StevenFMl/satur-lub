@@ -78,6 +78,11 @@ END $$;
 ALTER TABLE public.sale_items
   ADD COLUMN IF NOT EXISTS unit_cost numeric(14,4);
 
+-- Fecha real de la factura del proveedor (distinta de created_at, que es el
+-- timestamp de carga en sistema). Permite comparativas históricas por proveedor.
+ALTER TABLE public.purchase_orders
+  ADD COLUMN IF NOT EXISTS purchase_date date;
+
 -- =========================================================================
 -- 2. PROTECCIÓN STOCK NO NEGATIVO
 -- =========================================================================
@@ -358,6 +363,7 @@ END $$;
 -- Sumamos: cálculo de costo promedio ponderado por producto (a nivel
 -- tenant, sumando todas las bodegas) usando unit_cost neto recibido.
 
+-- Firma vieja (14 params) — la eliminamos para reemplazarla con 15 params.
 DROP FUNCTION IF EXISTS public.receive_purchase_order(uuid, uuid, uuid, text, text, date, text, jsonb, numeric, boolean, numeric, numeric, numeric, numeric);
 
 CREATE OR REPLACE FUNCTION public.receive_purchase_order(
@@ -367,6 +373,7 @@ CREATE OR REPLACE FUNCTION public.receive_purchase_order(
   p_payment_method   text,
   p_payment_status   text,
   p_payment_due_date date,
+  p_purchase_date    date,    -- fecha real de la factura del proveedor
   p_notes            text,
   p_items            jsonb,
   p_tax_rate         numeric,
@@ -448,14 +455,16 @@ BEGIN
     subtotal, tax_total, total,
     tax_rate, is_tax_inclusive, tax_amount, grand_total, other_charges,
     status, notes, created_by,
-    payment_method, payment_status, payment_due_date
+    payment_method, payment_status, payment_due_date,
+    purchase_date
   ) VALUES (
     p_tenant_id, p_supplier_id, p_warehouse_id,
     p_subtotal, p_tax_amount, p_grand_total,
     p_tax_rate, p_is_tax_inclusive, p_tax_amount, p_grand_total, p_other_charges,
     'received', p_notes, v_user_id,
     p_payment_method, v_pay_status,
-    CASE WHEN p_payment_method = 'credit' THEN p_payment_due_date ELSE NULL END
+    CASE WHEN p_payment_method = 'credit' THEN p_payment_due_date ELSE NULL END,
+    p_purchase_date
   )
   RETURNING id INTO v_po_id;
 
@@ -548,8 +557,8 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.receive_purchase_order(uuid, uuid, uuid, text, text, date, text, jsonb, numeric, boolean, numeric, numeric, numeric, numeric) FROM public;
-GRANT EXECUTE ON FUNCTION public.receive_purchase_order(uuid, uuid, uuid, text, text, date, text, jsonb, numeric, boolean, numeric, numeric, numeric, numeric) TO authenticated;
+REVOKE ALL ON FUNCTION public.receive_purchase_order(uuid, uuid, uuid, text, text, date, date, text, jsonb, numeric, boolean, numeric, numeric, numeric, numeric) FROM public;
+GRANT EXECUTE ON FUNCTION public.receive_purchase_order(uuid, uuid, uuid, text, text, date, date, text, jsonb, numeric, boolean, numeric, numeric, numeric, numeric) TO authenticated;
 
 -- =========================================================================
 -- 10. REFACTOR cancel_purchase_order · validación de stock disponible

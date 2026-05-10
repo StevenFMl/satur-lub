@@ -124,6 +124,9 @@ export function PurchaseForm({
   const [warehouseId, setWarehouseId] = useState(
     warehouses.length === 1 ? warehouses[0]?.id ?? "" : ""
   );
+  const [purchaseDate, setPurchaseDate] = useState<string>(
+    () => new Date().toISOString().slice(0, 10) // YYYY-MM-DD, default hoy
+  );
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
   const [dueDate, setDueDate] = useState("");
   const [rows, setRows] = useState<Row[]>([]);
@@ -443,6 +446,7 @@ export function PurchaseForm({
     <>
       <form action={formAction} className="space-y-8">
         <input type="hidden" name="items_json" value={itemsJson} />
+        <input type="hidden" name="purchase_date" value={purchaseDate} />
         <input type="hidden" name="payment_method" value={paymentMethod} />
         <input type="hidden" name="payment_due_date" value={paymentMethod === "credit" ? dueDate : ""} />
         <input type="hidden" name="subtotal" value={toFixedStr(subtotalBig, 2)} />
@@ -544,11 +548,24 @@ export function PurchaseForm({
             </div>
 
             <div className="space-y-2">
+              <Label htmlFor="purchase_date">Fecha de compra</Label>
+              <Input
+                id="purchase_date"
+                type="date"
+                value={purchaseDate}
+                onChange={(e) => setPurchaseDate(e.target.value)}
+                mono
+                invalid={Boolean(errors.purchase_date)}
+              />
+              <FieldError fieldId="purchase_date" message={errors.purchase_date} />
+            </div>
+
+            <div className="space-y-2 md:col-span-2">
               <Label htmlFor="notes">Notas (opcional)</Label>
               <Input
                 id="notes"
                 name="notes"
-                placeholder="Factura del proveedor, referencias, etc."
+                placeholder="N.° de factura del proveedor, referencias, etc."
                 maxLength={500}
                 invalid={Boolean(errors.notes)}
               />

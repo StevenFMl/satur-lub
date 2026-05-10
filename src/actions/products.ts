@@ -40,30 +40,28 @@ function invalidateProducts() {
 }
 
 /**
- * Persiste los precios por tier de un producto vía `set_product_tier_price`.
- *  - PUBLICO siempre se escribe (precio default obligatorio en V1).
- *  - MAYORISTA / DISTRIBUIDOR se escriben sólo si vienen con valor (no null).
- *  - La RPC es idempotente: si el precio vigente coincide, es no-op.
+ * Persiste los precios por tier vía `set_product_tier_price`.
+ * Solo llama al RPC para los tiers que tienen precio (no null).
+ * null = no crear/actualizar esa fila — el catálogo puede no tener precio.
+ * La RPC es idempotente: si el precio vigente coincide, es no-op.
  */
 async function persistTierPrices(
   supabase: SupabaseClient,
   tenantId: string,
   productId: string,
   prices: {
-    publico: number;
+    publico: number | null;
     mayorista: number | null;
     distribuidor: number | null;
   }
 ): Promise<{ error: string | null }> {
-  const calls: Array<{ code: string; price: number }> = [
-    { code: "PUBLICO", price: prices.publico },
-  ];
-  if (prices.mayorista !== null) {
+  const calls: Array<{ code: string; price: number }> = [];
+  if (prices.publico !== null)
+    calls.push({ code: "PUBLICO", price: prices.publico });
+  if (prices.mayorista !== null)
     calls.push({ code: "MAYORISTA", price: prices.mayorista });
-  }
-  if (prices.distribuidor !== null) {
+  if (prices.distribuidor !== null)
     calls.push({ code: "DISTRIBUIDOR", price: prices.distribuidor });
-  }
 
   for (const c of calls) {
     const { error } = await supabase.rpc("set_product_tier_price", {

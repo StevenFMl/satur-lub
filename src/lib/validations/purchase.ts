@@ -47,6 +47,14 @@ export const purchaseSchema = z
         error: "Selecciona método de pago.",
       })
     ),
+    purchase_date: z.preprocess(
+      trimmedOrUndef,
+      z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha de compra inválida.")
+        .optional()
+        .transform((v) => v ?? null)
+    ),
     payment_due_date: z.preprocess(
       trimmedOrUndef,
       z

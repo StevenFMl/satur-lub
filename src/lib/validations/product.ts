@@ -38,16 +38,6 @@ const tierPriceOptional = z.preprocess(
     .nullable()
 );
 
-const tierPriceRequired = z.preprocess(
-  (v) => {
-    const n = toNullableNumber(v);
-    return n === null ? Number.NaN : n;
-  },
-  z
-    .number({ error: "Precio requerido." })
-    .nonnegative("El precio no puede ser negativo.")
-    .max(99_999_999.99, "Precio demasiado alto.")
-);
 
 export const productSchema = z.object({
   id: z.preprocess(
@@ -92,11 +82,9 @@ export const productSchema = z.object({
       .max(99_999_999.99, "Costo demasiado alto.")
   ),
   has_tax: z.boolean().default(true),
-  // Precios por tier. PUBLICO es obligatorio (V1 lubricadora). Los otros
-  // dos quedan opcionales; null = no actualizar la fila vigente del tier.
-  // Estos campos se persisten vía RPC `set_product_tier_price`, no como
-  // columnas de `products`.
-  price_publico: tierPriceRequired,
+  // Todos los tiers son opcionales. null = no crear/actualizar esa fila.
+  // El catálogo puede existir sin precio asignado — la UI muestra "—".
+  price_publico: tierPriceOptional,
   price_mayorista: tierPriceOptional,
   price_distribuidor: tierPriceOptional,
 });

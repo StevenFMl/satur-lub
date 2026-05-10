@@ -34,6 +34,7 @@ export async function receivePurchaseAction(
   const parsed = purchaseSchema.safeParse({
     supplier_id: formData.get("supplier_id"),
     warehouse_id: formData.get("warehouse_id"),
+    purchase_date: formData.get("purchase_date"),
     payment_method: formData.get("payment_method"),
     payment_due_date: formData.get("payment_due_date"),
     notes: formData.get("notes"),
@@ -133,6 +134,7 @@ export async function receivePurchaseAction(
       p_payment_method: data.payment_method,
       p_payment_status: payment_status,
       p_payment_due_date: data.payment_due_date,
+      p_purchase_date: data.purchase_date ?? null,
       p_notes: data.notes,
       p_items: p_items,
       p_tax_rate: invoiceTaxRate,
