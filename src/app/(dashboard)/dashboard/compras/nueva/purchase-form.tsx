@@ -42,6 +42,11 @@ export type LookupProduct = {
   name: string;
   unit: string;
   cost_price: number | null;
+  // Caché del precio público (mantenido por trigger desde product_prices).
+  default_price?: number | null;
+  // Costo promedio ponderado y último costo de compra.
+  average_cost?: number | null;
+  last_purchase_cost?: number | null;
   has_tax: boolean;
   best_cost?: number;
   best_supplier?: string;
@@ -88,6 +93,16 @@ const unitCostFmt = new Intl.NumberFormat("es-EC", {
   maximumFractionDigits: 4,
 });
 
+// Costo sugerido al añadir o re-derivar una fila de compra. Prioridad:
+//  1. last_purchase_cost — refleja la última compra real (más cercano a hoy).
+//  2. cost_price          — fallback (costo referencial editable manualmente).
+//  3. null                — sin sugerencia, usuario debe ingresar el costo.
+function suggestedUnitCost(p: LookupProduct): number | null {
+  if (p.last_purchase_cost != null) return Number(p.last_purchase_cost);
+  if (p.cost_price != null) return Number(p.cost_price);
+  return null;
+}
+
 export function PurchaseForm({
   suppliers,
   products,
@@ -130,8 +145,35 @@ export function PurchaseForm({
   const [otherCharges, setOtherCharges] = useState("0");
 
   // Productos locales: se alimenta con la prop SSR pero se extiende con
-  // productos creados inline sin recargar la página.
+  // productos creados inline. CRÍTICO: el useEffect de abajo re-sincroniza
+  // este estado cuando llega una nueva versión de `products` (post
+  // router.refresh()) — sin él la pantalla quedaría con datos viejos cuando
+  // el catálogo cambia desde otra ventana / al editar un producto.
   const [localProducts, setLocalProducts] = useState<LookupProduct[]>(products);
+
+  useEffect(() => {
+    setLocalProducts((prev) => {
+      // Conservamos extensiones locales (productos creados inline que aún
+      // no estén en la prop SSR — caso muy raro porque revalidatePath ya
+      // los trajo, pero defensivo).
+      const incomingIds = new Set(products.map((p) => p.id));
+      const localOnly = prev.filter((p) => !incomingIds.has(p.id));
+      return [...products, ...localOnly].sort((a, b) =>
+        a.name.localeCompare(b.name)
+      );
+    });
+  }, [products]);
+
+  // Cross-tab sync: cuando otra pestaña edita / crea un producto, emite
+  // por BroadcastChannel; aquí escuchamos y disparamos router.refresh()
+  // para que el Server Component re-fetch y la prop `products` cambie
+  // (el useEffect anterior se encarga del resto).
+  useEffect(() => {
+    if (typeof BroadcastChannel === "undefined") return;
+    const ch = new BroadcastChannel("saturlub:products");
+    ch.onmessage = () => router.refresh();
+    return () => ch.close();
+  }, [router]);
 
   // Quick-create dialog state
   const [quickCreateOpen, setQuickCreateOpen] = useState(false);
@@ -163,17 +205,18 @@ export function PurchaseForm({
   const addToCart = useCallback((product: LookupProduct) => {
     setRows((prev) => {
       const existingIndex = prev.findIndex(r => r.product_id === product.id && !r.is_gift);
+      const suggested = suggestedUnitCost(product);
       if (existingIndex >= 0) {
         const newRows = [...prev];
         const row = newRows[existingIndex] as Row;
         const newQtyNum = Number(row.quantity) + 1;
         const newQtyStr = String(newQtyNum);
-        
+
         let newTotal = row.total_cost;
-        if (!manualTotalEdited.current.has(row.uid) && product.cost_price != null) {
-          newTotal = toFixedStr(lineTotal(newQtyStr, product.cost_price), 2);
+        if (!manualTotalEdited.current.has(row.uid) && suggested != null) {
+          newTotal = toFixedStr(lineTotal(newQtyStr, suggested), 2);
         }
-        
+
         newRows[existingIndex] = {
           ...row,
           quantity: newQtyStr,
@@ -181,8 +224,8 @@ export function PurchaseForm({
         };
         return newRows;
       } else {
-        const costPrice = product.cost_price ?? null;
-        const totalCostStr = costPrice != null ? toFixedStr(lineTotal("1", costPrice), 2) : "0";
+        const totalCostStr =
+          suggested != null ? toFixedStr(lineTotal("1", suggested), 2) : "0";
         return [
           ...prev,
           {
@@ -196,14 +239,39 @@ export function PurchaseForm({
         ];
       }
     });
-    
+
     setSearchTerm("");
     setIsDropdownOpen(false);
-    
+
     setTimeout(() => {
       searchInputRef.current?.focus();
     }, 0);
   }, []);
+
+  // Re-derivación reactiva del costo de filas NO-manuales cuando cambia el
+  // catálogo (precio nuevo desde otra ventana, edición inline, etc.). Este
+  // es el corazón del fix al bug "edito precio y la fila no se actualiza":
+  // antes el `total_cost` se copiaba al insertar y nunca volvía a recalcular.
+  // Ahora, cualquier cambio en localProducts dispara un recálculo de las
+  // filas que no han sido tocadas manualmente.
+  useEffect(() => {
+    setRows((prev) => {
+      let changed = false;
+      const next = prev.map((r) => {
+        if (r.is_gift) return r;
+        if (manualTotalEdited.current.has(r.uid)) return r;
+        const product = productById.get(r.product_id);
+        if (!product) return r;
+        const suggested = suggestedUnitCost(product);
+        if (suggested == null) return r;
+        const newTotal = toFixedStr(lineTotal(r.quantity || "0", suggested), 2);
+        if (newTotal === r.total_cost) return r;
+        changed = true;
+        return { ...r, total_cost: newTotal };
+      });
+      return changed ? next : prev;
+    });
+  }, [productById]);
 
   const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
@@ -307,17 +375,20 @@ export function PurchaseForm({
   );
 
   // Cálculo A: usuario cambia cantidad → si NO ha tocado el total manualmente,
-  // recalculamos total = qty × precio_base. Si ya lo tocó, conservamos el total
-  // y el costo unitario derivado se recalcula automáticamente al renderizar.
+  // recalculamos total = qty × suggested(unit_cost). Si ya lo tocó, conservamos
+  // el total y el costo unitario derivado se recalcula automáticamente al
+  // renderizar.
   const onQuantityChange = (uid: string, qStr: string) => {
     updateRow(uid, { quantity: qStr });
     const row = rows.find((r) => r.uid === uid);
     if (!row) return;
     if (row.is_gift) return; // Mantiene el costo total en 0.00
     const product = productById.get(row.product_id);
-    if (!product || product.cost_price == null) return;
+    if (!product) return;
+    const suggested = suggestedUnitCost(product);
+    if (suggested == null) return;
     if (manualTotalEdited.current.has(uid)) return;
-    const tc = toFixedStr(lineTotal(qStr, product.cost_price), 2);
+    const tc = toFixedStr(lineTotal(qStr, suggested), 2);
     updateRow(uid, { total_cost: tc });
   };
 
@@ -334,8 +405,11 @@ export function PurchaseForm({
         if (r.uid !== uid) return r;
         if (r.is_gift) {
           const product = productById.get(r.product_id);
-          const costPrice = product?.cost_price ?? null;
-          const tc = costPrice != null ? toFixedStr(lineTotal(r.quantity, costPrice), 2) : "0";
+          const suggested = product ? suggestedUnitCost(product) : null;
+          const tc =
+            suggested != null
+              ? toFixedStr(lineTotal(r.quantity, suggested), 2)
+              : "0";
           return { ...r, is_gift: false, total_cost: tc };
         } else {
           return { ...r, is_gift: true, total_cost: "0.00" };

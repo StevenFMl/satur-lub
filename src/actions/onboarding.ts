@@ -76,6 +76,19 @@ export async function createTenantAction(
     return { error: "No pudimos crear tu negocio. Intenta nuevamente." };
   }
 
+  // Sembrar tiers por defecto (PUBLICO/MAYORISTA/DISTRIBUIDOR) y marcar
+  // PUBLICO como tier default del tenant. Idempotente: no re-crea tiers
+  // si ya existen (caso retry de onboarding).
+  const { error: seedError } = await supabase.rpc("seed_default_price_tiers", {
+    p_tenant_id: data,
+  } as never);
+
+  if (seedError) {
+    // No bloquea el onboarding — el seed puede ejecutarse después manualmente.
+    // Pero lo logueamos para detectarlo si pasa en producción.
+    console.error("seed_default_price_tiers error:", seedError);
+  }
+
   revalidatePath("/", "layout");
   redirect("/dashboard");
 }

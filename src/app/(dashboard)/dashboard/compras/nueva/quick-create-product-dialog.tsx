@@ -33,6 +33,9 @@ export function QuickCreateProductDialog({ open, onClose, onCreated, editProduct
 
   // Auto-focus al abrir
   const [displayPrice, setDisplayPrice] = useState(editProduct?.cost_price != null ? String(editProduct.cost_price) : "");
+  const [pricePublico, setPricePublico] = useState(
+    editProduct?.default_price != null ? String(editProduct.default_price) : ""
+  );
   const [hasTax, setHasTax] = useState(editProduct ? (editProduct as any).has_tax ?? true : true);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -40,12 +43,19 @@ export function QuickCreateProductDialog({ open, onClose, onCreated, editProduct
     setPending(true);
     setError(null);
     setFieldErrors({});
-    
+
     const formData = new FormData(e.currentTarget);
     const result = await quickCreateProductAction(null, formData);
-    
+
     setPending(false);
     if (result?.ok && result.product) {
+      // Notifica a otras pestañas (pantalla de productos, otras compras
+      // abiertas) que el catálogo cambió.
+      if (typeof BroadcastChannel !== "undefined") {
+        const ch = new BroadcastChannel("saturlub:products");
+        ch.postMessage({ type: "product-updated" });
+        ch.close();
+      }
       onCreated(result.product);
       onClose();
     } else {
@@ -127,7 +137,7 @@ export function QuickCreateProductDialog({ open, onClose, onCreated, editProduct
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="qc-cost">Costo base (Neto)</Label>
+              <Label htmlFor="qc-cost">Costo referencial (Neto)</Label>
               <div className="relative">
                 <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-mono text-[12px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
                   USD
@@ -164,8 +174,35 @@ export function QuickCreateProductDialog({ open, onClose, onCreated, editProduct
               </div>
               <FieldError fieldId="qc-cost" message={errors.cost_price} />
             </div>
-            
+          </div>
 
+          <div className="space-y-2">
+            <Label htmlFor="qc-price-publico" required>
+              Precio público (venta)
+            </Label>
+            <div className="relative">
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-mono text-[12px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+                USD
+              </span>
+              <Input
+                id="qc-price-publico"
+                name="price_publico"
+                type="number"
+                min="0"
+                step="0.01"
+                value={pricePublico}
+                onChange={(e) => setPricePublico(e.target.value)}
+                placeholder="0.00"
+                mono
+                className="pl-14 text-right"
+                invalid={Boolean(errors.price_publico)}
+                onFocus={(e) => e.target.select()}
+              />
+            </div>
+            <p className="field-hint">
+              Mayorista y Distribuidor se configuran desde Productos.
+            </p>
+            <FieldError fieldId="qc-price-publico" message={errors.price_publico} />
           </div>
 
           {error && !Object.keys(fieldErrors).length ? (

@@ -29,7 +29,9 @@ export default async function NuevaCompraPage() {
       .order("full_name"),
     supabase
       .from("products")
-      .select("id, sku, name, unit, cost_price")
+      .select(
+        "id, sku, name, unit, cost_price, default_price, average_cost, last_purchase_cost, has_tax"
+      )
       .eq("is_active", true)
       .order("name")
       .limit(500),

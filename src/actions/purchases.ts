@@ -1,21 +1,13 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getActiveMembership } from "@/lib/supabase/membership";
 import {
   purchaseSchema,
   type PurchaseFieldErrors,
 } from "@/lib/validations/purchase";
-import {
-  grandTotal,
-  sumAll,
-  taxAmount,
-  toFixedStr,
-  lineTotal,
-  add,
-  toMoney,
-} from "@/lib/math";
+import { taxAmount, toFixedStr, toMoney } from "@/lib/math";
 import Big from "big.js";
 
 export type PurchaseState = {
@@ -171,9 +163,17 @@ export async function receivePurchaseAction(
     return { error: "No se pudo registrar la compra." };
   }
 
+  // CPP actualiza products.average_cost y .last_purchase_cost — invalida
+  // catálogo de productos para que /compras/nueva y /inventario/productos
+  // vean los costos nuevos al re-fetch.
+  revalidateTag("products");
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/compras");
+  revalidatePath("/dashboard/compras/nueva");
   revalidatePath("/dashboard/inventario");
+  revalidatePath("/dashboard/inventario/productos");
+  revalidatePath("/dashboard/inventario/stock");
+  revalidatePath("/dashboard/inventario/movimientos");
   return {
     ok: true,
     poId: typeof poId === "string" ? poId : undefined,
@@ -213,15 +213,20 @@ export async function cancelPurchaseAction(
       msg.startsWith("Orden") ||
       msg.startsWith("Solo") ||
       msg.startsWith("Sin tenant") ||
-      msg.startsWith("Usuario")
+      msg.startsWith("Usuario") ||
+      msg.startsWith("Stock insuficiente") ||
+      msg.startsWith("p_tenant_id")
     ) {
       return { error: msg };
     }
     return { error: "No se pudo anular la compra." };
   }
 
+  revalidateTag("products");
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/compras");
   revalidatePath("/dashboard/inventario");
+  revalidatePath("/dashboard/inventario/stock");
+  revalidatePath("/dashboard/inventario/movimientos");
   return { ok: true };
 }

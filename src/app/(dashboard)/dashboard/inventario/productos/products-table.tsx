@@ -17,6 +17,14 @@ export type ProductRow = {
   sku: string;
   unit: string;
   cost_price: number | null;
+  // Precio PUBLICO vigente (mantenido por trigger desde product_prices).
+  default_price: number | null;
+  // Costo promedio ponderado y último costo de compra (CPP).
+  average_cost: number;
+  last_purchase_cost: number | null;
+  // Precios vigentes de los otros tiers (null = sin precio asignado).
+  price_mayorista: number | null;
+  price_distribuidor: number | null;
   product_kind: "item" | "service" | "kit";
   tax_rate: number | null;
   has_tax: boolean;
@@ -207,7 +215,8 @@ export function ProductsTable({
               <tr>
                 <Th>Producto</Th>
                 <Th>SKU</Th>
-                <Th className="text-right">Costo base</Th>
+                <Th className="text-right">Precio público</Th>
+                <Th className="text-right">Costo prom.</Th>
                 <Th>Estado</Th>
                 {canManage ? <Th className="text-right">Acción</Th> : null}
               </tr>
@@ -216,7 +225,7 @@ export function ProductsTable({
               {filtered.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={canManage ? 5 : 4}
+                    colSpan={canManage ? 6 : 5}
                     className="px-5 py-12 text-center text-[13px] text-muted-foreground"
                   >
                     {initialRows.length === 0
@@ -244,8 +253,19 @@ export function ProductsTable({
                       </span>
                     </Td>
                     <Td className="text-right">
-                      <span className="font-mono text-[13px] tabular-nums text-foreground">
-                        {moneyFmt.format(Number(r.cost_price ?? 0))}
+                      {r.default_price != null ? (
+                        <span className="font-mono text-[13px] tabular-nums text-foreground">
+                          {moneyFmt.format(Number(r.default_price))}
+                        </span>
+                      ) : (
+                        <span className="font-mono text-[12px] text-muted-foreground">
+                          —
+                        </span>
+                      )}
+                    </Td>
+                    <Td className="text-right">
+                      <span className="font-mono text-[12.5px] tabular-nums text-muted-foreground">
+                        {moneyFmt.format(Number(r.average_cost ?? 0))}
                       </span>
                     </Td>
                     <Td>

@@ -42,6 +42,15 @@ export function ProductForm({ initial, onSuccess }: Props) {
   useEffect(() => {
     if (!state?.ok || hasProcessedSuccess) return;
 
+    // Notifica a otras pestañas abiertas que el catálogo cambió. Los
+    // listeners (p.ej. /compras/nueva) hacen router.refresh() y se
+    // re-sincronizan automáticamente.
+    if (typeof BroadcastChannel !== "undefined") {
+      const ch = new BroadcastChannel("saturlub:products");
+      ch.postMessage({ type: "product-updated" });
+      ch.close();
+    }
+
     if (keepOpen && !initial?.id) {
       // Modo continuo: resetear form, mantener Sheet abierto
       setHasProcessedSuccess(true);
@@ -54,10 +63,13 @@ export function ProductForm({ initial, onSuccess }: Props) {
       const t = setTimeout(() => setSavedFlash(false), 2500);
       return () => clearTimeout(t);
     } else {
-      // Comportamiento normal: cerrar Sheet
+      // Comportamiento normal: refrescar lista y cerrar Sheet. router.refresh()
+      // garantiza que la tabla y la pantalla de Compras vean el precio nuevo.
+      // Sin esto los Server Components no se re-renderizan.
+      router.refresh();
       onSuccess();
     }
-  }, [state, keepOpen, initial?.id, onSuccess, router]);
+  }, [state, keepOpen, initial?.id, onSuccess, router, hasProcessedSuccess]);
 
   const errors = state?.fieldErrors ?? {};
   const isEditing = Boolean(initial?.id);
@@ -168,7 +180,7 @@ export function ProductForm({ initial, onSuccess }: Props) {
 
         <div className="space-y-2">
           <Label htmlFor="cost_price">
-            Costo base{" "}
+            Costo referencial{" "}
             <span className="font-normal normal-case tracking-normal text-muted-foreground/80">
               (opcional)
             </span>
@@ -193,7 +205,127 @@ export function ProductForm({ initial, onSuccess }: Props) {
               onFocus={(e) => e.target.select()}
             />
           </div>
+          <p className="field-hint">
+            El costo promedio real se actualiza automáticamente al recibir
+            compras (CPP).
+          </p>
           <FieldError fieldId="cost_price" message={errors.cost_price} />
+        </div>
+
+        <div className="space-y-3 rounded-sm border-2 border-steel-700 bg-steel-900/40 p-4">
+          <div className="flex items-baseline justify-between">
+            <Label className="!mb-0">Precios de venta</Label>
+            <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+              por tier
+            </span>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="price_publico" required>
+              Público
+            </Label>
+            <div className="relative">
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-mono text-[12px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+                USD
+              </span>
+              <Input
+                id="price_publico"
+                name="price_publico"
+                type="number"
+                min="0"
+                step="0.01"
+                defaultValue={
+                  initial?.default_price != null
+                    ? String(initial.default_price)
+                    : ""
+                }
+                placeholder="0.00"
+                mono
+                className="pl-14 text-right"
+                invalid={Boolean(errors.price_publico)}
+                onFocus={(e) => e.target.select()}
+              />
+            </div>
+            <FieldError
+              fieldId="price_publico"
+              message={errors.price_publico}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="price_mayorista">
+              Mayorista{" "}
+              <span className="font-normal normal-case tracking-normal text-muted-foreground/80">
+                (opcional)
+              </span>
+            </Label>
+            <div className="relative">
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-mono text-[12px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+                USD
+              </span>
+              <Input
+                id="price_mayorista"
+                name="price_mayorista"
+                type="number"
+                min="0"
+                step="0.01"
+                defaultValue={
+                  initial?.price_mayorista != null
+                    ? String(initial.price_mayorista)
+                    : ""
+                }
+                placeholder="—"
+                mono
+                className="pl-14 text-right"
+                invalid={Boolean(errors.price_mayorista)}
+                onFocus={(e) => e.target.select()}
+              />
+            </div>
+            <FieldError
+              fieldId="price_mayorista"
+              message={errors.price_mayorista}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="price_distribuidor">
+              Distribuidor{" "}
+              <span className="font-normal normal-case tracking-normal text-muted-foreground/80">
+                (opcional)
+              </span>
+            </Label>
+            <div className="relative">
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-mono text-[12px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+                USD
+              </span>
+              <Input
+                id="price_distribuidor"
+                name="price_distribuidor"
+                type="number"
+                min="0"
+                step="0.01"
+                defaultValue={
+                  initial?.price_distribuidor != null
+                    ? String(initial.price_distribuidor)
+                    : ""
+                }
+                placeholder="—"
+                mono
+                className="pl-14 text-right"
+                invalid={Boolean(errors.price_distribuidor)}
+                onFocus={(e) => e.target.select()}
+              />
+            </div>
+            <FieldError
+              fieldId="price_distribuidor"
+              message={errors.price_distribuidor}
+            />
+          </div>
+
+          <p className="field-hint">
+            Si dejas vacío Mayorista o Distribuidor, no se actualiza el precio
+            vigente de ese tier.
+          </p>
         </div>
 
         <div className="space-y-2">

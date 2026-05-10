@@ -17,6 +17,38 @@ const toNumberOrNaN = (v: unknown): number => {
   return Number.isFinite(n) ? n : Number.NaN;
 };
 
+// Para precios opcionales por tier: vacío → null (no se actualiza la fila
+// vigente), número → se valida en el siguiente paso del schema.
+const toNullableNumber = (v: unknown): number | null => {
+  if (v === null || v === undefined) return null;
+  if (typeof v === "number") return Number.isFinite(v) ? v : Number.NaN;
+  if (typeof v !== "string") return null;
+  const t = v.trim();
+  if (t.length === 0) return null;
+  const n = Number(t.replace(",", "."));
+  return Number.isFinite(n) ? n : Number.NaN;
+};
+
+const tierPriceOptional = z.preprocess(
+  toNullableNumber,
+  z
+    .number({ error: "Precio inválido." })
+    .nonnegative("El precio no puede ser negativo.")
+    .max(99_999_999.99, "Precio demasiado alto.")
+    .nullable()
+);
+
+const tierPriceRequired = z.preprocess(
+  (v) => {
+    const n = toNullableNumber(v);
+    return n === null ? Number.NaN : n;
+  },
+  z
+    .number({ error: "Precio requerido." })
+    .nonnegative("El precio no puede ser negativo.")
+    .max(99_999_999.99, "Precio demasiado alto.")
+);
+
 export const productSchema = z.object({
   id: z.preprocess(
     (v) => (typeof v === "string" && v.length > 0 ? v : undefined),
@@ -60,6 +92,13 @@ export const productSchema = z.object({
       .max(99_999_999.99, "Costo demasiado alto.")
   ),
   has_tax: z.boolean().default(true),
+  // Precios por tier. PUBLICO es obligatorio (V1 lubricadora). Los otros
+  // dos quedan opcionales; null = no actualizar la fila vigente del tier.
+  // Estos campos se persisten vía RPC `set_product_tier_price`, no como
+  // columnas de `products`.
+  price_publico: tierPriceRequired,
+  price_mayorista: tierPriceOptional,
+  price_distribuidor: tierPriceOptional,
 });
 
 export type ProductInput = z.infer<typeof productSchema>;
