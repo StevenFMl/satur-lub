@@ -11,13 +11,11 @@ export type CreateSaleResult = {
   error?: string;
 } | null;
 
-/**
- * Creates a complete sale atomically via the `create_sale` RPC.
- *
- * All members can sell (canUsePOS = true for all roles).
- * Price re-read, stock validation, inventory movements, and CPP updates
- * all happen server-side inside the SECURITY DEFINER RPC.
- */
+export type VoidSaleResult = {
+  ok?: boolean;
+  error?: string;
+} | null;
+
 export async function createSaleAction(
   input: SaleInput
 ): Promise<CreateSaleResult> {
@@ -67,8 +65,55 @@ export async function createSaleAction(
 
   revalidateTag("products");
   revalidatePath("/dashboard/pos");
+  revalidatePath("/dashboard/pos/ventas");
   revalidatePath("/dashboard/inventario/stock");
   revalidatePath("/dashboard/inventario/movimientos");
 
   return { ok: true, saleId: typeof saleId === "string" ? saleId : undefined };
+}
+
+export async function voidSaleAction(input: {
+  sale_id: string;
+  reason:  string;
+  note?:   string | null;
+}): Promise<VoidSaleResult> {
+  const { user, membership } = await getActiveMembership();
+  if (!user || !membership) return { error: "Sesión expirada." };
+
+  if (!input.sale_id) return { error: "ID de venta requerido." };
+  if (!input.reason?.trim()) return { error: "El motivo es requerido." };
+
+  const supabase = await createClient();
+
+  const { error } = await supabase.rpc("void_sale", {
+    p_tenant_id: membership.tenant_id,
+    p_sale_id:   input.sale_id,
+    p_reason:    input.reason.trim(),
+    p_note:      input.note ?? null,
+  } as never);
+
+  if (error) {
+    console.error("voidSaleAction RPC error:", error);
+    const msg = error.message ?? "";
+    if (
+      msg.startsWith("No autenticado") ||
+      msg.startsWith("Sin acceso") ||
+      msg.startsWith("Sin permisos") ||
+      msg.startsWith("Se requiere un motivo") ||
+      msg.startsWith("Venta no encontrada") ||
+      msg.startsWith("La venta ya está") ||
+      msg.startsWith("Solo se pueden anular")
+    ) {
+      return { error: msg };
+    }
+    return { error: "No se pudo anular la venta. Intenta de nuevo." };
+  }
+
+  revalidatePath("/dashboard/pos/ventas");
+  revalidatePath(`/dashboard/pos/ventas/${input.sale_id}`);
+  revalidatePath("/dashboard/pos/cierre");
+  revalidatePath("/dashboard/inventario/stock");
+  revalidatePath("/dashboard/inventario/movimientos");
+
+  return { ok: true };
 }
