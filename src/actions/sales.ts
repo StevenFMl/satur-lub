@@ -55,7 +55,10 @@ export async function createSaleAction(
       msg.startsWith("Pago insuficiente") ||
       msg.startsWith("La venta") ||
       msg.startsWith("No autenticado") ||
-      msg.startsWith("Sin acceso")
+      msg.startsWith("Sin acceso") ||
+      msg.startsWith("Precio de ajuste") ||
+      msg.startsWith("Se requiere una razón") ||
+      msg.startsWith("Descuento máximo")
     ) {
       return { error: msg };
     }

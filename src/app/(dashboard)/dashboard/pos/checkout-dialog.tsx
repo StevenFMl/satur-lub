@@ -8,15 +8,20 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert } from "@/components/ui/alert";
 import { createSaleAction } from "@/actions/sales";
+import { PRICE_OVERRIDE_LABELS, type PriceOverrideType } from "@/lib/validations/sale";
 
 type PaymentMethod = "cash" | "card" | "transfer";
 
 type CartItem = {
-  product_id:      string;
-  quantity:        number;
-  discount_amount: number;
-  presentation_id: string | null | undefined;
-  base_qty:        number;
+  product_id:            string;
+  quantity:              number;
+  discount_amount:       number;
+  presentation_id:       string | null | undefined;
+  base_qty:              number;
+  override_unit_price:   number | undefined;
+  price_override_type:   string | undefined;
+  price_override_reason: string | undefined;
+  price_override_note:   string | undefined;
 };
 
 type Props = {
@@ -52,15 +57,15 @@ export function CheckoutDialog({
   warehouseId,
   onSuccess,
 }: Props) {
-  const [method, setMethod]               = React.useState<PaymentMethod>("cash");
-  const [cashReceived, setCashReceived]   = React.useState("");
-  const [reference, setReference]         = React.useState("");
-  const [saleDate, setSaleDate]           = React.useState(today());
-  const [isHistorical, setIsHistorical]   = React.useState(false);
-  const [submitting, setSubmitting]       = React.useState(false);
-  const [error, setError]                 = React.useState<string | null>(null);
-  const [confirmed, setConfirmed]         = React.useState(false);
-  const [saleId, setSaleId]               = React.useState<string | null>(null);
+  const [method, setMethod]             = React.useState<PaymentMethod>("cash");
+  const [cashReceived, setCashReceived] = React.useState("");
+  const [reference, setReference]       = React.useState("");
+  const [saleDate, setSaleDate]         = React.useState(today());
+  const [isHistorical, setIsHistorical] = React.useState(false);
+  const [submitting, setSubmitting]     = React.useState(false);
+  const [error, setError]               = React.useState<string | null>(null);
+  const [confirmed, setConfirmed]       = React.useState(false);
+  const [saleId, setSaleId]             = React.useState<string | null>(null);
 
   React.useEffect(() => {
     if (open) {
@@ -91,6 +96,8 @@ export function CheckoutDialog({
 
   const cashValid = method !== "cash" || cashReceivedNum >= gross - 0.001;
 
+  const overriddenItems = cart.filter((i) => i.override_unit_price != null);
+
   const handleConfirm = async () => {
     if (!cashValid) { setError("El monto recibido es menor al total."); return; }
 
@@ -100,12 +107,16 @@ export function CheckoutDialog({
     const result = await createSaleAction({
       customer_id:   customerId,
       warehouse_id:  warehouseId,
-      items:         cart.map((l) => ({
-        product_id:      l.product_id,
-        quantity:        l.quantity,
-        discount_amount: l.discount_amount,
-        presentation_id: l.presentation_id ?? undefined,
-        base_qty:        l.base_qty,
+      items: cart.map((l) => ({
+        product_id:            l.product_id,
+        quantity:              l.quantity,
+        discount_amount:       l.discount_amount,
+        presentation_id:       l.presentation_id ?? undefined,
+        base_qty:              l.base_qty,
+        override_unit_price:   l.override_unit_price   ?? undefined,
+        price_override_type:   (l.price_override_type as PriceOverrideType | undefined) ?? undefined,
+        price_override_reason: l.price_override_reason ?? undefined,
+        price_override_note:   l.price_override_note   ?? undefined,
       })),
       payments: [{
         method,
@@ -162,6 +173,25 @@ export function CheckoutDialog({
             <SummaryRow label="Total" value={moneyFmt.format(gross)} bold />
             <SummaryRow label={METHODS.find((m) => m.method === method)?.label ?? method} value="" />
           </div>
+
+          {overriddenItems.length > 0 ? (
+            <div className="rounded-sm border border-signal-700/30 bg-signal-900/20 px-4 py-3 text-left">
+              <p className="mb-1.5 font-mono text-[9.5px] uppercase tracking-[0.14em] text-signal-500/70">
+                Ajustes de precio aplicados
+              </p>
+              <ul className="space-y-1">
+                {overriddenItems.map((item, i) => (
+                  <li key={i} className="font-mono text-[10.5px] text-signal-400">
+                    {item.price_override_reason ?? (
+                      PRICE_OVERRIDE_LABELS[(item.price_override_type ?? "price_set") as PriceOverrideType]
+                    )}
+                    {" · "}
+                    <span className="tabular-nums">{moneyFmt.format(item.override_unit_price ?? 0)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
         </div>
 
         <div className="flex justify-end border-t-2 border-steel-700 bg-steel-900/60 px-6 py-4">
@@ -197,6 +227,15 @@ export function CheckoutDialog({
           <SummaryRow label="Subtotal (neto)" value={moneyFmt.format(totals.net)} />
           <SummaryRow label="IVA 15%" value={moneyFmt.format(totals.iva)} />
         </div>
+
+        {/* Override summary (if any) */}
+        {overriddenItems.length > 0 ? (
+          <div className="rounded-sm border border-signal-700/30 bg-signal-900/20 px-3 py-2">
+            <p className="font-mono text-[9.5px] uppercase tracking-[0.12em] text-signal-500/70">
+              {overriddenItems.length} precio{overriddenItems.length > 1 ? "s" : ""} ajustado{overriddenItems.length > 1 ? "s" : ""}
+            </p>
+          </div>
+        ) : null}
 
         {/* Payment method */}
         <div className="space-y-1.5">

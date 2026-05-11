@@ -25,8 +25,8 @@ export function getPosPermissions(role: TenantRole | null | undefined): PosPermi
   const isPrivileged = role === "owner" || role === "admin";
   return {
     canUsePOS:          true,               // all authenticated members
-    canEditLinePrice:   isPrivileged,
-    canApplyDiscount:   isPrivileged,
+    canEditLinePrice:   true,               // all can override; RPC enforces 30% cap for non-privileged
+    canApplyDiscount:   true,               // all can apply discounts
     canVoidSale:        isPrivileged,
     canOverrideStock:   isPrivileged,
     canViewDailyReport: isPrivileged,
