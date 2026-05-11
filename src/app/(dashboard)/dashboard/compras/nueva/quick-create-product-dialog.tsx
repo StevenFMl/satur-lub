@@ -31,10 +31,18 @@ function pricePreview(val: string, includesIva: boolean): string | null {
     : "= $" + (n * IVA_MULT).toFixed(2) + " c/IVA";
 }
 
+/** Convierte neto → bruto para persistir precio de venta. */
+function toGross(val: string): string {
+  const n = parseFloat(val.replace(",", "."));
+  if (!isFinite(n) || n <= 0) return "";
+  return (n * IVA_MULT).toFixed(4);
+}
+
+/** Convierte bruto → neto para persistir costo de compra referencial. */
 function toNet(val: string): string {
   const n = parseFloat(val.replace(",", "."));
   if (!isFinite(n) || n <= 0) return "";
-  return (n / IVA_MULT).toFixed(2);
+  return (n / IVA_MULT).toFixed(4);
 }
 
 type Props = {
@@ -62,9 +70,10 @@ export function QuickCreateProductDialog({ open, onClose, onCreated, editProduct
   const costPreview = useMemo(() => pricePreview(costPrice, priceIncludesIva), [costPrice, priceIncludesIva]);
   const publicoPreview = useMemo(() => pricePreview(pricePublico, priceIncludesIva), [pricePublico, priceIncludesIva]);
 
-  // Valores netos que se envían al servidor
-  const netCost = priceIncludesIva ? toNet(costPrice) : costPrice;
-  const netPublico = priceIncludesIva ? toNet(pricePublico) : pricePublico;
+  // cost_price = referencia de costo de compra → se guarda NETO (sin IVA).
+  const submittedCost = priceIncludesIva ? toNet(costPrice) : costPrice;
+  // price_publico = precio de venta → se guarda BRUTO (con IVA incluido).
+  const submittedPublico = priceIncludesIva ? pricePublico : toGross(pricePublico);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -105,8 +114,8 @@ export function QuickCreateProductDialog({ open, onClose, onCreated, editProduct
         {editProduct ? <input type="hidden" name="id" value={editProduct.id} /> : null}
         {/* has_tax=true siempre. El toggle visible es el modo de entrada (bruto/neto). */}
         <input type="hidden" name="has_tax" value="on" />
-        <input type="hidden" name="cost_price" value={netCost} />
-        <input type="hidden" name="price_publico" value={netPublico} />
+        <input type="hidden" name="cost_price" value={submittedCost} />
+        <input type="hidden" name="price_publico" value={submittedPublico} />
 
         <fieldset
           disabled={pending}
@@ -171,18 +180,25 @@ export function QuickCreateProductDialog({ open, onClose, onCreated, editProduct
           </div>
 
           {/* ── Modo de entrada IVA ─────────────────────────────── */}
-          <div className="flex items-center gap-3 rounded-sm border border-steel-700/50 bg-steel-900/30 px-3 py-2.5">
-            <Switch
-              id="qc-iva-mode"
-              checked={priceIncludesIva}
-              onCheckedChange={(val) => setPriceIncludesIva(val)}
-            />
-            <Label
-              htmlFor="qc-iva-mode"
-              className="cursor-pointer normal-case tracking-normal text-[13px] font-medium text-muted-foreground"
-            >
-              El precio ingresado ya incluye IVA ({IVA_RATE}%)
-            </Label>
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-3 rounded-sm border border-steel-700/50 bg-steel-900/30 px-3 py-2.5">
+              <Switch
+                id="qc-iva-mode"
+                checked={priceIncludesIva}
+                onCheckedChange={(val) => setPriceIncludesIva(val)}
+              />
+              <Label
+                htmlFor="qc-iva-mode"
+                className="cursor-pointer normal-case tracking-normal text-[13px] font-medium text-muted-foreground"
+              >
+                Los montos ingresados ya incluyen IVA ({IVA_RATE}%)
+              </Label>
+            </div>
+            <p className="field-hint px-1">
+              {priceIncludesIva
+                ? "Costo: se guarda sin IVA (se divide ÷1.15). Precio público: se guarda tal cual (bruto)."
+                : "Costo: se guarda tal cual (neto). Precio público: se guarda con IVA añadido (×1.15)."}
+            </p>
           </div>
 
           {/* ── Costo y precio público ─────────────────────────── */}
@@ -266,7 +282,7 @@ function PriceField({
           id={id}
           type="number"
           min="0"
-          step="0.01"
+          step="any"
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder="—"

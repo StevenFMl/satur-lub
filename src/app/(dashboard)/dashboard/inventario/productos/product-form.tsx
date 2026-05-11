@@ -35,11 +35,33 @@ function pricePreview(val: string, includesIva: boolean): string | null {
     : "= $" + (n * IVA_MULT).toFixed(2) + " c/IVA";
 }
 
-/** Convierte precio bruto a neto para persistir en DB cuando includesIva=true. */
-function toNet(val: string): string {
+// Convención de almacenamiento: product_prices.unit_price guarda siempre el
+// precio BRUTO (precio final de venta con IVA incluido).
+// La tabla y el POS muestran ese valor directamente, sin reconversión.
+
+/**
+ * Cuando el usuario ingresa precio NETO (toggle desmarcado),
+ * lo convertimos a bruto antes de persistir.
+ */
+function toGross(val: string): string {
   const n = parseFloat(val.replace(",", "."));
   if (!isFinite(n) || n <= 0) return "";
-  return (n / IVA_MULT).toFixed(2);
+  return (n * IVA_MULT).toFixed(4);
+}
+
+/**
+ * Convierte el valor mostrado al cambiar de modo para que el precio
+ * efectivo guardado no cambie al solo activar/desactivar el toggle.
+ *
+ * net→gross: multiplica por 1.15  (usuario pasó a "ya incluye IVA")
+ * gross→net: divide entre 1.15    (usuario pasó a "precio base neto")
+ */
+function convertDisplayedPrice(val: string, toGross: boolean): string {
+  const n = parseFloat(val.replace(",", "."));
+  if (!isFinite(n) || n <= 0) return val;
+  return toGross
+    ? (n * IVA_MULT).toFixed(4)
+    : (n / IVA_MULT).toFixed(4);
 }
 
 type Props = { initial: ProductRow | null; onSuccess: () => void };
@@ -56,8 +78,30 @@ export function ProductForm({ initial, onSuccess }: Props) {
 
   // ── Estado controlado ──────────────────────────────────────────────────
   // priceIncludesIva: si es true, el número escrito ya lleva IVA.
-  // Preservado en "Guardar y agregar otro" para consistencia en batch.
-  const [priceIncludesIva, setPriceIncludesIva] = useState(false);
+  //
+  // Edición (initial != null): arranca en TRUE porque los precios en DB
+  //   son BRUTOS — mostrar el valor como neto sería incorrecto y causaría
+  //   una multiplicación doble al guardar (4.96 × 1.15 = 5.70).
+  //
+  // Creación (initial == null): arranca en FALSE — el usuario ingresa el
+  //   precio neto y el preview muestra el bruto como referencia.
+  const [priceIncludesIva, setPriceIncludesIva] = useState(initial != null);
+
+  /**
+   * Cambia el modo IVA y convierte los valores mostrados para que el precio
+   * efectivo que se va a guardar NO cambie solo por activar el toggle.
+   *
+   * Ejemplo: campo muestra "10.00" (neto) → usuario activa "ya incluye IVA"
+   *  → el campo pasa a mostrar "11.50" (bruto equivalente)
+   *  → submit guarda 11.50/1.15 = 10.00 — mismo precio, sin sorpresa.
+   */
+  const handleToggleIva = React.useCallback((next: boolean) => {
+    const cvt = (v: string) => convertDisplayedPrice(v, next);
+    setPricePublico((p) => p ? cvt(p) : p);
+    setPriceMayorista((p) => p ? cvt(p) : p);
+    setPriceDistribuidor((p) => p ? cvt(p) : p);
+    setPriceIncludesIva(next);
+  }, []);
   const [unit, setUnit] = useState(initial?.unit ?? "unidad");
   const [pricePublico, setPricePublico] = useState(
     initial?.default_price != null ? String(initial.default_price) : ""
@@ -106,12 +150,12 @@ export function ProductForm({ initial, onSuccess }: Props) {
   const errors = state?.fieldErrors ?? {};
   const isEditing = Boolean(initial?.id);
 
-  // ── Precios que se envían al servidor (siempre en base neta) ───────────
-  // Si priceIncludesIva=true, el usuario ingresó precio bruto; dividimos
-  // por IVA_MULT antes de persistir en product_prices.
-  const netPublico = priceIncludesIva ? toNet(pricePublico) : pricePublico;
-  const netMayorista = priceIncludesIva ? toNet(priceMayorista) : priceMayorista;
-  const netDistribuidor = priceIncludesIva ? toNet(priceDistribuidor) : priceDistribuidor;
+  // ── Precios que se envían al servidor (siempre en bruto/gross) ──────────
+  // priceIncludesIva=true  → usuario ya ingresó bruto → guardar tal cual
+  // priceIncludesIva=false → usuario ingresó neto     → convertir a bruto
+  const grossPublico = priceIncludesIva ? pricePublico : toGross(pricePublico);
+  const grossMayorista = priceIncludesIva ? priceMayorista : toGross(priceMayorista);
+  const grossDistribuidor = priceIncludesIva ? priceDistribuidor : toGross(priceDistribuidor);
 
   // ── Previews ──────────────────────────────────────────────────────────
   const previewPublico = useMemo(() => pricePreview(pricePublico, priceIncludesIva), [pricePublico, priceIncludesIva]);
@@ -134,9 +178,9 @@ export function ProductForm({ initial, onSuccess }: Props) {
           no la taxabilidad del producto. */}
       <input type="hidden" name="has_tax" value="on" />
       <input type="hidden" name="unit" value={unit} />
-      <input type="hidden" name="price_publico" value={netPublico} />
-      <input type="hidden" name="price_mayorista" value={netMayorista} />
-      <input type="hidden" name="price_distribuidor" value={netDistribuidor} />
+      <input type="hidden" name="price_publico" value={grossPublico} />
+      <input type="hidden" name="price_mayorista" value={grossMayorista} />
+      <input type="hidden" name="price_distribuidor" value={grossDistribuidor} />
 
       <fieldset
         disabled={pending}
@@ -220,7 +264,7 @@ export function ProductForm({ initial, onSuccess }: Props) {
           <Label htmlFor="cost_price">
             Costo referencial{" "}
             <span className="font-normal normal-case tracking-normal text-muted-foreground/70">
-              (opcional)
+              (opcional · siempre sin IVA)
             </span>
           </Label>
           <div className="relative">
@@ -240,8 +284,8 @@ export function ProductForm({ initial, onSuccess }: Props) {
             />
           </div>
           <p className="field-hint">
-            Precio sugerido en compras. El costo promedio real se actualiza
-            automáticamente al recibir mercancía.
+            Ingresa el costo sin IVA (neto). Referencia para sugerencia de compras —
+            el sistema calcula el costo real (CPP) a partir de cada recepción de mercancía.
           </p>
           <FieldError fieldId="cost_price" message={errors.cost_price} />
         </div>
@@ -251,18 +295,26 @@ export function ProductForm({ initial, onSuccess }: Props) {
 
         <div className="pb-5">
           {/* Toggle de modo de entrada */}
-          <div className="mb-4 flex items-center gap-3 rounded-sm border border-steel-700/60 bg-steel-900/40 px-3 py-2.5">
-            <Switch
-              id="price_includes_iva"
-              checked={priceIncludesIva}
-              onCheckedChange={(val) => setPriceIncludesIva(val)}
-            />
-            <Label
-              htmlFor="price_includes_iva"
-              className="cursor-pointer normal-case tracking-normal text-[13px] font-medium text-muted-foreground"
-            >
-              El precio ingresado ya incluye IVA ({IVA_RATE}%)
-            </Label>
+          <div className="mb-3 space-y-2">
+            <div className="flex items-center gap-3 rounded-sm border border-steel-700/60 bg-steel-900/40 px-3 py-2.5">
+              <Switch
+                id="price_includes_iva"
+                checked={priceIncludesIva}
+                onCheckedChange={handleToggleIva}
+              />
+              <Label
+                htmlFor="price_includes_iva"
+                className="cursor-pointer normal-case tracking-normal text-[13px] font-medium text-muted-foreground"
+              >
+                El precio ingresado ya incluye IVA ({IVA_RATE}%)
+              </Label>
+            </div>
+            <p className="field-hint px-1">
+              {priceIncludesIva
+                ? "Precios de venta ingresados con IVA incluido (bruto). Se guarda la base neta en la DB."
+                : "Precios de venta ingresados sin IVA (neto). El precio final con IVA se muestra como referencia."}
+              {" "}El costo referencial de arriba es siempre neto y no se afecta por este toggle.
+            </p>
           </div>
 
           <div className="space-y-2">
@@ -292,16 +344,23 @@ export function ProductForm({ initial, onSuccess }: Props) {
               error={errors.price_mayorista}
             />
             <TierPriceRow
-              label="Distribuidor"
+              label="Distribuidor (canal)"
               value={priceDistribuidor}
               onChange={setPriceDistribuidor}
               preview={previewDistribuidor}
               error={errors.price_distribuidor}
             />
           </div>
-          <p className="mt-2 field-hint">
-            Todos opcionales. Vacío = sin precio asignado para ese tipo de cliente.
-          </p>
+          <div className="mt-2 space-y-1">
+            <p className="field-hint">
+              Todos opcionales. Distribuidor = cliente revendedor/canal, no proveedor.
+            </p>
+            {!pricePublico && state?.ok === undefined ? null : !pricePublico ? (
+              <p className="field-hint text-safety-500/80">
+                Sin precio Público definido el POS asignará $0.00 al vender.
+              </p>
+            ) : null}
+          </div>
         </div>
 
         {state?.error && !state.fieldErrors ? (
@@ -394,7 +453,7 @@ function TierPriceRow({
           <Input
             type="number"
             min="0"
-            step="0.01"
+            step="any"
             value={value}
             onChange={(e) => onChange(e.target.value)}
             placeholder="—"

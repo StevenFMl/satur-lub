@@ -120,7 +120,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_product_prices_active
 -- 4. VISTA DE PRECIOS ACTIVOS
 -- =========================================================================
 
-CREATE OR REPLACE VIEW public.v_product_active_prices AS
+-- security_invoker = on: la vista se evalúa con los permisos del LLAMADOR,
+-- no del DEFINER. Así, RLS de product_prices y price_tiers aplica
+-- correctamente por tenant sin necesidad de filtros adicionales en la vista.
+CREATE OR REPLACE VIEW public.v_product_active_prices
+  WITH (security_invoker = on)
+AS
 SELECT
   pp.tenant_id,
   pp.product_id,
@@ -149,9 +154,24 @@ SET search_path = public
 AS $$
 DECLARE
   v_publico_id uuid;
+  v_caller_id  uuid := auth.uid();
 BEGIN
   IF p_tenant_id IS NULL THEN
     RAISE EXCEPTION 'p_tenant_id es requerido';
+  END IF;
+
+  -- Cuando la función se llama desde un usuario autenticado (API), validamos
+  -- que el llamador sea owner/admin del tenant. Si auth.uid() = NULL (p.ej.
+  -- backfill del DO $$ en la migración, que corre como postgres) se omite
+  -- la validación porque el contexto es de confianza.
+  IF v_caller_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM public.tenant_memberships
+     WHERE tenant_id = p_tenant_id
+       AND user_id   = v_caller_id
+       AND is_active = true
+       AND role IN ('owner', 'admin')
+  ) THEN
+    RAISE EXCEPTION 'Acceso denegado al tenant';
   END IF;
 
   INSERT INTO public.price_tiers (tenant_id, code, name)
@@ -211,6 +231,19 @@ BEGIN
   END IF;
   IF p_unit_price IS NULL OR p_unit_price < 0 THEN
     RAISE EXCEPTION 'Precio inválido';
+  END IF;
+
+  -- Toda llamada autenticada debe pertenecer al tenant con rol operativo.
+  -- auth.uid() = NULL sólo ocurre en backfill interno (DO $$ de migración),
+  -- que corre como postgres y es de confianza.
+  IF v_user_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM public.tenant_memberships
+     WHERE tenant_id = p_tenant_id
+       AND user_id   = v_user_id
+       AND is_active = true
+       AND role IN ('owner', 'admin')
+  ) THEN
+    RAISE EXCEPTION 'Acceso denegado al tenant';
   END IF;
 
   SELECT id INTO v_tier_id

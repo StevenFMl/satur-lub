@@ -74,6 +74,9 @@ export const productSchema = z.object({
       .min(1, "Unidad requerida.")
       .max(30, "Máx. 30 caracteres.")
   ),
+  // Costo sugerido editable por el usuario. NO es el costo histórico real.
+  // average_cost (CPP) y last_purchase_cost los calcula el sistema al
+  // procesar recepciones de compra — no se exponen aquí.
   cost_price: z.preprocess(
     toNumberOrNaN,
     z
@@ -81,11 +84,16 @@ export const productSchema = z.object({
       .nonnegative("El costo no puede ser negativo.")
       .max(99_999_999.99, "Costo demasiado alto.")
   ),
+  // En V1 lubricadora todos los productos llevan IVA. El campo se mantiene
+  // en el schema para compatibilidad con DB y acción de servidor, pero el
+  // formulario siempre lo envía como true (hidden input fijo).
   has_tax: z.boolean().default(true),
-  // Todos los tiers son opcionales. null = no crear/actualizar esa fila.
-  // El catálogo puede existir sin precio asignado — la UI muestra "—".
+  // Precios por tier: todos opcionales. null = no actualizar esa fila.
+  // Si PUBLICO queda sin definir, el POS asignará $0.00 al vender.
   price_publico: tierPriceOptional,
+  // MAYORISTA: precio para clientes con volumen.
   price_mayorista: tierPriceOptional,
+  // DISTRIBUIDOR: precio para canal/revendedor (no es el proveedor).
   price_distribuidor: tierPriceOptional,
 });
 

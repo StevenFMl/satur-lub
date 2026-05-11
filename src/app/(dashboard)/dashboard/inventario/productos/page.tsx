@@ -23,7 +23,6 @@ export default async function ProductosPage() {
     .select(
       "id, name, sku, unit, cost_price, default_price, average_cost, last_purchase_cost, product_kind, is_active, has_tax, tax_rate, created_at"
     )
-    .eq("is_active", true)
     .order("created_at", { ascending: false });
 
   let rawProducts = productsV1;
@@ -35,7 +34,6 @@ export default async function ProductosPage() {
       .select(
         "id, name, sku, unit, cost_price, product_kind, is_active, has_tax, tax_rate, created_at"
       )
-      .eq("is_active", true)
       .order("created_at", { ascending: false });
     rawProducts = fallback as typeof productsV1;
   }

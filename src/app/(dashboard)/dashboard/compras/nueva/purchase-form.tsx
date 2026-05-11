@@ -144,7 +144,7 @@ export function PurchaseForm({
 
   // IVA selector (15% default Ecuador 2024+).
   const [invoiceTaxRate, setInvoiceTaxRate] = useState(15);
-  const [isTaxInclusive, setIsTaxInclusive] = useState(true);
+  const [isTaxInclusive, setIsTaxInclusive] = useState(false);
   const [otherCharges, setOtherCharges] = useState("0");
 
   // Productos locales: se alimenta con la prop SSR pero se extiende con
@@ -153,6 +153,43 @@ export function PurchaseForm({
   // router.refresh()) — sin él la pantalla quedaría con datos viejos cuando
   // el catálogo cambia desde otra ventana / al editar un producto.
   const [localProducts, setLocalProducts] = useState<LookupProduct[]>(products);
+
+  // Convierte un costo NET de la DB al valor a mostrar según el toggle.
+  // toggle=false (neto): sin conversión; toggle=true (bruto): ×(1+rate).
+  const netToDisplay = useCallback(
+    (net: number): number =>
+      isTaxInclusive
+        ? Number(
+            Big(net)
+              .times(Big(1).plus(Big(invoiceTaxRate).div(100)))
+              .round(4, Big.roundHalfUp)
+              .toString()
+          )
+        : net,
+    [isTaxInclusive, invoiceTaxRate]
+  );
+
+  // Al cambiar el toggle convierte los totales de todas las filas para que
+  // el valor efectivo guardado no cambie (solo cambia la representación).
+  // OFF→ON: × (1+rate)  — el mismo neto ahora se muestra como bruto.
+  // ON→OFF: ÷ (1+rate)  — el mismo bruto ahora se muestra como neto.
+  const handleToggleIvaInclusive = useCallback(
+    (next: boolean) => {
+      const factor = next
+        ? Big(1).plus(Big(invoiceTaxRate).div(100))
+        : Big(1).div(Big(1).plus(Big(invoiceTaxRate).div(100)));
+      setRows((prev) =>
+        prev.map((r) => {
+          if (r.is_gift) return r;
+          const n = parseFloat(r.total_cost);
+          if (!isFinite(n) || n === 0) return r;
+          return { ...r, total_cost: toFixedStr(Big(n).times(factor), 2) };
+        })
+      );
+      setIsTaxInclusive(next);
+    },
+    [invoiceTaxRate]
+  );
 
   useEffect(() => {
     setLocalProducts((prev) => {
@@ -208,7 +245,11 @@ export function PurchaseForm({
   const addToCart = useCallback((product: LookupProduct) => {
     setRows((prev) => {
       const existingIndex = prev.findIndex(r => r.product_id === product.id && !r.is_gift);
-      const suggested = suggestedUnitCost(product);
+      const suggestedNet = suggestedUnitCost(product);
+      // Convierte el costo sugerido (siempre NET en DB) al valor de display
+      // según el toggle actual (bruto si isTaxInclusive=true, neto si false).
+      const displayCost = suggestedNet != null ? netToDisplay(suggestedNet) : null;
+
       if (existingIndex >= 0) {
         const newRows = [...prev];
         const row = newRows[existingIndex] as Row;
@@ -216,19 +257,15 @@ export function PurchaseForm({
         const newQtyStr = String(newQtyNum);
 
         let newTotal = row.total_cost;
-        if (!manualTotalEdited.current.has(row.uid) && suggested != null) {
-          newTotal = toFixedStr(lineTotal(newQtyStr, suggested), 2);
+        if (!manualTotalEdited.current.has(row.uid) && displayCost != null) {
+          newTotal = toFixedStr(lineTotal(newQtyStr, displayCost), 2);
         }
 
-        newRows[existingIndex] = {
-          ...row,
-          quantity: newQtyStr,
-          total_cost: newTotal,
-        };
+        newRows[existingIndex] = { ...row, quantity: newQtyStr, total_cost: newTotal };
         return newRows;
       } else {
         const totalCostStr =
-          suggested != null ? toFixedStr(lineTotal("1", suggested), 2) : "0";
+          displayCost != null ? toFixedStr(lineTotal("1", displayCost), 2) : "0";
         return [
           ...prev,
           {
@@ -238,18 +275,15 @@ export function PurchaseForm({
             total_cost: totalCostStr,
             unit: product.unit,
             is_gift: false,
-          }
+          },
         ];
       }
     });
 
     setSearchTerm("");
     setIsDropdownOpen(false);
-
-    setTimeout(() => {
-      searchInputRef.current?.focus();
-    }, 0);
-  }, []);
+    setTimeout(() => { searchInputRef.current?.focus(); }, 0);
+  }, [netToDisplay]);
 
   // Re-derivación reactiva del costo de filas NO-manuales cuando cambia el
   // catálogo (precio nuevo desde otra ventana, edición inline, etc.). Este
@@ -265,16 +299,17 @@ export function PurchaseForm({
         if (manualTotalEdited.current.has(r.uid)) return r;
         const product = productById.get(r.product_id);
         if (!product) return r;
-        const suggested = suggestedUnitCost(product);
-        if (suggested == null) return r;
-        const newTotal = toFixedStr(lineTotal(r.quantity || "0", suggested), 2);
+        const suggestedNet = suggestedUnitCost(product);
+        if (suggestedNet == null) return r;
+        const displayCost = netToDisplay(suggestedNet);
+        const newTotal = toFixedStr(lineTotal(r.quantity || "0", displayCost), 2);
         if (newTotal === r.total_cost) return r;
         changed = true;
         return { ...r, total_cost: newTotal };
       });
       return changed ? next : prev;
     });
-  }, [productById]);
+  }, [productById, netToDisplay]);
 
   const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
@@ -385,13 +420,14 @@ export function PurchaseForm({
     updateRow(uid, { quantity: qStr });
     const row = rows.find((r) => r.uid === uid);
     if (!row) return;
-    if (row.is_gift) return; // Mantiene el costo total en 0.00
+    if (row.is_gift) return;
     const product = productById.get(row.product_id);
     if (!product) return;
-    const suggested = suggestedUnitCost(product);
-    if (suggested == null) return;
+    const suggestedNet = suggestedUnitCost(product);
+    if (suggestedNet == null) return;
     if (manualTotalEdited.current.has(uid)) return;
-    const tc = toFixedStr(lineTotal(qStr, suggested), 2);
+    const displayCost = netToDisplay(suggestedNet);
+    const tc = toFixedStr(lineTotal(qStr, displayCost), 2);
     updateRow(uid, { total_cost: tc });
   };
 
@@ -481,15 +517,22 @@ export function PurchaseForm({
         <section className="panel rounded-sm">
           <header className="top-highlight flex items-center justify-between border-b-2 border-steel-700 bg-steel-900/70 px-6 py-4">
             <h2 className="font-display text-[18px] tracking-[0.04em]">CABECERA</h2>
-            <div className="flex items-center gap-3">
-              <Switch
-                id="is_tax_inclusive"
-                checked={isTaxInclusive}
-                onCheckedChange={(val) => setIsTaxInclusive(val)}
-              />
-              <Label htmlFor="is_tax_inclusive" className="text-[13px] font-medium text-muted-foreground cursor-pointer normal-case tracking-normal">
-                Los precios ingresados incluyen IVA
-              </Label>
+            <div className="flex flex-col items-end gap-1">
+              <div className="flex items-center gap-3">
+                <Switch
+                  id="is_tax_inclusive"
+                  checked={isTaxInclusive}
+                  onCheckedChange={handleToggleIvaInclusive}
+                />
+                <Label htmlFor="is_tax_inclusive" className="text-[13px] font-medium text-muted-foreground cursor-pointer normal-case tracking-normal">
+                  Los montos de la factura ya incluyen IVA
+                </Label>
+              </div>
+              <p className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground/50">
+                {isTaxInclusive
+                  ? "Ingresando montos brutos (con IVA). El sistema extrae el neto para el kardex."
+                  : "Ingresando montos netos (sin IVA). El IVA se calcula aparte en el resumen."}
+              </p>
             </div>
           </header>
           <div className="grid grid-cols-1 gap-5 px-6 py-6 md:grid-cols-2">
@@ -661,8 +704,12 @@ export function PurchaseForm({
                 <tr>
                   <Th>Producto</Th>
                   <Th className="w-[220px]">Cantidad / Unidad</Th>
-                  <Th className="w-[160px] text-right">Costo Unitario</Th>
-                  <Th className="w-[200px] text-right">Costo Total</Th>
+                  <Th className="w-[160px] text-right">
+                    Costo Unit. {isTaxInclusive ? "(bruto)" : "(neto)"}
+                  </Th>
+                  <Th className="w-[200px] text-right">
+                    Costo Total {isTaxInclusive ? "(bruto)" : "(neto)"}
+                  </Th>
                   <Th className="w-[60px]"> </Th>
                 </tr>
               </thead>
@@ -753,7 +800,7 @@ export function PurchaseForm({
                           {unitCostFmt.format(toNum(toUnitPrice(unitCostBig)))}
                         </span>
                         <span className="mt-0.5 block font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground/70">
-                          /{r.unit}
+                          {isTaxInclusive ? "bruto" : "neto"}/{r.unit}
                         </span>
                       </td>
                       <td className="px-4 py-3 align-top">

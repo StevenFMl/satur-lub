@@ -325,6 +325,80 @@ export async function quickCreateProductAction(
 }
 
 /* ------------------------------------------------------------------ */
+/* Duplicar producto                                                  */
+/* ------------------------------------------------------------------ */
+
+export type DuplicateProductResult = {
+  ok?: boolean;
+  newId?: string;
+  error?: string;
+} | null;
+
+export async function duplicateProductAction(
+  id: string
+): Promise<DuplicateProductResult> {
+  if (typeof id !== "string" || id.length === 0) return { error: "ID inválido." };
+
+  const { user, membership } = await getActiveMembership();
+  if (!user || !membership) return { error: "Sesión expirada." };
+  if (membership.role !== "owner" && membership.role !== "admin")
+    return { error: "No tienes permisos para gestionar productos." };
+
+  const tenantId = membership.tenant_id;
+  const supabase = await createClient();
+
+  const { data: src, error: srcErr } = await supabase
+    .from("products")
+    .select("name, unit, cost_price, has_tax, product_kind")
+    .eq("id", id)
+    .eq("tenant_id", tenantId)
+    .single();
+
+  if (srcErr || !src) return { error: "Producto no encontrado." };
+
+  const newName = `${src.name as string} (Copia)`;
+  const { data: newRow, error: insertErr } = await supabase
+    .from("products")
+    .insert({
+      tenant_id: tenantId,
+      name: newName,
+      sku: makeSkuFromName(newName),
+      unit: src.unit as string,
+      cost_price: src.cost_price as number | null,
+      has_tax: (src.has_tax as boolean | null) ?? true,
+      product_kind: (src.product_kind as string) || "item",
+    })
+    .select("id")
+    .single();
+
+  if (insertErr || !newRow) {
+    console.error("duplicateProductAction:", insertErr);
+    return { error: "No se pudo duplicar el producto." };
+  }
+
+  const newProductId = newRow.id as string;
+
+  const { data: tiers } = await supabase
+    .from("v_product_active_prices")
+    .select("tier_code, unit_price")
+    .eq("product_id", id);
+
+  if (tiers?.length) {
+    type TierRow = { tier_code: string; unit_price: number };
+    const findTier = (code: string) =>
+      (tiers as TierRow[]).find((t) => t.tier_code === code)?.unit_price ?? null;
+    await persistTierPrices(supabase, tenantId, newProductId, {
+      publico: findTier("PUBLICO"),
+      mayorista: findTier("MAYORISTA"),
+      distribuidor: findTier("DISTRIBUIDOR"),
+    });
+  }
+
+  invalidateProducts();
+  return { ok: true, newId: newProductId };
+}
+
+/* ------------------------------------------------------------------ */
 /* Borrado lógico (soft-delete)                                       */
 /* ------------------------------------------------------------------ */
 
