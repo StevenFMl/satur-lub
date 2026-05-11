@@ -41,7 +41,7 @@ export function CustomerForm({ initial, onSuccess }: Props) {
   const isEditing = Boolean(initial?.id);
 
   return (
-    <form action={formAction} className="flex h-full flex-col">
+    <form action={formAction} className="flex h-full flex-col min-h-0">
       {initial?.id ? (
         <input type="hidden" name="id" value={initial.id} />
       ) : null}

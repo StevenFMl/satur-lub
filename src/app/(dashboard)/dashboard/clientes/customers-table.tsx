@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Sheet } from "@/components/ui/sheet";
+import { FormDialog } from "@/components/ui/form-dialog";
 import { DropdownMenu, DropdownItem } from "@/components/ui/dropdown-menu";
 import { toggleCustomerActiveAction } from "@/actions/customers";
 import { CONSUMIDOR_FINAL_DOC } from "@/lib/validations/customer";
@@ -383,8 +384,8 @@ export function CustomersTable({ initialRows }: { initialRows: CustomerRow[] }) 
         )}
       </Sheet>
 
-      {/* ── Form sheet ── */}
-      <Sheet
+      {/* ── Form dialog ── */}
+      <FormDialog
         open={formOpen}
         onClose={() => setFormOpen(false)}
         title={editing ? "Editar cliente" : "Nuevo cliente"}
@@ -395,7 +396,7 @@ export function CustomersTable({ initialRows }: { initialRows: CustomerRow[] }) 
           initial={editing}
           onSuccess={() => setFormOpen(false)}
         />
-      </Sheet>
+      </FormDialog>
     </div>
   );
 }
