@@ -19,6 +19,8 @@ export type PosPermissions = {
   canVoidSale: boolean;        // cancel a confirmed sale
   canOverrideStock: boolean;   // sell even when stock = 0
   canViewDailyReport: boolean; // see daily totals/summary
+  canProcessReturn: boolean;   // register returns / refunds (owner/admin only)
+  canSetNoRestock: boolean;    // mark returned items as not restocked (owner/admin only)
 };
 
 export function getPosPermissions(role: TenantRole | null | undefined): PosPermissions {
@@ -30,6 +32,8 @@ export function getPosPermissions(role: TenantRole | null | undefined): PosPermi
     canVoidSale:        isPrivileged,
     canOverrideStock:   isPrivileged,
     canViewDailyReport: isPrivileged,
+    canProcessReturn:   isPrivileged,       // return/refund: owner/admin only
+    canSetNoRestock:    isPrivileged,       // restock=false: owner/admin only
   };
 }
 

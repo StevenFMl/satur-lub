@@ -4,6 +4,7 @@ import { revalidatePath, revalidateTag } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getActiveMembership } from "@/lib/supabase/membership";
 import { saleSchema, type SaleInput } from "@/lib/validations/sale";
+import { saleReturnSchema, type SaleReturnInput } from "@/lib/validations/sale-return";
 
 export type CreateSaleResult = {
   ok?: boolean;
@@ -13,6 +14,12 @@ export type CreateSaleResult = {
 
 export type VoidSaleResult = {
   ok?: boolean;
+  error?: string;
+} | null;
+
+export type CreateSaleReturnResult = {
+  ok?: boolean;
+  returnId?: string;
   error?: string;
 } | null;
 
@@ -116,4 +123,67 @@ export async function voidSaleAction(input: {
   revalidatePath("/dashboard/inventario/movimientos");
 
   return { ok: true };
+}
+
+export async function createSaleReturnAction(
+  input: SaleReturnInput
+): Promise<CreateSaleReturnResult> {
+  const { user, membership } = await getActiveMembership();
+  if (!user || !membership) return { error: "Sesión expirada." };
+
+  // Double-check role at action level before even hitting the RPC
+  if (membership.role !== "owner" && membership.role !== "admin") {
+    return { error: "Sin permisos para procesar devoluciones." };
+  }
+
+  const parsed = saleReturnSchema.safeParse(input);
+  if (!parsed.success) {
+    const first = parsed.error.issues[0];
+    return { error: first?.message ?? "Datos de devolución inválidos." };
+  }
+
+  const data = parsed.data;
+  const supabase = await createClient();
+
+  const { data: returnId, error } = await supabase.rpc("create_sale_return", {
+    p_tenant_id:        membership.tenant_id,
+    p_sale_id:          data.sale_id,
+    p_items:            data.items as never,
+    p_reason:           data.reason,
+    p_notes:            data.notes ?? null,
+    p_refund_amount:    data.refund_amount ?? null,
+    p_refund_method:    data.refund_method ?? null,
+    p_refund_reference: data.refund_reference ?? null,
+    p_exchange_sale_id: data.exchange_sale_id ?? null,
+  } as never);
+
+  if (error) {
+    console.error("createSaleReturnAction RPC error:", error);
+    const msg = error.message ?? "";
+    if (
+      msg.startsWith("No autenticado") ||
+      msg.startsWith("Sin acceso") ||
+      msg.startsWith("Sin permisos") ||
+      msg.startsWith("Se requiere un motivo") ||
+      msg.startsWith("Método de reembolso") ||
+      msg.startsWith("La devolución requiere") ||
+      msg.startsWith("Venta no encontrada") ||
+      msg.startsWith("No se puede devolver") ||
+      msg.startsWith("Solo se pueden devolver") ||
+      msg.startsWith("Ítem de venta") ||
+      msg.startsWith("Cantidad a devolver")
+    ) {
+      return { error: msg };
+    }
+    return { error: "No se pudo registrar la devolución. Intenta de nuevo." };
+  }
+
+  revalidateTag("products");
+  revalidatePath(`/dashboard/pos/ventas/${data.sale_id}`);
+  revalidatePath("/dashboard/pos/ventas");
+  revalidatePath("/dashboard/pos/cierre");
+  revalidatePath("/dashboard/inventario/stock");
+  revalidatePath("/dashboard/inventario/movimientos");
+
+  return { ok: true, returnId: typeof returnId === "string" ? returnId : undefined };
 }
