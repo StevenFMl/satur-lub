@@ -220,7 +220,9 @@ export function PurchaseForm({
   const [productToEdit, setProductToEdit] = useState<LookupProduct | null>(null);
 
   useEffect(() => {
-    if (state?.ok) router.push("/dashboard");
+    if (!state?.ok) return;
+    if (state.poId) router.push(`/dashboard/compras/${state.poId}`);
+    else router.push("/dashboard/compras");
   }, [state, router]);
 
   const productById = useMemo(() => {
@@ -626,9 +628,9 @@ export function PurchaseForm({
             </Badge>
           </header>
 
-          <div className="relative border-b border-steel-700 bg-steel-900/40 p-4">
-            <div className="flex items-center gap-3">
-              <div className="relative flex-1">
+          <div className="relative border-b border-steel-700 bg-steel-900/40 p-3 sm:p-4">
+            <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:gap-3">
+              <div className="relative w-full sm:flex-1">
                 <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
                   <Search className="h-5 w-5 text-muted-foreground" />
                 </div>
@@ -642,7 +644,7 @@ export function PurchaseForm({
                   onFocus={() => setIsDropdownOpen(searchTerm.trim().length > 0)}
                   onBlur={() => setTimeout(() => setIsDropdownOpen(false), 200)}
                   onKeyDown={handleSearchKeyDown}
-                  placeholder="Buscar por nombre o escanear código (SKU)..."
+                  placeholder="Buscar por nombre o SKU..."
                   className="h-12 pl-10 text-[15px] shadow-inner"
                 />
                 {searchTerm && (
@@ -673,7 +675,7 @@ export function PurchaseForm({
                               <span className="font-semibold text-foreground">{p.name}</span>
                               <span className="font-mono text-[11px] text-muted-foreground">{p.sku}</span>
                             </div>
-                            <Badge tone="neutral">Enter</Badge>
+                            <Badge tone="neutral" className="hidden sm:inline-flex">Enter</Badge>
                           </button>
                         </li>
                       ))}
@@ -682,10 +684,10 @@ export function PurchaseForm({
                 )}
               </div>
 
-              <div className="w-[20%] shrink-0 min-w-[200px]">
+              <div className="w-full sm:w-auto sm:shrink-0">
                 <Button
                   type="button"
-                  className="h-12 w-full text-[14px]"
+                  className="h-12 w-full text-[14px] sm:min-w-[180px]"
                   onClick={() => {
                     setProductToEdit(null);
                     setQuickCreateOpen(true);
@@ -698,7 +700,7 @@ export function PurchaseForm({
             </div>
           </div>
 
-          <div className="overflow-x-auto">
+          <div className="hidden overflow-x-auto sm:block">
             <table className="w-full text-left">
               <thead className="border-b border-steel-800 bg-steel-950/60">
                 <tr>
@@ -873,8 +875,181 @@ export function PurchaseForm({
             </table>
           </div>
 
-          <div className="flex items-center justify-end border-t border-steel-800 bg-steel-950/40 px-6 py-4">
-            <p className="industrial-label hidden sm:block text-right">
+          {/* ── Mobile cards (sm:hidden) ──────────────────────── */}
+          <div className="space-y-2.5 p-3 sm:hidden">
+            {rows.length === 0 ? (
+              <div className="rounded-sm border border-dashed border-steel-700/60 bg-steel-950/30 px-4 py-8 text-center">
+                <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+                  Carrito vacío
+                </p>
+                <p className="mt-1 text-[12px] text-muted-foreground/70">
+                  Busca un producto arriba o crea uno nuevo.
+                </p>
+              </div>
+            ) : (
+              rows.map((r) => {
+                const unitCostBig = unitCostFromTotal(r.total_cost, r.quantity);
+                const isManual = manualTotalEdited.current.has(r.uid);
+                const product = productById.get(r.product_id);
+                const isOverHistoric =
+                  product?.best_cost != null && unitCostBig.gt(product.best_cost);
+                return (
+                  <div
+                    key={r.uid}
+                    className={
+                      "rounded-sm border bg-steel-900/40 px-3 py-3 transition-colors " +
+                      (r.is_gift
+                        ? "border-emerald-500/40 bg-emerald-500/5"
+                        : "border-steel-800")
+                    }
+                  >
+                    {/* Header row */}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="font-semibold leading-tight text-foreground">
+                          {product?.name ?? "Producto desconocido"}
+                        </div>
+                        <div className="mt-0.5 flex flex-wrap items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
+                          <span>{product?.sku ?? "—"}</span>
+                          {isOverHistoric ? (
+                            <span className="rounded-sm border border-hazard-500/40 bg-hazard-700/10 px-1.5 py-0.5 text-[9px] text-red-400">
+                              sobre histórico ${product.best_cost?.toFixed(2)}
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 gap-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (product) {
+                              setProductToEdit(product);
+                              setQuickCreateOpen(true);
+                            }
+                          }}
+                          aria-label="Editar producto"
+                          className="grid h-9 w-9 place-items-center rounded-sm border border-steel-700 bg-steel-800/60 text-muted-foreground transition-colors hover:text-foreground"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => removeRow(r.uid)}
+                          aria-label="Quitar ítem"
+                          className="grid h-9 w-9 place-items-center rounded-sm border border-steel-700 bg-steel-800/60 text-muted-foreground transition-colors hover:border-hazard-500/60 hover:text-hazard-500"
+                        >
+                          <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                            <path d="M3 6h18" />
+                            <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                            <path d="M6 6l1 14a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-14" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Quantity + unit */}
+                    <div className="mt-3 grid grid-cols-[1fr_1.4fr] gap-2">
+                      <div>
+                        <label className="block font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-muted-foreground/70">
+                          Cantidad
+                        </label>
+                        <Input
+                          type="text"
+                          inputMode="decimal"
+                          mono
+                          className="mt-1 h-11 text-right text-[14px]"
+                          value={r.quantity}
+                          onFocus={(e) => e.target.select()}
+                          onChange={(e) => onQuantityChange(r.uid, e.target.value)}
+                          aria-label="Cantidad"
+                        />
+                      </div>
+                      <div>
+                        <label className="block font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-muted-foreground/70">
+                          Unidad
+                        </label>
+                        <Select
+                          value={r.unit}
+                          onChange={(e) =>
+                            updateRow(r.uid, { unit: e.target.value })
+                          }
+                          aria-label="Unidad de medida"
+                          className="mt-1 h-11 text-[12px]"
+                        >
+                          <option value="unidad">Unidad</option>
+                          <option value="galón">Galón</option>
+                          <option value="medio_galon">Medio Galón</option>
+                          <option value="cuarto">Cuarto</option>
+                          <option value="litro">Litro</option>
+                          <option value="media_caneca">Media Caneca</option>
+                          <option value="caneca">Caneca</option>
+                          <option value="tambor">Tambor</option>
+                          <option value="barril">Barril</option>
+                          <option value="caja">Caja</option>
+                          <option value="paquete">Paquete</option>
+                        </Select>
+                      </div>
+                    </div>
+
+                    {/* Total cost (the main editable amount) */}
+                    <div className="mt-3">
+                      <div className="flex items-baseline justify-between">
+                        <label className="font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-muted-foreground/70">
+                          Costo total {isTaxInclusive ? "(bruto)" : "(neto)"}
+                        </label>
+                        {isManual ? (
+                          <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-safety-500/80">
+                            ajuste manual
+                          </span>
+                        ) : null}
+                      </div>
+                      <Input
+                        type="text"
+                        inputMode="decimal"
+                        mono
+                        className="mt-1 h-12 text-right text-[16px]"
+                        value={r.total_cost}
+                        disabled={r.is_gift}
+                        onFocus={(e) => e.target.select()}
+                        onChange={(e) => onTotalCostChange(r.uid, e.target.value)}
+                        aria-label="Costo total de la fila"
+                      />
+                      <div className="mt-1 text-right font-mono text-[11px] tabular-nums text-muted-foreground/80">
+                        {unitCostFmt.format(toNum(toUnitPrice(unitCostBig)))}{" "}
+                        <span className="text-muted-foreground/60">
+                          {isTaxInclusive ? "bruto" : "neto"}/{r.unit}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Gift toggle */}
+                    <button
+                      type="button"
+                      onClick={() => toggleGift(r.uid)}
+                      className={
+                        "mt-3 flex w-full items-center justify-center gap-2 rounded-sm border px-3 py-2.5 font-mono text-[11px] font-bold uppercase tracking-[0.14em] transition-colors " +
+                        (r.is_gift
+                          ? "border-emerald-500 bg-emerald-500/10 text-emerald-400"
+                          : "border-steel-700 bg-steel-900/60 text-muted-foreground hover:border-emerald-500/40 hover:text-emerald-400")
+                      }
+                    >
+                      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="20 12 20 22 4 22 4 12" />
+                        <rect x="2" y="7" width="20" height="5" />
+                        <line x1="12" y1="22" x2="12" y2="7" />
+                        <path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z" />
+                        <path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z" />
+                      </svg>
+                      {r.is_gift ? "Bonificación activa" : "Marcar como bonificación"}
+                    </button>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          <div className="hidden items-center justify-end border-t border-steel-800 bg-steel-950/40 px-6 py-4 sm:flex">
+            <p className="industrial-label text-right">
               Edita el costo total para cuadrar con la factura del proveedor.
             </p>
           </div>
@@ -1012,8 +1187,11 @@ export function PurchaseForm({
         </div>
       </form>
 
-      {/* Dialog de creación rápida / edición de producto */}
+      {/* Dialog de creación rápida / edición de producto.
+          key={id} fuerza remonte completo al cambiar de producto, evitando
+          que el estado de precios/toggle quede de la sesión anterior. */}
       <QuickCreateProductDialog
+        key={productToEdit?.id ?? "create"}
         open={quickCreateOpen}
         onClose={() => {
           setQuickCreateOpen(false);

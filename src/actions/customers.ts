@@ -83,6 +83,7 @@ export async function upsertCustomerAction(
     document_type: formData.get("document_type"),
     document_number: formData.get("document_number"),
     address: formData.get("address"),
+    notes: formData.get("notes"),
     is_active: formData.get("is_active") ?? "true",
   });
 
@@ -117,6 +118,7 @@ export async function upsertCustomerAction(
     email: data.email,
     phone: data.phone,
     address: addressJson,
+    notes: data.notes,
     is_active: data.is_active,
   };
 
@@ -207,4 +209,56 @@ export async function toggleCustomerActiveAction(
 
   revalidatePath("/dashboard/clientes");
   return { ok: true };
+}
+
+/* ------------------------------------------------------------------ */
+/* Búsqueda ligera para POS picker                                     */
+/* ------------------------------------------------------------------ */
+
+export type PickedCustomer = {
+  id: string;
+  full_name: string;
+  document_type: string;
+  document_number: string;
+  phone: string | null;
+};
+
+/**
+ * Búsqueda rápida de clientes activos. Devuelve máximo 10 resultados.
+ * Pensado para el selector del POS — debe ser rápido y liviano.
+ */
+export async function searchCustomersAction(
+  query: string
+): Promise<{ data: PickedCustomer[]; error?: string }> {
+  const { user, membership } = await getActiveMembership();
+  if (!user || !membership) return { data: [], error: "Sesión expirada." };
+
+  const supabase = await createClient();
+  const q = (query ?? "").trim();
+
+  // Sin query: devolver Consumidor Final + últimos 9
+  if (!q) {
+    const { data } = await supabase
+      .from("business_partners")
+      .select("id, full_name, document_type, document_number, phone")
+      .eq("partner_type", "customer")
+      .eq("is_active", true)
+      .order("created_at", { ascending: false })
+      .limit(10);
+    return { data: (data ?? []) as PickedCustomer[] };
+  }
+
+  // Con query: buscar por nombre, documento o teléfono
+  const { data } = await supabase
+    .from("business_partners")
+    .select("id, full_name, document_type, document_number, phone")
+    .eq("partner_type", "customer")
+    .eq("is_active", true)
+    .or(
+      `full_name.ilike.%${q}%,document_number.ilike.%${q}%,phone.ilike.%${q}%`
+    )
+    .order("full_name")
+    .limit(10);
+
+  return { data: (data ?? []) as PickedCustomer[] };
 }

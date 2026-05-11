@@ -64,6 +64,14 @@ export const customerSchema = z.object({
       .optional()
       .transform((v) => v ?? null)
   ),
+  notes: z.preprocess(
+    trimmedOrUndef,
+    z
+      .string()
+      .max(500, "Máx. 500 caracteres.")
+      .optional()
+      .transform((v) => v ?? null)
+  ),
   is_active: z.preprocess(
     (v) => v === "true" || v === "on" || v === true,
     z.boolean()

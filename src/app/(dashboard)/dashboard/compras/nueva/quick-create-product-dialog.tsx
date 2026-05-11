@@ -31,18 +31,11 @@ function pricePreview(val: string, includesIva: boolean): string | null {
     : "= $" + (n * IVA_MULT).toFixed(2) + " c/IVA";
 }
 
-/** Convierte neto → bruto para persistir precio de venta. */
+/** Convierte neto → bruto para persistir precio de venta (×1.15). */
 function toGross(val: string): string {
   const n = parseFloat(val.replace(",", "."));
   if (!isFinite(n) || n <= 0) return "";
   return (n * IVA_MULT).toFixed(4);
-}
-
-/** Convierte bruto → neto para persistir costo de compra referencial. */
-function toNet(val: string): string {
-  const n = parseFloat(val.replace(",", "."));
-  if (!isFinite(n) || n <= 0) return "";
-  return (n / IVA_MULT).toFixed(4);
 }
 
 type Props = {
@@ -57,9 +50,12 @@ export function QuickCreateProductDialog({ open, onClose, onCreated, editProduct
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<string, string>>>({});
 
-  // priceIncludesIva: el número que escribe el usuario ya incluye IVA.
-  // Cuando true → mostramos "sin IVA: $X" y guardamos precio / 1.15.
-  const [priceIncludesIva, setPriceIncludesIva] = useState(false);
+  // EDICIÓN  → toggle arranca ON  porque DB guarda default_price BRUTO.
+  // CREACIÓN → toggle arranca OFF (usuario ingresa precio neto por defecto).
+  const [priceIncludesIva, setPriceIncludesIva] = useState(editProduct != null);
+
+  // cost_price: la DB siempre almacena NETO. El campo se muestra y envía
+  // siempre en neto, independientemente del toggle de precios de venta.
   const [costPrice, setCostPrice] = useState(
     editProduct?.cost_price != null ? String(editProduct.cost_price) : ""
   );
@@ -67,12 +63,13 @@ export function QuickCreateProductDialog({ open, onClose, onCreated, editProduct
     editProduct?.default_price != null ? String(editProduct.default_price) : ""
   );
 
-  const costPreview = useMemo(() => pricePreview(costPrice, priceIncludesIva), [costPrice, priceIncludesIva]);
+  // Costo: preview siempre muestra "= $X c/IVA" (referencia del bruto equivalente).
+  const costPreview = useMemo(() => pricePreview(costPrice, false), [costPrice]);
   const publicoPreview = useMemo(() => pricePreview(pricePublico, priceIncludesIva), [pricePublico, priceIncludesIva]);
 
-  // cost_price = referencia de costo de compra → se guarda NETO (sin IVA).
-  const submittedCost = priceIncludesIva ? toNet(costPrice) : costPrice;
-  // price_publico = precio de venta → se guarda BRUTO (con IVA incluido).
+  // cost_price → SIEMPRE NETO: el usuario ingresa neto, se envía tal cual.
+  const submittedCost = costPrice;
+  // price_publico → SIEMPRE BRUTO: toggle=ON ya es bruto; toggle=OFF se convierte ×1.15.
   const submittedPublico = priceIncludesIva ? pricePublico : toGross(pricePublico);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -195,9 +192,10 @@ export function QuickCreateProductDialog({ open, onClose, onCreated, editProduct
               </Label>
             </div>
             <p className="field-hint px-1">
+              El costo se ingresa siempre sin IVA (neto), independiente del toggle.
               {priceIncludesIva
-                ? "Costo: se guarda sin IVA (se divide ÷1.15). Precio público: se guarda tal cual (bruto)."
-                : "Costo: se guarda tal cual (neto). Precio público: se guarda con IVA añadido (×1.15)."}
+                ? " Precio público: ingresando bruto (c/IVA), se guarda tal cual."
+                : " Precio público: ingresando neto (sin IVA), se añade IVA al guardar (×1.15)."}
             </p>
           </div>
 
@@ -205,7 +203,7 @@ export function QuickCreateProductDialog({ open, onClose, onCreated, editProduct
           <div className="space-y-3">
             <PriceField
               id="qc-cost"
-              label="Costo unitario"
+              label="Costo unitario (sin IVA)"
               value={costPrice}
               onChange={setCostPrice}
               preview={costPreview}
