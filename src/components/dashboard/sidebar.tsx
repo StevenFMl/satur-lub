@@ -76,6 +76,18 @@ const SECTIONS: NavSection[] = [
         ),
       },
       {
+        href: "/dashboard/pos/caja",
+        label: "Caja",
+        icon: (
+          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M2 7l1-4h14l1 4" />
+            <rect x="2" y="7" width="20" height="13" rx="1" />
+            <path d="M16 12h.01M12 12h.01M8 12h.01" />
+            <path d="M6 7v13" />
+          </svg>
+        ),
+      },
+      {
         href: "/dashboard/pos/ventas",
         label: "Ventas",
         icon: (
@@ -186,10 +198,11 @@ function SidebarContent({ activePath, onNavigate }: { activePath: string; onNavi
             {section.items.map((item) => {
               // Exact match for root and POS terminal to avoid false highlights
               // on sub-paths like /dashboard/pos/ventas.
-              const isActive =
-                item.href === "/dashboard" || item.href === "/dashboard/pos"
-                  ? activePath === item.href
-                  : activePath.startsWith(item.href);
+              // Exact-match items whose sub-paths have their own nav entries
+              const exactMatchHrefs = ["/dashboard", "/dashboard/pos"];
+              const isActive = exactMatchHrefs.includes(item.href)
+                ? activePath === item.href
+                : activePath.startsWith(item.href);
               return (
                 <Link
                   key={item.href}

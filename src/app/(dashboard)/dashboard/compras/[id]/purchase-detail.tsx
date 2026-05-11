@@ -31,6 +31,7 @@ export type PurchaseFull = {
 export type LineItem = {
   id: string;
   quantity: number;
+  quantity_bonus: number;
   unit_cost: number;
   line_total: number;
   is_taxable: boolean;
@@ -211,7 +212,7 @@ export function PurchaseDetail({
               <thead className="border-b border-steel-800 bg-steel-950/40">
                 <tr>
                   <Th>Producto</Th>
-                  <Th className="text-right">Cantidad</Th>
+                  <Th className="text-right">Recibido</Th>
                   <Th className="text-right">Costo unit. (neto)</Th>
                   <Th className="text-right">Línea (neto)</Th>
                 </tr>
@@ -227,10 +228,16 @@ export function PurchaseDetail({
                     </td>
                   </tr>
                 ) : (
-                  items.map((item) => (
+                  items.map((item) => {
+                    const hasBonus = item.quantity_bonus > 0;
+                    const totalReceived = item.quantity + item.quantity_bonus;
+                    const effectiveCost = hasBonus && totalReceived > 0
+                      ? item.line_total / totalReceived
+                      : item.unit_cost;
+                    return (
                     <tr
                       key={item.id}
-                      className="border-b border-steel-800/60 last:border-b-0"
+                      className={`border-b border-steel-800/60 last:border-b-0 ${hasBonus ? "bg-emerald-950/10" : ""}`}
                     >
                       <Td>
                         <div className="font-semibold text-foreground">
@@ -243,20 +250,46 @@ export function PurchaseDetail({
                               Sin IVA
                             </span>
                           ) : null}
+                          {hasBonus ? (
+                            <span className="rounded-sm border border-emerald-700/60 bg-emerald-900/20 px-1.5 py-0.5 text-[9px] uppercase tracking-[0.1em] text-emerald-400">
+                              +{item.quantity_bonus} bonif.
+                            </span>
+                          ) : null}
                         </div>
                       </Td>
                       <Td className="text-right">
-                        <span className="font-mono text-[13px] tabular-nums text-foreground">
-                          {item.quantity}
-                        </span>
-                        <span className="ml-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground/70">
-                          {item.product?.unit ?? ""}
-                        </span>
+                        {hasBonus ? (
+                          <>
+                            <span className="font-mono text-[13px] tabular-nums text-foreground">
+                              {totalReceived}
+                            </span>
+                            <span className="ml-1 font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground/70">
+                              {item.product?.unit ?? ""}
+                            </span>
+                            <div className="mt-0.5 font-mono text-[10px] text-muted-foreground/60">
+                              {item.quantity} pagadas + {item.quantity_bonus} bonif.
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <span className="font-mono text-[13px] tabular-nums text-foreground">
+                              {item.quantity}
+                            </span>
+                            <span className="ml-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground/70">
+                              {item.product?.unit ?? ""}
+                            </span>
+                          </>
+                        )}
                       </Td>
                       <Td className="text-right">
                         <span className="font-mono text-[13px] tabular-nums text-foreground">
                           {unitCostFmt.format(item.unit_cost)}
                         </span>
+                        {hasBonus ? (
+                          <div className="mt-0.5 font-mono text-[10px] tabular-nums text-emerald-400">
+                            efect.: {unitCostFmt.format(effectiveCost)}
+                          </div>
+                        ) : null}
                       </Td>
                       <Td className="text-right">
                         <span className="font-mono text-[14px] font-bold tabular-nums text-foreground">
@@ -264,7 +297,8 @@ export function PurchaseDetail({
                         </span>
                       </Td>
                     </tr>
-                  ))
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -278,21 +312,32 @@ export function PurchaseDetail({
               Esta compra no tiene ítems registrados.
             </div>
           ) : (
-            items.map((item) => (
+            items.map((item) => {
+              const hasBonus = item.quantity_bonus > 0;
+              const totalReceived = item.quantity + item.quantity_bonus;
+              const effectiveCost = hasBonus && totalReceived > 0
+                ? item.line_total / totalReceived
+                : item.unit_cost;
+              return (
               <div
                 key={item.id}
-                className="border-b border-steel-800/60 px-4 py-4 last:border-b-0"
+                className={`border-b border-steel-800/60 px-4 py-4 last:border-b-0 ${hasBonus ? "bg-emerald-950/10" : ""}`}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="font-semibold leading-tight text-foreground">
                       {item.product?.name ?? "Producto eliminado"}
                     </div>
-                    <div className="mt-0.5 flex items-center gap-2 font-mono text-[11px] text-muted-foreground">
+                    <div className="mt-0.5 flex flex-wrap items-center gap-2 font-mono text-[11px] text-muted-foreground">
                       <span>{item.product?.sku ?? "—"}</span>
                       {!item.is_taxable ? (
                         <span className="rounded-sm border border-steel-700 px-1.5 py-0.5 text-[9px] uppercase tracking-[0.1em]">
                           Sin IVA
+                        </span>
+                      ) : null}
+                      {hasBonus ? (
+                        <span className="rounded-sm border border-emerald-700/60 bg-emerald-900/20 px-1.5 py-0.5 text-[9px] uppercase tracking-[0.1em] text-emerald-400">
+                          +{item.quantity_bonus} bonif.
                         </span>
                       ) : null}
                     </div>
@@ -304,14 +349,19 @@ export function PurchaseDetail({
                 <div className="mt-2.5 grid grid-cols-2 gap-3 border-t border-steel-800/40 pt-2.5">
                   <div>
                     <div className="font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-muted-foreground/70">
-                      Cantidad
+                      {hasBonus ? "Recibido" : "Cantidad"}
                     </div>
                     <div className="mt-0.5 font-mono text-[13px] tabular-nums text-foreground">
-                      {item.quantity}{" "}
+                      {hasBonus ? totalReceived : item.quantity}{" "}
                       <span className="text-[10px] text-muted-foreground/70">
                         {item.product?.unit ?? ""}
                       </span>
                     </div>
+                    {hasBonus ? (
+                      <div className="mt-0.5 font-mono text-[10px] text-emerald-400/80">
+                        {item.quantity} pag. + {item.quantity_bonus} bonif.
+                      </div>
+                    ) : null}
                   </div>
                   <div className="text-right">
                     <div className="font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-muted-foreground/70">
@@ -320,10 +370,16 @@ export function PurchaseDetail({
                     <div className="mt-0.5 font-mono text-[13px] tabular-nums text-foreground">
                       {unitCostFmt.format(item.unit_cost)}
                     </div>
+                    {hasBonus ? (
+                      <div className="mt-0.5 font-mono text-[10px] tabular-nums text-emerald-400">
+                        efect.: {unitCostFmt.format(effectiveCost)}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               </div>
-            ))
+              );
+            })
           )}
         </div>
 

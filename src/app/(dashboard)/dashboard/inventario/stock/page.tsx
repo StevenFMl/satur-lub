@@ -26,7 +26,7 @@ export default async function StockPage() {
       product_id,
       warehouse_id,
       quantity_on_hand,
-      products ( id, name, sku, unit ),
+      products ( id, name, sku, unit, average_cost, default_price, tax_rate, has_tax ),
       warehouses ( id, name )
       `
     )
@@ -51,26 +51,34 @@ export default async function StockPage() {
   const products = rawProducts ?? [];
   const warehouses = rawWarehouses ?? [];
 
+  type RawProduct = {
+    id: string; name: string; sku: string; unit: string;
+    average_cost: number | null;
+    default_price: number | null;
+    tax_rate: number | null;
+    has_tax: boolean | null;
+  };
+
   // Aplanar los joins. Conservamos product_id/warehouse_id como claves duras
   // para construir links al kárdex sin depender del embed.
   const rows: StockRow[] = ((data ?? []) as unknown as RawBalance[]).map(
-    (b) => ({
-      id: b.id,
-      product_id: b.product_id,
-      warehouse_id: b.warehouse_id,
-      warehouse_name:
-        (b.warehouses as { id: string; name: string } | null)?.name ?? "—",
-      product_name:
-        (b.products as { id: string; name: string; sku: string; unit: string } | null)
-          ?.name ?? "—",
-      sku:
-        (b.products as { id: string; name: string; sku: string; unit: string } | null)
-          ?.sku ?? "—",
-      unit:
-        (b.products as { id: string; name: string; sku: string; unit: string } | null)
-          ?.unit ?? "unidad",
-      quantity_on_hand: Number(b.quantity_on_hand ?? 0),
-    })
+    (b) => {
+      const p = b.products as RawProduct | null;
+      return {
+        id: b.id,
+        product_id: b.product_id,
+        warehouse_id: b.warehouse_id,
+        warehouse_name: (b.warehouses as { id: string; name: string } | null)?.name ?? "—",
+        product_name: p?.name ?? "—",
+        sku: p?.sku ?? "—",
+        unit: p?.unit ?? "unidad",
+        quantity_on_hand: Number(b.quantity_on_hand ?? 0),
+        average_cost: p?.average_cost != null ? Number(p.average_cost) : null,
+        sale_price: p?.default_price != null ? Number(p.default_price) : null,
+        tax_rate: Number(p?.tax_rate ?? 15),
+        has_tax: p?.has_tax ?? true,
+      };
+    }
   );
 
   return (
@@ -91,12 +99,11 @@ export default async function StockPage() {
   );
 }
 
-/** Tipado interno para el raw de Supabase antes de aplanar. */
 type RawBalance = {
   id: string;
   product_id: string;
   warehouse_id: string;
   quantity_on_hand: number;
-  products: { id: string; name: string; sku: string; unit: string } | null;
+  products: unknown;
   warehouses: { id: string; name: string } | null;
 };

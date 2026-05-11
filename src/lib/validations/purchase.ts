@@ -3,6 +3,7 @@ import { z } from "zod";
 const itemSchema = z.object({
   product_id: z.string().uuid("Producto inválido."),
   quantity: z.number().positive("Cantidad debe ser > 0."),
+  quantity_bonus: z.number().nonnegative("Bonificación no puede ser negativa.").default(0),
   unit_cost: z.number().nonnegative("Costo no puede ser negativo."),
   is_taxable: z.boolean().default(true),
 });

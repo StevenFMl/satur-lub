@@ -90,30 +90,31 @@ export async function receivePurchaseAction(
 
   const p_items = data.items.map((item) => {
     const isTaxable = dbProductMap.get(item.product_id as string) ?? true;
-    
+
     // item.unit_cost received from client is GROSS if isTaxInclusive is true
     let unitCostBig = Big(item.unit_cost);
-    
+
     if (isTaxInclusive && isTaxable && invoiceTaxRate > 0) {
       unitCostBig = unitCostBig.div(Big(1).plus(taxRateBig));
     }
-    
+
     // Preserve sufficient precision for inventory (4 decimals)
     const netUnitCostStr = toFixedStr(unitCostBig, 4);
     const netUnitCostBig = Big(netUnitCostStr);
     const qtyBig = Big(item.quantity);
-    
-    // Server recalculates line total based on net cost (rounds to 2 decimals)
+
+    // line_total = paid qty × net unit cost (bonus units don't carry fiscal cost)
     const lineTotalBig = toMoney(netUnitCostBig.times(qtyBig));
     serverSubtotalBig = serverSubtotalBig.plus(lineTotalBig);
-    
+
     if (isTaxable && invoiceTaxRate > 0) {
       serverTaxBig = serverTaxBig.plus(taxAmount(lineTotalBig, invoiceTaxRate));
     }
-    
+
     return {
       product_id: item.product_id,
       quantity: Number(item.quantity),
+      quantity_bonus: Number(item.quantity_bonus ?? 0),
       unit_cost: Number(netUnitCostStr),
       is_taxable: isTaxable
     };

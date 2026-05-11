@@ -14,26 +14,32 @@ import type { TenantRole } from "@/lib/supabase/types";
  */
 export type PosPermissions = {
   canUsePOS: boolean;
-  canEditLinePrice: boolean;   // override unit price on a cart line
-  canApplyDiscount: boolean;   // apply a manual discount per line
-  canVoidSale: boolean;        // cancel a confirmed sale
-  canOverrideStock: boolean;   // sell even when stock = 0
-  canViewDailyReport: boolean; // see daily totals/summary
-  canProcessReturn: boolean;   // register returns / refunds (owner/admin only)
-  canSetNoRestock: boolean;    // mark returned items as not restocked (owner/admin only)
+  canEditLinePrice: boolean;      // override unit price on a cart line
+  canApplyDiscount: boolean;      // apply a manual discount per line
+  canVoidSale: boolean;           // cancel a confirmed sale
+  canOverrideStock: boolean;      // sell even when stock = 0
+  canViewDailyReport: boolean;    // see daily totals/summary
+  canProcessReturn: boolean;      // register returns / refunds (owner/admin only)
+  canSetNoRestock: boolean;       // mark returned items as not restocked (owner/admin only)
+  canOpenCashSession: boolean;    // open a cash drawer session
+  canCloseCashSession: boolean;   // close a cash drawer session
+  canManualCashMovement: boolean; // paid_in / paid_out manual cash entries
 };
 
 export function getPosPermissions(role: TenantRole | null | undefined): PosPermissions {
   const isPrivileged = role === "owner" || role === "admin";
   return {
-    canUsePOS:          true,               // all authenticated members
-    canEditLinePrice:   true,               // all can override; RPC enforces 30% cap for non-privileged
-    canApplyDiscount:   true,               // all can apply discounts
-    canVoidSale:        isPrivileged,
-    canOverrideStock:   isPrivileged,
-    canViewDailyReport: isPrivileged,
-    canProcessReturn:   isPrivileged,       // return/refund: owner/admin only
-    canSetNoRestock:    isPrivileged,       // restock=false: owner/admin only
+    canUsePOS:             true,
+    canEditLinePrice:      true,     // all can override; RPC enforces 30% cap for non-privileged
+    canApplyDiscount:      true,
+    canVoidSale:           isPrivileged,
+    canOverrideStock:      isPrivileged,
+    canViewDailyReport:    isPrivileged,
+    canProcessReturn:      isPrivileged,
+    canSetNoRestock:       isPrivileged,
+    canOpenCashSession:    isPrivileged,
+    canCloseCashSession:   isPrivileged,
+    canManualCashMovement: isPrivileged,
   };
 }
 

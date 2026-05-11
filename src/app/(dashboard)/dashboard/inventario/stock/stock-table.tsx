@@ -18,12 +18,23 @@ export type StockRow = {
   sku: string;
   unit: string;
   quantity_on_hand: number;
+  average_cost: number | null;
+  sale_price: number | null;    // precio público s/IVA (default_price)
+  tax_rate: number;
+  has_tax: boolean;
 };
 
 const LOW_STOCK_THRESHOLD = 5;
 
 const numberFmt = new Intl.NumberFormat("es-EC", {
   minimumFractionDigits: 0,
+  maximumFractionDigits: 2,
+});
+
+const moneyFmt = new Intl.NumberFormat("es-EC", {
+  style: "currency",
+  currency: "USD",
+  minimumFractionDigits: 2,
   maximumFractionDigits: 2,
 });
 
@@ -166,11 +177,11 @@ export function StockTable({
           <table className="w-full text-left">
             <thead className="border-b-2 border-steel-700 bg-steel-900/70">
               <tr>
-                <Th>Producto</Th>
-                <Th>SKU</Th>
-                <Th className="text-right">Cantidad</Th>
-                <Th>Unidad</Th>
+                <Th>Producto / SKU</Th>
+                <Th className="text-right">Stock</Th>
                 <Th>Bodega</Th>
+                <Th className="text-right">Costo (CPP)</Th>
+                <Th className="text-right">P.V. c/IVA</Th>
                 <Th>Estado</Th>
                 <Th className="text-right">Auditoría</Th>
               </tr>
@@ -190,6 +201,9 @@ export function StockTable({
               ) : (
                 filtered.map((r) => {
                   const isLow = r.quantity_on_hand <= LOW_STOCK_THRESHOLD;
+                  const priceWithTax = r.sale_price != null && r.has_tax && r.tax_rate > 0
+                    ? r.sale_price * (1 + r.tax_rate / 100)
+                    : r.sale_price;
                   return (
                     <tr
                       key={r.id}
@@ -199,25 +213,18 @@ export function StockTable({
                         <span className="font-semibold text-foreground">
                           {r.product_name}
                         </span>
-                      </Td>
-                      <Td>
-                        <span className="font-mono text-[12.5px] tabular-nums text-muted-foreground">
-                          {r.sku}
-                        </span>
+                        <div className="mt-0.5 font-mono text-[11px] text-muted-foreground/70">
+                          {r.sku} · <span className="capitalize">{r.unit}</span>
+                        </div>
                       </Td>
                       <Td className="text-right">
                         <span
                           className={
-                            "font-mono text-[14px] font-bold tabular-nums " +
+                            "font-mono text-[15px] font-bold tabular-nums " +
                             (isLow ? "text-red-300" : "text-foreground")
                           }
                         >
                           {numberFmt.format(r.quantity_on_hand)}
-                        </span>
-                      </Td>
-                      <Td>
-                        <span className="font-mono text-[12px] capitalize tracking-[0.06em] text-muted-foreground">
-                          {r.unit}
                         </span>
                       </Td>
                       <Td>
@@ -227,6 +234,31 @@ export function StockTable({
                             {r.warehouse_name}
                           </span>
                         </div>
+                      </Td>
+                      <Td className="text-right">
+                        {r.average_cost != null ? (
+                          <span className="font-mono text-[13px] tabular-nums text-muted-foreground">
+                            {moneyFmt.format(r.average_cost)}
+                          </span>
+                        ) : (
+                          <span className="font-mono text-[11px] text-muted-foreground/40">—</span>
+                        )}
+                      </Td>
+                      <Td className="text-right">
+                        {priceWithTax != null ? (
+                          <>
+                            <span className="font-mono text-[14px] font-bold tabular-nums text-safety-500">
+                              {moneyFmt.format(priceWithTax)}
+                            </span>
+                            {r.sale_price != null && r.has_tax && r.tax_rate > 0 ? (
+                              <div className="mt-0.5 font-mono text-[10px] tabular-nums text-muted-foreground/60">
+                                s/IVA {moneyFmt.format(r.sale_price)}
+                              </div>
+                            ) : null}
+                          </>
+                        ) : (
+                          <span className="font-mono text-[11px] text-muted-foreground/40">Sin precio</span>
+                        )}
                       </Td>
                       <Td>
                         {isLow ? (

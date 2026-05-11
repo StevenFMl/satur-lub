@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import Big from "big.js";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,6 +41,12 @@ export type PosProduct = {
 };
 
 export type PosWarehouse = { id: string; name: string };
+
+export type ActiveCashSession = {
+  id:             string;
+  opening_amount: number;
+  opened_at:      string;
+};
 
 type CartLine = {
   key:             string;
@@ -155,12 +162,14 @@ export function PosTerminal({
   defaultCustomer,
   permissions,
   userName,
+  activeCashSession,
 }: {
-  products:        PosProduct[];
-  warehouses:      PosWarehouse[];
-  defaultCustomer: PickedCustomer | null;
-  permissions:     PosPermissions;
-  userName:        string;
+  products:          PosProduct[];
+  warehouses:        PosWarehouse[];
+  defaultCustomer:   PickedCustomer | null;
+  permissions:       PosPermissions;
+  userName:          string;
+  activeCashSession: ActiveCashSession | null;
 }) {
   const [cart, setCart]           = React.useState<CartLine[]>([]);
   const [customer, setCustomer]   = React.useState<PickedCustomer | null>(defaultCustomer);
@@ -290,6 +299,29 @@ export function PosTerminal({
             </Select>
           </div>
         ) : null}
+
+        {/* Cash session indicator */}
+        <Link
+          href="/dashboard/pos/caja"
+          className={[
+            "hidden shrink-0 items-center gap-1.5 rounded-sm border px-2.5 py-1.5 transition-colors sm:flex",
+            activeCashSession
+              ? "border-signal-600/40 bg-signal-700/10 hover:bg-signal-700/20"
+              : "border-steel-700 bg-steel-900/50 hover:border-steel-600",
+          ].join(" ")}
+          title="Sesión de caja"
+        >
+          <CashRegisterIcon className={[
+            "h-3.5 w-3.5",
+            activeCashSession ? "text-signal-400" : "text-muted-foreground/50",
+          ].join(" ")} />
+          <span className={[
+            "font-mono text-[10px] font-bold uppercase tracking-[0.12em]",
+            activeCashSession ? "text-signal-400" : "text-muted-foreground/50",
+          ].join(" ")}>
+            {activeCashSession ? "Caja abierta" : "Sin caja"}
+          </span>
+        </Link>
 
         <div className="hidden shrink-0 items-center gap-1.5 rounded-sm border border-steel-700 bg-steel-900/50 px-2.5 py-1.5 sm:flex">
           <UserIcon className="h-3.5 w-3.5 text-muted-foreground/70" />
@@ -524,6 +556,7 @@ export function PosTerminal({
         <CheckoutDialog
           open={checkoutOpen}
           onClose={() => setCheckoutOpen(false)}
+          cashSessionId={activeCashSession?.id ?? null}
           cart={cart.map((l) => ({
             product_id:            l.product_id,
             quantity:              l.quantity,
@@ -1019,6 +1052,17 @@ function PencilIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+    </svg>
+  );
+}
+
+function CashRegisterIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M2 7l1-4h14l1 4" />
+      <rect x="2" y="7" width="20" height="13" rx="1" />
+      <path d="M16 12h.01M12 12h.01M8 12h.01M16 16h.01M12 16h.01M8 16h.01" />
+      <path d="M6 7v13" />
     </svg>
   );
 }

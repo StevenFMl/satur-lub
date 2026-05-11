@@ -8,6 +8,7 @@ import {
   type PosProduct,
   type PosPresentation,
   type PosWarehouse,
+  type ActiveCashSession,
 } from "./pos-terminal";
 import type { PickedCustomer } from "@/components/dashboard/customer-picker";
 
@@ -124,6 +125,34 @@ export default async function PosPage() {
     name: w.name as string,
   }));
 
+  // ── Active cash session for this warehouse ─────────────────
+  let activeCashSession: ActiveCashSession | null = null;
+  {
+    let sessionQuery = supabase
+      .from("cash_sessions")
+      .select("id, opening_amount, opened_at")
+      .eq("tenant_id", tenantId)
+      .eq("status", "open");
+
+    // Match warehouse: exact null comparison requires is/filter workaround
+    const firstWarehouse = warehouses[0];
+    const wid = firstWarehouse?.id ?? null;
+    if (wid) {
+      sessionQuery = sessionQuery.eq("warehouse_id", wid);
+    } else {
+      sessionQuery = sessionQuery.is("warehouse_id", null);
+    }
+
+    const { data: sessData } = await sessionQuery.maybeSingle();
+    if (sessData) {
+      activeCashSession = {
+        id:             sessData.id as string,
+        opening_amount: Number(sessData.opening_amount ?? 0),
+        opened_at:      sessData.opened_at as string,
+      };
+    }
+  }
+
   // ── Default customer: Consumidor Final ─────────────────────
   const { data: defaultCustomerRaw } = await supabase
     .from("business_partners")
@@ -151,6 +180,7 @@ export default async function PosPage() {
       userName={
         (user.user_metadata?.full_name as string | undefined) ?? user.email ?? ""
       }
+      activeCashSession={activeCashSession}
     />
   );
 }

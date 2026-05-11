@@ -29,6 +29,7 @@ type RawPO = {
 type RawItem = {
   id: string;
   quantity: number | string;
+  quantity_bonus: number | string | null;
   unit_cost: number | string;
   line_total: number | string;
   is_taxable: boolean | null;
@@ -90,9 +91,23 @@ export default async function PurchaseDetailPage({
 
   if (!po) notFound();
 
-  // is_taxable es V1; si no existe, default true para todas las filas.
+  // quantity_bonus es V8; is_taxable es V1. Si fallan por columna inexistente
+  // hacemos fallback progresivo para no romper deploys parciales.
   let rawItems: RawItem[] = [];
   {
+    const { data, error } = await supabase
+      .from("purchase_order_items")
+      .select(
+        `
+        id, quantity, quantity_bonus, unit_cost, line_total, is_taxable,
+        products ( id, name, sku, unit )
+        `
+      )
+      .eq("purchase_order_id", id)
+      .order("created_at", { ascending: true });
+    if (!error && data) rawItems = data as unknown as RawItem[];
+  }
+  if (rawItems.length === 0) {
     const { data, error } = await supabase
       .from("purchase_order_items")
       .select(
@@ -103,7 +118,12 @@ export default async function PurchaseDetailPage({
       )
       .eq("purchase_order_id", id)
       .order("created_at", { ascending: true });
-    if (!error && data) rawItems = data as unknown as RawItem[];
+    if (!error && data) {
+      rawItems = (data as unknown as RawItem[]).map((it) => ({
+        ...it,
+        quantity_bonus: 0,
+      }));
+    }
   }
   if (rawItems.length === 0) {
     const { data } = await supabase
@@ -118,6 +138,7 @@ export default async function PurchaseDetailPage({
       .order("created_at", { ascending: true });
     rawItems = (data ?? []).map((it) => ({
       ...(it as unknown as RawItem),
+      quantity_bonus: 0,
       is_taxable: true,
     }));
   }
@@ -152,6 +173,7 @@ export default async function PurchaseDetailPage({
   const items: LineItem[] = rawItems.map((it) => ({
     id: it.id,
     quantity: Number(it.quantity),
+    quantity_bonus: Number(it.quantity_bonus ?? 0),
     unit_cost: Number(it.unit_cost),
     line_total: Number(it.line_total),
     is_taxable: it.is_taxable ?? true,

@@ -25,13 +25,14 @@ type CartItem = {
 };
 
 type Props = {
-  open:        boolean;
-  onClose:     () => void;
-  cart:        CartItem[];
-  totals:      { gross: number; net: number; iva: number };
-  customerId:  string;
-  warehouseId: string | null;
-  onSuccess:   () => void;
+  open:           boolean;
+  onClose:        () => void;
+  cart:           CartItem[];
+  totals:         { gross: number; net: number; iva: number };
+  customerId:     string;
+  warehouseId:    string | null;
+  cashSessionId:  string | null;
+  onSuccess:      () => void;
 };
 
 const moneyFmt = new Intl.NumberFormat("es-EC", {
@@ -55,6 +56,7 @@ export function CheckoutDialog({
   totals,
   customerId,
   warehouseId,
+  cashSessionId,
   onSuccess,
 }: Props) {
   const [method, setMethod]             = React.useState<PaymentMethod>("cash");
@@ -104,28 +106,31 @@ export function CheckoutDialog({
     setSubmitting(true);
     setError(null);
 
-    const result = await createSaleAction({
-      customer_id:   customerId,
-      warehouse_id:  warehouseId,
-      items: cart.map((l) => ({
-        product_id:            l.product_id,
-        quantity:              l.quantity,
-        discount_amount:       l.discount_amount,
-        presentation_id:       l.presentation_id ?? undefined,
-        base_qty:              l.base_qty,
-        override_unit_price:   l.override_unit_price   ?? undefined,
-        price_override_type:   (l.price_override_type as PriceOverrideType | undefined) ?? undefined,
-        price_override_reason: l.price_override_reason ?? undefined,
-        price_override_note:   l.price_override_note   ?? undefined,
-      })),
-      payments: [{
-        method,
-        amount:    method === "cash" ? Math.max(cashReceivedNum, gross) : gross,
-        reference: reference || undefined,
-      }],
-      document_kind: "ticket",
-      sale_date:     isHistorical ? saleDate : null,
-    });
+    const result = await createSaleAction(
+      {
+        customer_id:   customerId,
+        warehouse_id:  warehouseId,
+        items: cart.map((l) => ({
+          product_id:            l.product_id,
+          quantity:              l.quantity,
+          discount_amount:       l.discount_amount,
+          presentation_id:       l.presentation_id ?? undefined,
+          base_qty:              l.base_qty,
+          override_unit_price:   l.override_unit_price   ?? undefined,
+          price_override_type:   (l.price_override_type as PriceOverrideType | undefined) ?? undefined,
+          price_override_reason: l.price_override_reason ?? undefined,
+          price_override_note:   l.price_override_note   ?? undefined,
+        })),
+        payments: [{
+          method,
+          amount:    method === "cash" ? Math.max(cashReceivedNum, gross) : gross,
+          reference: reference || undefined,
+        }],
+        document_kind: "ticket",
+        sale_date:     isHistorical ? saleDate : null,
+      },
+      cashSessionId
+    );
 
     setSubmitting(false);
 

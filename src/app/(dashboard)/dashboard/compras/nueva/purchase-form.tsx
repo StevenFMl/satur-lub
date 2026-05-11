@@ -58,10 +58,10 @@ type PaymentMethod = "cash" | "transfer" | "credit";
 type Row = {
   uid: string;
   product_id: string;
-  quantity: string;
+  quantity: string;       // unidades pagadas (con costo)
+  quantity_bonus: string; // unidades recibidas gratis (bonificación)
   total_cost: string;
   unit: string;
-  is_gift?: boolean;
 };
 
 const newRow = (): Row => ({
@@ -71,9 +71,9 @@ const newRow = (): Row => ({
       : Math.random().toString(36).slice(2),
   product_id: "",
   quantity: "1",
+  quantity_bonus: "0",
   total_cost: "0",
-  unit: "galón", // Changed default to galón to match the requirement for new products
-  is_gift: false,
+  unit: "galón",
 });
 
 // Totales (subtotal, IVA, total factura): 2 decimales fijos.
@@ -180,7 +180,6 @@ export function PurchaseForm({
         : Big(1).div(Big(1).plus(Big(invoiceTaxRate).div(100)));
       setRows((prev) =>
         prev.map((r) => {
-          if (r.is_gift) return r;
           const n = parseFloat(r.total_cost);
           if (!isFinite(n) || n === 0) return r;
           return { ...r, total_cost: toFixedStr(Big(n).times(factor), 2) };
@@ -246,7 +245,7 @@ export function PurchaseForm({
 
   const addToCart = useCallback((product: LookupProduct) => {
     setRows((prev) => {
-      const existingIndex = prev.findIndex(r => r.product_id === product.id && !r.is_gift);
+      const existingIndex = prev.findIndex(r => r.product_id === product.id);
       const suggestedNet = suggestedUnitCost(product);
       // Convierte el costo sugerido (siempre NET en DB) al valor de display
       // según el toggle actual (bruto si isTaxInclusive=true, neto si false).
@@ -274,9 +273,9 @@ export function PurchaseForm({
             uid: crypto.randomUUID(),
             product_id: product.id,
             quantity: "1",
+            quantity_bonus: "0",
             total_cost: totalCostStr,
             unit: product.unit,
-            is_gift: false,
           },
         ];
       }
@@ -288,16 +287,11 @@ export function PurchaseForm({
   }, [netToDisplay]);
 
   // Re-derivación reactiva del costo de filas NO-manuales cuando cambia el
-  // catálogo (precio nuevo desde otra ventana, edición inline, etc.). Este
-  // es el corazón del fix al bug "edito precio y la fila no se actualiza":
-  // antes el `total_cost` se copiaba al insertar y nunca volvía a recalcular.
-  // Ahora, cualquier cambio en localProducts dispara un recálculo de las
-  // filas que no han sido tocadas manualmente.
+  // catálogo (precio nuevo desde otra ventana, edición inline, etc.).
   useEffect(() => {
     setRows((prev) => {
       let changed = false;
       const next = prev.map((r) => {
-        if (r.is_gift) return r;
         if (manualTotalEdited.current.has(r.uid)) return r;
         const product = productById.get(r.product_id);
         if (!product) return r;
@@ -328,16 +322,14 @@ export function PurchaseForm({
     }
   };
 
-  // Cálculo de Subtotal y Tax basado en isTaxInclusive
+  // Subtotal y Tax: total_cost siempre refleja solo las unidades pagadas
   const subtotalBig = useMemo(() => {
     let subtotal = Big(0);
     const taxRateBig = Big(invoiceTaxRate).div(100);
     for (const r of rows) {
-      if (r.is_gift) continue;
       const product = productById.get(r.product_id);
       const isTaxable = product?.has_tax ?? true;
       const totalRow = Big(r.total_cost || 0);
-      
       if (isTaxInclusive && isTaxable && invoiceTaxRate > 0) {
         subtotal = subtotal.plus(totalRow.div(Big(1).plus(taxRateBig)));
       } else {
@@ -351,11 +343,9 @@ export function PurchaseForm({
     let totalTax = Big(0);
     const taxRateBig = Big(invoiceTaxRate).div(100);
     for (const r of rows) {
-      if (r.is_gift) continue;
       const product = productById.get(r.product_id);
       if (!product) continue;
       const isTaxable = product.has_tax ?? true;
-      
       if (isTaxable && invoiceTaxRate > 0) {
         const totalRow = Big(r.total_cost || 0);
         if (isTaxInclusive) {
@@ -378,14 +368,16 @@ export function PurchaseForm({
         .filter((r) => r.product_id)
         .map((r) => {
           const qtyNum = Number(r.quantity) || 0;
+          const bonusNum = Math.max(0, Number(r.quantity_bonus) || 0);
           const totalBig = Big(r.total_cost || 0);
-          // Send raw unit_cost (Gross or Net based on user input).
-          // Server Action will extract tax using authoritative DB has_tax flag.
+          // unit_cost derivado solo de qty pagada (bonus no genera costo fiscal).
+          // Server Action extrae el IVA usando has_tax de la DB.
           const rawUnitCostBig = qtyNum > 0 ? totalBig.div(qtyNum) : Big(0);
 
           return {
             product_id: r.product_id,
             quantity: qtyNum,
+            quantity_bonus: bonusNum,
             unit_cost: Number(toFixedStr(rawUnitCostBig, 4)),
           };
         })
@@ -414,15 +406,12 @@ export function PurchaseForm({
     [addToCart, productToEdit]
   );
 
-  // Cálculo A: usuario cambia cantidad → si NO ha tocado el total manualmente,
-  // recalculamos total = qty × suggested(unit_cost). Si ya lo tocó, conservamos
-  // el total y el costo unitario derivado se recalcula automáticamente al
-  // renderizar.
+  // Cálculo A: usuario cambia cantidad pagada → si NO tocó el total
+  // manualmente, recalcula total = qty × costo_sugerido.
   const onQuantityChange = (uid: string, qStr: string) => {
     updateRow(uid, { quantity: qStr });
     const row = rows.find((r) => r.uid === uid);
     if (!row) return;
-    if (row.is_gift) return;
     const product = productById.get(row.product_id);
     if (!product) return;
     const suggestedNet = suggestedUnitCost(product);
@@ -433,31 +422,14 @@ export function PurchaseForm({
     updateRow(uid, { total_cost: tc });
   };
 
-  const onTotalCostChange = (uid: string, value: string) => {
-    const row = rows.find((r) => r.uid === uid);
-    if (row?.is_gift) return;
-    manualTotalEdited.current.add(uid);
-    updateRow(uid, { total_cost: value });
+  // Bonus change: no afecta total_cost, solo actualiza la cantidad bonificada.
+  const onBonusChange = (uid: string, value: string) => {
+    updateRow(uid, { quantity_bonus: value });
   };
 
-  const toggleGift = (uid: string) => {
-    setRows((prev) =>
-      prev.map((r) => {
-        if (r.uid !== uid) return r;
-        if (r.is_gift) {
-          const product = productById.get(r.product_id);
-          const suggested = product ? suggestedUnitCost(product) : null;
-          const tc =
-            suggested != null
-              ? toFixedStr(lineTotal(r.quantity, suggested), 2)
-              : "0";
-          return { ...r, is_gift: false, total_cost: tc };
-        } else {
-          return { ...r, is_gift: true, total_cost: "0.00" };
-        }
-      })
-    );
-    manualTotalEdited.current.delete(uid);
+  const onTotalCostChange = (uid: string, value: string) => {
+    manualTotalEdited.current.add(uid);
+    updateRow(uid, { total_cost: value });
   };
 
   const errors = state?.fieldErrors ?? {};
@@ -705,24 +677,30 @@ export function PurchaseForm({
               <thead className="border-b border-steel-800 bg-steel-950/60">
                 <tr>
                   <Th>Producto</Th>
-                  <Th className="w-[220px]">Cantidad / Unidad</Th>
+                  <Th className="w-[260px]">Cant. pagada / Bonif.</Th>
                   <Th className="w-[160px] text-right">
-                    Costo Unit. {isTaxInclusive ? "(bruto)" : "(neto)"}
+                    Costo unit. {isTaxInclusive ? "(bruto)" : "(neto)"}
                   </Th>
-                  <Th className="w-[200px] text-right">
-                    Costo Total {isTaxInclusive ? "(bruto)" : "(neto)"}
+                  <Th className="w-[180px] text-right">
+                    Costo total {isTaxInclusive ? "(bruto)" : "(neto)"}
                   </Th>
                   <Th className="w-[60px]"> </Th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((r) => {
-                  // Costo unitario derivado: 4 decimales. Es READ-ONLY en la
-                  // UI — la fuente de verdad editable es total_cost.
                   const unitCostBig = unitCostFromTotal(r.total_cost, r.quantity);
+                  const bonusNum = Math.max(0, Number(r.quantity_bonus) || 0);
+                  const paidNum = Number(r.quantity) || 0;
+                  const totalReceived = paidNum + bonusNum;
+                  const hasBonus = bonusNum > 0;
+                  // Costo efectivo: lo que cuesta cada unidad recibida
+                  const effectiveCostBig = hasBonus && totalReceived > 0
+                    ? Big(r.total_cost || 0).div(totalReceived)
+                    : unitCostBig;
                   const isManual = manualTotalEdited.current.has(r.uid);
                   return (
-                    <tr key={r.uid} className="border-b border-steel-800">
+                    <tr key={r.uid} className={`border-b border-steel-800 ${hasBonus ? "bg-emerald-950/10" : ""}`}>
                       <td className="px-4 py-3 align-top">
                         <div className="flex flex-col items-start gap-1">
                           <div className="flex items-center gap-2">
@@ -744,17 +722,13 @@ export function PurchaseForm({
                               <Pencil className="h-3.5 w-3.5" />
                             </button>
                           </div>
-                          
                           <Badge tone="neutral" className="text-[10px] mt-0.5">
                             {productById.get(r.product_id)?.sku || "-"}
                           </Badge>
-                          
                           {(() => {
                             const product = productById.get(r.product_id);
                             if (!product || product.best_cost == null) return null;
-                            const currentUnitCostBig = unitCostFromTotal(r.total_cost, r.quantity);
-                            // unitCostBig is big.js instance
-                            const isHigher = currentUnitCostBig.gt(product.best_cost);
+                            const isHigher = unitCostBig.gt(product.best_cost);
                             return (
                               <div className={`mt-1.5 text-[10px] ${isHigher ? "text-red-500 font-semibold" : "text-muted-foreground"}`}>
                                 Mejor histórico: ${product.best_cost.toFixed(2)}
@@ -764,24 +738,23 @@ export function PurchaseForm({
                         </div>
                       </td>
                       <td className="px-4 py-3 align-top">
+                        {/* Fila principal: cantidad pagada + unidad */}
                         <div className="flex items-center gap-2">
                           <Input
                             type="text"
                             inputMode="decimal"
                             mono
-                            className="w-[80px] shrink-0 text-right"
+                            className="w-[70px] shrink-0 text-right"
                             value={r.quantity}
                             onFocus={(e) => e.target.select()}
                             onChange={(e) => onQuantityChange(r.uid, e.target.value)}
-                            aria-label="Cantidad"
+                            aria-label="Cantidad pagada"
                           />
                           <Select
                             value={r.unit}
-                            onChange={(e) =>
-                              updateRow(r.uid, { unit: e.target.value })
-                            }
+                            onChange={(e) => updateRow(r.uid, { unit: e.target.value })}
                             aria-label="Unidad de medida"
-                            className="min-w-[100px] text-[11px]"
+                            className="min-w-[95px] text-[11px]"
                           >
                             <option value="unidad">Unidad</option>
                             <option value="galón">Galón</option>
@@ -796,6 +769,27 @@ export function PurchaseForm({
                             <option value="paquete">Paquete</option>
                           </Select>
                         </div>
+                        {/* Fila bonificación */}
+                        <div className="mt-1.5 flex items-center gap-1.5">
+                          <span className="w-[70px] shrink-0 text-right font-mono text-[9px] uppercase tracking-[0.1em] text-emerald-500/70">
+                            + bonif.
+                          </span>
+                          <Input
+                            type="text"
+                            inputMode="decimal"
+                            mono
+                            className="w-[70px] shrink-0 text-right text-[12px]"
+                            value={r.quantity_bonus}
+                            onFocus={(e) => e.target.select()}
+                            onChange={(e) => onBonusChange(r.uid, e.target.value)}
+                            aria-label="Unidades bonificadas"
+                          />
+                          {hasBonus ? (
+                            <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-emerald-400/80">
+                              = {totalReceived} recib.
+                            </span>
+                          ) : null}
+                        </div>
                       </td>
                       <td className="px-4 py-3 align-top text-right">
                         <span className="block font-mono text-[14px] tabular-nums text-foreground">
@@ -804,45 +798,29 @@ export function PurchaseForm({
                         <span className="mt-0.5 block font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground/70">
                           {isTaxInclusive ? "bruto" : "neto"}/{r.unit}
                         </span>
+                        {hasBonus ? (
+                          <span className="mt-1 block font-mono text-[10px] tabular-nums text-emerald-400">
+                            efect.: {unitCostFmt.format(toNum(toUnitPrice(effectiveCostBig)))}
+                          </span>
+                        ) : null}
                       </td>
                       <td className="px-4 py-3 align-top">
-                        <div className="flex items-start gap-2">
-                          <button
-                            type="button"
-                            onClick={() => toggleGift(r.uid)}
-                            title={r.is_gift ? "Quitar bonificación" : "Marcar como bonificación"}
-                            className={`mt-1 grid h-8 w-8 shrink-0 place-items-center rounded-sm border transition-colors ${
-                              r.is_gift 
-                                ? "border-emerald-500 bg-emerald-500/10 text-emerald-400" 
-                                : "border-steel-700 bg-steel-900 text-muted-foreground hover:border-emerald-500/50 hover:text-emerald-400"
-                            }`}
-                          >
-                            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                              <polyline points="20 12 20 22 4 22 4 12" />
-                              <rect x="2" y="7" width="20" height="5" />
-                              <line x1="12" y1="22" x2="12" y2="7" />
-                              <path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z" />
-                              <path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z" />
-                            </svg>
-                          </button>
-                          <div className="w-full">
-                            <Input
-                              type="text"
-                              inputMode="decimal"
-                              mono
-                              className="text-right"
-                              value={r.total_cost}
-                              disabled={r.is_gift}
-                              onFocus={(e) => e.target.select()}
-                              onChange={(e) => onTotalCostChange(r.uid, e.target.value)}
-                              aria-label="Costo total de la fila"
-                            />
-                            {isManual ? (
-                              <span className="mt-1 block text-right font-mono text-[10px] uppercase tracking-[0.1em] text-safety-500/80">
-                                ajuste manual
-                              </span>
-                            ) : null}
-                          </div>
+                        <div className="w-full">
+                          <Input
+                            type="text"
+                            inputMode="decimal"
+                            mono
+                            className="text-right"
+                            value={r.total_cost}
+                            onFocus={(e) => e.target.select()}
+                            onChange={(e) => onTotalCostChange(r.uid, e.target.value)}
+                            aria-label="Costo total de la fila"
+                          />
+                          {isManual ? (
+                            <span className="mt-1 block text-right font-mono text-[10px] uppercase tracking-[0.1em] text-safety-500/80">
+                              ajuste manual
+                            </span>
+                          ) : null}
                         </div>
                       </td>
                       <td className="px-4 py-3 align-top text-right">
@@ -852,16 +830,7 @@ export function PurchaseForm({
                           aria-label="Quitar ítem"
                           className="grid h-9 w-9 place-items-center rounded-sm border border-steel-700 bg-steel-800 text-muted-foreground transition-colors hover:border-hazard-500/60 hover:text-hazard-500 disabled:opacity-40"
                         >
-                          <svg
-                            viewBox="0 0 24 24"
-                            className="h-4 w-4"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2.5"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            aria-hidden
-                          >
+                          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                             <path d="M3 6h18" />
                             <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
                             <path d="M6 6l1 14a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-14" />
@@ -889,6 +858,13 @@ export function PurchaseForm({
             ) : (
               rows.map((r) => {
                 const unitCostBig = unitCostFromTotal(r.total_cost, r.quantity);
+                const bonusNum = Math.max(0, Number(r.quantity_bonus) || 0);
+                const paidNum = Number(r.quantity) || 0;
+                const totalReceived = paidNum + bonusNum;
+                const hasBonus = bonusNum > 0;
+                const effectiveCostBig = hasBonus && totalReceived > 0
+                  ? Big(r.total_cost || 0).div(totalReceived)
+                  : unitCostBig;
                 const isManual = manualTotalEdited.current.has(r.uid);
                 const product = productById.get(r.product_id);
                 const isOverHistoric =
@@ -896,12 +872,7 @@ export function PurchaseForm({
                 return (
                   <div
                     key={r.uid}
-                    className={
-                      "rounded-sm border bg-steel-900/40 px-3 py-3 transition-colors " +
-                      (r.is_gift
-                        ? "border-emerald-500/40 bg-emerald-500/5"
-                        : "border-steel-800")
-                    }
+                    className={`rounded-sm border bg-steel-900/40 px-3 py-3 transition-colors ${hasBonus ? "border-emerald-500/30 bg-emerald-950/10" : "border-steel-800"}`}
                   >
                     {/* Header row */}
                     <div className="flex items-start justify-between gap-2">
@@ -947,11 +918,11 @@ export function PurchaseForm({
                       </div>
                     </div>
 
-                    {/* Quantity + unit */}
+                    {/* Qty pagada + unidad */}
                     <div className="mt-3 grid grid-cols-[1fr_1.4fr] gap-2">
                       <div>
                         <label className="block font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-muted-foreground/70">
-                          Cantidad
+                          Cant. pagada
                         </label>
                         <Input
                           type="text"
@@ -961,7 +932,7 @@ export function PurchaseForm({
                           value={r.quantity}
                           onFocus={(e) => e.target.select()}
                           onChange={(e) => onQuantityChange(r.uid, e.target.value)}
-                          aria-label="Cantidad"
+                          aria-label="Cantidad pagada"
                         />
                       </div>
                       <div>
@@ -970,9 +941,7 @@ export function PurchaseForm({
                         </label>
                         <Select
                           value={r.unit}
-                          onChange={(e) =>
-                            updateRow(r.uid, { unit: e.target.value })
-                          }
+                          onChange={(e) => updateRow(r.uid, { unit: e.target.value })}
                           aria-label="Unidad de medida"
                           className="mt-1 h-11 text-[12px]"
                         >
@@ -991,7 +960,33 @@ export function PurchaseForm({
                       </div>
                     </div>
 
-                    {/* Total cost (the main editable amount) */}
+                    {/* Bonificación */}
+                    <div className="mt-2">
+                      <label className="block font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-emerald-500/70">
+                        Bonificadas / regaladas
+                      </label>
+                      <div className="mt-1 flex items-center gap-2">
+                        <Input
+                          type="text"
+                          inputMode="decimal"
+                          mono
+                          className="h-10 w-[90px] text-right text-[14px]"
+                          value={r.quantity_bonus}
+                          onFocus={(e) => e.target.select()}
+                          onChange={(e) => onBonusChange(r.uid, e.target.value)}
+                          aria-label="Unidades bonificadas"
+                        />
+                        {hasBonus ? (
+                          <span className="font-mono text-[11px] text-emerald-400">
+                            Total recibido: <strong>{totalReceived}</strong>
+                          </span>
+                        ) : (
+                          <span className="font-mono text-[11px] text-muted-foreground/50">0 = sin bonificación</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Total cost */}
                     <div className="mt-3">
                       <div className="flex items-baseline justify-between">
                         <label className="font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-muted-foreground/70">
@@ -1009,7 +1004,6 @@ export function PurchaseForm({
                         mono
                         className="mt-1 h-12 text-right text-[16px]"
                         value={r.total_cost}
-                        disabled={r.is_gift}
                         onFocus={(e) => e.target.select()}
                         onChange={(e) => onTotalCostChange(r.uid, e.target.value)}
                         aria-label="Costo total de la fila"
@@ -1020,28 +1014,12 @@ export function PurchaseForm({
                           {isTaxInclusive ? "bruto" : "neto"}/{r.unit}
                         </span>
                       </div>
+                      {hasBonus ? (
+                        <div className="mt-0.5 text-right font-mono text-[11px] tabular-nums text-emerald-400">
+                          Efectivo: {unitCostFmt.format(toNum(toUnitPrice(effectiveCostBig)))}/{r.unit}
+                        </div>
+                      ) : null}
                     </div>
-
-                    {/* Gift toggle */}
-                    <button
-                      type="button"
-                      onClick={() => toggleGift(r.uid)}
-                      className={
-                        "mt-3 flex w-full items-center justify-center gap-2 rounded-sm border px-3 py-2.5 font-mono text-[11px] font-bold uppercase tracking-[0.14em] transition-colors " +
-                        (r.is_gift
-                          ? "border-emerald-500 bg-emerald-500/10 text-emerald-400"
-                          : "border-steel-700 bg-steel-900/60 text-muted-foreground hover:border-emerald-500/40 hover:text-emerald-400")
-                      }
-                    >
-                      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <polyline points="20 12 20 22 4 22 4 12" />
-                        <rect x="2" y="7" width="20" height="5" />
-                        <line x1="12" y1="22" x2="12" y2="7" />
-                        <path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z" />
-                        <path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z" />
-                      </svg>
-                      {r.is_gift ? "Bonificación activa" : "Marcar como bonificación"}
-                    </button>
                   </div>
                 );
               })

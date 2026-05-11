@@ -7,24 +7,25 @@ import { saleSchema, type SaleInput } from "@/lib/validations/sale";
 import { saleReturnSchema, type SaleReturnInput } from "@/lib/validations/sale-return";
 
 export type CreateSaleResult = {
-  ok?: boolean;
+  ok?:     boolean;
   saleId?: string;
-  error?: string;
+  error?:  string;
 } | null;
 
 export type VoidSaleResult = {
-  ok?: boolean;
+  ok?:   boolean;
   error?: string;
 } | null;
 
 export type CreateSaleReturnResult = {
-  ok?: boolean;
-  returnId?: string;
-  error?: string;
+  ok?:        boolean;
+  returnId?:  string;
+  error?:     string;
 } | null;
 
 export async function createSaleAction(
-  input: SaleInput
+  input: SaleInput,
+  cashSessionId?: string | null
 ): Promise<CreateSaleResult> {
   const { user, membership } = await getActiveMembership();
   if (!user || !membership) return { error: "Sesión expirada." };
@@ -39,18 +40,19 @@ export async function createSaleAction(
   const supabase = await createClient();
 
   const { data: saleId, error } = await supabase.rpc("create_sale", {
-    p_tenant_id:     membership.tenant_id,
-    p_customer_id:   data.customer_id,
-    p_warehouse_id:  data.warehouse_id,
-    p_items:         data.items as never,
-    p_payments:      data.payments as never,
-    p_notes:         data.notes ?? null,
-    p_document_kind: data.document_kind,
-    p_sale_date:     data.sale_date ?? null,
+    p_tenant_id:       membership.tenant_id,
+    p_customer_id:     data.customer_id,
+    p_warehouse_id:    data.warehouse_id,
+    p_items:           data.items as never,
+    p_payments:        data.payments as never,
+    p_notes:           data.notes ?? null,
+    p_document_kind:   data.document_kind,
+    p_sale_date:       data.sale_date ?? null,
+    p_cash_session_id: cashSessionId ?? null,
   } as never);
 
   if (error) {
-    console.error("createSaleAction RPC error:", error);
+    console.error("createSaleAction RPC error:", error.message, error.code);
     const msg = error.message ?? "";
     if (
       msg.startsWith("Stock insuficiente") ||
@@ -63,7 +65,8 @@ export async function createSaleAction(
       msg.startsWith("Sin acceso") ||
       msg.startsWith("Precio de ajuste") ||
       msg.startsWith("Se requiere una razón") ||
-      msg.startsWith("Descuento máximo")
+      msg.startsWith("Descuento máximo") ||
+      msg.startsWith("Sesión de caja")
     ) {
       return { error: msg };
     }
@@ -73,6 +76,7 @@ export async function createSaleAction(
   revalidateTag("products");
   revalidatePath("/dashboard/pos");
   revalidatePath("/dashboard/pos/ventas");
+  revalidatePath("/dashboard/pos/caja");
   revalidatePath("/dashboard/inventario/stock");
   revalidatePath("/dashboard/inventario/movimientos");
 
@@ -80,9 +84,10 @@ export async function createSaleAction(
 }
 
 export async function voidSaleAction(input: {
-  sale_id: string;
-  reason:  string;
-  note?:   string | null;
+  sale_id:         string;
+  reason:          string;
+  note?:           string | null;
+  cash_session_id?: string | null;
 }): Promise<VoidSaleResult> {
   const { user, membership } = await getActiveMembership();
   if (!user || !membership) return { error: "Sesión expirada." };
@@ -93,14 +98,15 @@ export async function voidSaleAction(input: {
   const supabase = await createClient();
 
   const { error } = await supabase.rpc("void_sale", {
-    p_tenant_id: membership.tenant_id,
-    p_sale_id:   input.sale_id,
-    p_reason:    input.reason.trim(),
-    p_note:      input.note ?? null,
+    p_tenant_id:       membership.tenant_id,
+    p_sale_id:         input.sale_id,
+    p_reason:          input.reason.trim(),
+    p_note:            input.note ?? null,
+    p_cash_session_id: input.cash_session_id ?? null,
   } as never);
 
   if (error) {
-    console.error("voidSaleAction RPC error:", error);
+    console.error("voidSaleAction RPC error:", error.message, error.code);
     const msg = error.message ?? "";
     if (
       msg.startsWith("No autenticado") ||
@@ -109,7 +115,8 @@ export async function voidSaleAction(input: {
       msg.startsWith("Se requiere un motivo") ||
       msg.startsWith("Venta no encontrada") ||
       msg.startsWith("La venta ya está") ||
-      msg.startsWith("Solo se pueden anular")
+      msg.startsWith("Solo se pueden anular") ||
+      msg.startsWith("Sesión de caja")
     ) {
       return { error: msg };
     }
@@ -118,7 +125,7 @@ export async function voidSaleAction(input: {
 
   revalidatePath("/dashboard/pos/ventas");
   revalidatePath(`/dashboard/pos/ventas/${input.sale_id}`);
-  revalidatePath("/dashboard/pos/cierre");
+  revalidatePath("/dashboard/pos/caja");
   revalidatePath("/dashboard/inventario/stock");
   revalidatePath("/dashboard/inventario/movimientos");
 
@@ -126,12 +133,12 @@ export async function voidSaleAction(input: {
 }
 
 export async function createSaleReturnAction(
-  input: SaleReturnInput
+  input: SaleReturnInput,
+  cashSessionId?: string | null
 ): Promise<CreateSaleReturnResult> {
   const { user, membership } = await getActiveMembership();
   if (!user || !membership) return { error: "Sesión expirada." };
 
-  // Double-check role at action level before even hitting the RPC
   if (membership.role !== "owner" && membership.role !== "admin") {
     return { error: "Sin permisos para procesar devoluciones." };
   }
@@ -155,10 +162,11 @@ export async function createSaleReturnAction(
     p_refund_method:    data.refund_method ?? null,
     p_refund_reference: data.refund_reference ?? null,
     p_exchange_sale_id: data.exchange_sale_id ?? null,
+    p_cash_session_id:  cashSessionId ?? null,
   } as never);
 
   if (error) {
-    console.error("createSaleReturnAction RPC error:", error);
+    console.error("createSaleReturnAction RPC error:", error.message, error.code);
     const msg = error.message ?? "";
     if (
       msg.startsWith("No autenticado") ||
@@ -171,7 +179,9 @@ export async function createSaleReturnAction(
       msg.startsWith("No se puede devolver") ||
       msg.startsWith("Solo se pueden devolver") ||
       msg.startsWith("Ítem de venta") ||
-      msg.startsWith("Cantidad a devolver")
+      msg.startsWith("Cantidad a devolver") ||
+      msg.startsWith("El monto de reembolso") ||
+      msg.startsWith("Sesión de caja")
     ) {
       return { error: msg };
     }
@@ -181,7 +191,7 @@ export async function createSaleReturnAction(
   revalidateTag("products");
   revalidatePath(`/dashboard/pos/ventas/${data.sale_id}`);
   revalidatePath("/dashboard/pos/ventas");
-  revalidatePath("/dashboard/pos/cierre");
+  revalidatePath("/dashboard/pos/caja");
   revalidatePath("/dashboard/inventario/stock");
   revalidatePath("/dashboard/inventario/movimientos");
 
