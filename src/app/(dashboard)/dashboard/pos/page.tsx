@@ -1,0 +1,156 @@
+import type { Metadata } from "next";
+import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
+import { getActiveMembership } from "@/lib/supabase/membership";
+import { getPosPermissions } from "@/lib/auth/permissions";
+import {
+  PosTerminal,
+  type PosProduct,
+  type PosPresentation,
+  type PosWarehouse,
+} from "./pos-terminal";
+import type { PickedCustomer } from "@/components/dashboard/customer-picker";
+
+export const metadata: Metadata = { title: "POS · SaturLub" };
+export const dynamic = "force-dynamic";
+
+export default async function PosPage() {
+  const { user, membership } = await getActiveMembership();
+  if (!user) redirect("/login");
+  if (!membership) redirect("/onboarding");
+
+  const permissions = getPosPermissions(membership.role);
+  if (!permissions.canUsePOS) redirect("/dashboard");
+
+  const supabase = await createClient();
+  const tenantId = membership.tenant_id;
+
+  // ── Products (base data) ────────────────────────────────────
+  const { data: rawProducts } = await supabase
+    .from("products")
+    .select(
+      "id, name, sku, unit, tax_rate, has_tax, track_inventory, product_kind, default_price"
+    )
+    .eq("is_active", true)
+    .neq("product_kind", "supply")
+    .order("name");
+
+  // ── PUBLICO prices ──────────────────────────────────────────
+  const { data: publicPrices } = await supabase
+    .from("v_product_active_prices")
+    .select("product_id, unit_price")
+    .eq("tier_code", "PUBLICO");
+
+  const priceByProduct = new Map<string, number>();
+  for (const r of publicPrices ?? []) {
+    priceByProduct.set(r.product_id as string, Number(r.unit_price ?? 0));
+  }
+
+  // ── Stock (sum across all warehouses) ──────────────────────
+  const { data: balances } = await supabase
+    .from("inventory_balances")
+    .select("product_id, quantity_on_hand");
+
+  const stockByProduct = new Map<string, number>();
+  for (const b of balances ?? []) {
+    const cur = stockByProduct.get(b.product_id as string) ?? 0;
+    stockByProduct.set(b.product_id as string, cur + Number(b.quantity_on_hand ?? 0));
+  }
+
+  // ── Presentations (post-v3 migration, graceful fallback) ───
+  type RawPres = {
+    id: string;
+    product_id: string;
+    name: string;
+    unit_label: string;
+    base_qty: number;
+    unit_price: number | null;
+    is_default: boolean;
+    sort_order: number;
+  };
+
+  let presByProduct = new Map<string, PosPresentation[]>();
+  {
+    const { data: rawPres } = await supabase
+      .from("product_presentations")
+      .select("id, product_id, name, unit_label, base_qty, unit_price, is_default, sort_order")
+      .eq("is_active", true)
+      .order("sort_order");
+
+    if (rawPres) {
+      for (const p of rawPres as unknown as RawPres[]) {
+        const arr = presByProduct.get(p.product_id) ?? [];
+        arr.push({
+          id:         p.id,
+          name:       p.name,
+          unit_label: p.unit_label,
+          base_qty:   Number(p.base_qty ?? 1),
+          unit_price: p.unit_price != null ? Number(p.unit_price) : null,
+          is_default: p.is_default,
+          sort_order: p.sort_order,
+        });
+        presByProduct.set(p.product_id, arr);
+      }
+    }
+  }
+
+  // ── Build PosProduct list ───────────────────────────────────
+  const products: PosProduct[] = (rawProducts ?? []).map((p) => {
+    const pid   = p.id as string;
+    const price = priceByProduct.get(pid) ?? (p.default_price as number | null) ?? 0;
+    return {
+      id:              pid,
+      name:            p.name as string,
+      sku:             p.sku as string,
+      unit:            p.unit as string,
+      price:           Number(price),
+      tax_rate:        Number(p.tax_rate ?? 15),
+      has_tax:         (p.has_tax as boolean | null) ?? true,
+      track_inventory: (p.track_inventory as boolean | null) ?? true,
+      product_kind:    p.product_kind as string,
+      stock:           stockByProduct.get(pid) ?? 0,
+      presentations:   presByProduct.get(pid) ?? [],
+    };
+  });
+
+  // ── Warehouses ──────────────────────────────────────────────
+  const { data: rawWarehouses } = await supabase
+    .from("warehouses")
+    .select("id, name")
+    .order("name");
+
+  const warehouses: PosWarehouse[] = (rawWarehouses ?? []).map((w) => ({
+    id:   w.id as string,
+    name: w.name as string,
+  }));
+
+  // ── Default customer: Consumidor Final ─────────────────────
+  const { data: defaultCustomerRaw } = await supabase
+    .from("business_partners")
+    .select("id, full_name, document_type, document_number, phone")
+    .eq("document_type", "CONSUMIDOR_FINAL")
+    .eq("is_active", true)
+    .maybeSingle();
+
+  const defaultCustomer: PickedCustomer | null = defaultCustomerRaw
+    ? {
+        id:              defaultCustomerRaw.id as string,
+        full_name:       defaultCustomerRaw.full_name as string,
+        document_type:   defaultCustomerRaw.document_type as string,
+        document_number: defaultCustomerRaw.document_number as string,
+        phone:           defaultCustomerRaw.phone as string | null,
+      }
+    : null;
+
+  return (
+    <PosTerminal
+      products={products}
+      warehouses={warehouses}
+      defaultCustomer={defaultCustomer}
+      permissions={permissions}
+      userName={
+        (user.user_metadata?.full_name as string | undefined) ?? user.email ?? ""
+      }
+    />
+  );
+}
