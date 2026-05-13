@@ -5,6 +5,12 @@ import { createClient } from "@/lib/supabase/server";
 import { getActiveMembership } from "@/lib/supabase/membership";
 import { saleSchema, type SaleInput } from "@/lib/validations/sale";
 import { saleReturnSchema, type SaleReturnInput } from "@/lib/validations/sale-return";
+import {
+  addReceivablePaymentSchema,
+  type AddReceivablePaymentInput,
+  type ReceivableRow,
+  type ReceivablePaymentRow,
+} from "@/lib/validations/receivable";
 
 export type CreateSaleResult = {
   ok?:     boolean;
@@ -40,15 +46,21 @@ export async function createSaleAction(
   const supabase = await createClient();
 
   const { data: saleId, error } = await supabase.rpc("create_sale", {
-    p_tenant_id:       membership.tenant_id,
-    p_customer_id:     data.customer_id,
-    p_warehouse_id:    data.warehouse_id,
-    p_items:           data.items as never,
-    p_payments:        data.payments as never,
-    p_notes:           data.notes ?? null,
-    p_document_kind:   data.document_kind,
-    p_sale_date:       data.sale_date ?? null,
-    p_cash_session_id: cashSessionId ?? null,
+    p_tenant_id:              membership.tenant_id,
+    p_customer_id:            data.customer_id,
+    p_warehouse_id:           data.warehouse_id,
+    p_items:                  data.items as never,
+    p_payments:               data.payments as never,
+    p_notes:                  data.notes ?? null,
+    p_document_kind:          data.document_kind,
+    p_sale_date:              data.sale_date ?? null,
+    p_cash_session_id:        cashSessionId ?? null,
+    p_is_credit:              data.is_credit ?? false,
+    p_initial_payment:        data.initial_payment ?? null,
+    p_initial_payment_method: data.initial_payment_method ?? null,
+    p_initial_payment_ref:    data.initial_payment_ref ?? null,
+    p_due_date:               data.due_date ?? null,
+    p_credit_notes:           data.credit_notes ?? null,
   } as never);
 
   if (error) {
@@ -196,4 +208,125 @@ export async function createSaleReturnAction(
   revalidatePath("/dashboard/inventario/movimientos");
 
   return { ok: true, returnId: typeof returnId === "string" ? returnId : undefined };
+}
+
+// ── Fiado / cuentas por cobrar ──────────────────────────────────────────────
+
+export type AddReceivablePaymentResult = {
+  ok?:       boolean;
+  paymentId?: string;
+  error?:    string;
+} | null;
+
+export async function addReceivablePaymentAction(
+  input: AddReceivablePaymentInput,
+  cashSessionId?: string | null
+): Promise<AddReceivablePaymentResult> {
+  const { user, membership } = await getActiveMembership();
+  if (!user || !membership) return { error: "Sesión expirada." };
+
+  const parsed = addReceivablePaymentSchema.safeParse(input);
+  if (!parsed.success) {
+    const first = parsed.error.issues[0];
+    return { error: first?.message ?? "Datos de abono inválidos." };
+  }
+
+  const data = parsed.data;
+  const supabase = await createClient();
+
+  const { data: paymentId, error } = await supabase.rpc("add_receivable_payment", {
+    p_tenant_id:       membership.tenant_id,
+    p_receivable_id:   data.receivable_id,
+    p_amount:          data.amount,
+    p_payment_method:  data.payment_method,
+    p_payment_date:    data.payment_date ?? null,
+    p_reference:       data.reference ?? null,
+    p_notes:           data.notes ?? null,
+    p_cash_session_id: cashSessionId ?? null,
+  } as never);
+
+  if (error) {
+    console.error("addReceivablePaymentAction RPC error:", error.message);
+    const msg = error.message ?? "";
+    if (
+      msg.startsWith("No autenticado") ||
+      msg.startsWith("Sin acceso") ||
+      msg.startsWith("Cuenta por cobrar") ||
+      msg.startsWith("Esta cuenta") ||
+      msg.startsWith("El abono") ||
+      msg.startsWith("Método de pago") ||
+      msg.startsWith("El monto") ||
+      msg.startsWith("Sesión de caja")
+    ) {
+      return { error: msg };
+    }
+    return { error: "No se pudo registrar el abono. Intenta de nuevo." };
+  }
+
+  revalidatePath("/dashboard/pos/fiado");
+  revalidatePath("/dashboard/clientes");
+  revalidatePath("/dashboard/pos/caja");
+
+  return { ok: true, paymentId: typeof paymentId === "string" ? paymentId : undefined };
+}
+
+export type GetReceivablesResult = {
+  rows?:  ReceivableRow[];
+  error?: string;
+} | null;
+
+export async function getCustomerReceivablesAction(
+  customerId?: string | null
+): Promise<GetReceivablesResult> {
+  const { user, membership } = await getActiveMembership();
+  if (!user || !membership) return { error: "Sesión expirada." };
+
+  const supabase = await createClient();
+
+  let query = supabase
+    .from("v_customer_receivables")
+    .select("*")
+    .eq("tenant_id", membership.tenant_id)
+    .order("created_at", { ascending: false });
+
+  if (customerId) {
+    query = query.eq("customer_id", customerId);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error("getCustomerReceivablesAction error:", error.message);
+    return { error: "No se pudo cargar las cuentas por cobrar." };
+  }
+
+  return { rows: (data ?? []) as ReceivableRow[] };
+}
+
+export type GetReceivablePaymentsResult = {
+  rows?:  ReceivablePaymentRow[];
+  error?: string;
+} | null;
+
+export async function getReceivablePaymentsAction(
+  receivableId: string
+): Promise<GetReceivablePaymentsResult> {
+  const { user, membership } = await getActiveMembership();
+  if (!user || !membership) return { error: "Sesión expirada." };
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from("customer_receivable_payments")
+    .select("*")
+    .eq("tenant_id", membership.tenant_id)
+    .eq("receivable_id", receivableId)
+    .order("payment_date", { ascending: false });
+
+  if (error) {
+    console.error("getReceivablePaymentsAction error:", error.message);
+    return { error: "No se pudo cargar el historial de abonos." };
+  }
+
+  return { rows: (data ?? []) as ReceivablePaymentRow[] };
 }

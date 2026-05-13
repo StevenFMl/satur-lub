@@ -58,7 +58,7 @@ export default async function NuevaCompraPage() {
     if (!prev || cost < prev.cost) {
       historyMap.set(h.product_id, {
         cost,
-        supplier: h.business_partners?.full_name || "Desconocido",
+        supplier: (h.business_partners as any)?.full_name || "Desconocido",
       });
     }
   }

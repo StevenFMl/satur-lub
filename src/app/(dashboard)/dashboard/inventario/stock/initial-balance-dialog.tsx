@@ -92,7 +92,7 @@ export function InitialBalanceDialog({ open, onClose, products, warehouses }: Pr
             <Select
               id="warehouse_id"
               name="warehouse_id"
-              defaultValue={warehouses.length === 1 ? warehouses[0].id : ""}
+              defaultValue={warehouses.length === 1 ? (warehouses[0]?.id ?? "") : ""}
               className="w-full text-[13px] h-10"
             >
               {warehouses.length !== 1 && <option value="">Seleccione una bodega</option>}

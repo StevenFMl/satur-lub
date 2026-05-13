@@ -294,8 +294,8 @@ export function ProductsTable({
               <tr>
                 <Th>Producto</Th>
                 <Th className="hidden sm:table-cell">SKU</Th>
-                <Th className="text-right">Precio público (Inc. IVA)</Th>
-                <Th className="hidden sm:table-cell text-right">Costo prom.</Th>
+                <Th className="text-right">P.V. c/IVA</Th>
+                <Th className="hidden sm:table-cell text-right">Costos (Últ. / CPP)</Th>
                 <Th>Estado</Th>
                 {canManage ? <Th className="text-right">Acción</Th> : null}
               </tr>
@@ -333,9 +333,16 @@ export function ProductsTable({
                     </Td>
                     <Td className="text-right">
                       {r.default_price != null ? (
-                        <span className="font-mono text-[13px] tabular-nums text-foreground">
-                          {moneyFmt.format(Number(r.default_price))}
-                        </span>
+                        <>
+                          <span className="font-mono text-[13px] font-bold tabular-nums text-safety-500">
+                            {moneyFmt.format(Number(r.default_price))}
+                          </span>
+                          {r.has_tax && r.tax_rate != null && r.tax_rate > 0 ? (
+                            <div className="mt-0.5 font-mono text-[10px] tabular-nums text-muted-foreground/60">
+                              s/IVA {moneyFmt.format(Number(r.default_price) / (1 + r.tax_rate / 100))}
+                            </div>
+                          ) : null}
+                        </>
                       ) : (
                         <span className="font-mono text-[12px] text-muted-foreground">
                           —
@@ -343,9 +350,36 @@ export function ProductsTable({
                       )}
                     </Td>
                     <Td className="hidden sm:table-cell text-right">
-                      <span className="font-mono text-[12.5px] tabular-nums text-muted-foreground">
-                        {moneyFmt.format(Number(r.average_cost ?? 0))}
-                      </span>
+                      <div className="flex flex-col items-end gap-1">
+                        {r.last_purchase_cost != null ? (
+                          <>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] uppercase text-muted-foreground/60">Últ. compra</span>
+                              <span className="font-mono text-[13px] font-bold tabular-nums text-foreground">
+                                {moneyFmt.format(Number(r.last_purchase_cost))}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] uppercase text-muted-foreground/60">CPP</span>
+                              <span className="font-mono text-[11px] tabular-nums text-muted-foreground/70">
+                                {moneyFmt.format(Number(r.average_cost ?? 0))}
+                              </span>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] uppercase text-muted-foreground/60">CPP</span>
+                              <span className="font-mono text-[13px] font-bold tabular-nums text-foreground">
+                                {moneyFmt.format(Number(r.average_cost ?? 0))}
+                              </span>
+                            </div>
+                            <span className="font-mono text-[9px] text-muted-foreground/40 mt-0.5">
+                              Sin compra reg.
+                            </span>
+                          </>
+                        )}
+                      </div>
                     </Td>
                     <Td>
                       <Badge tone={r.is_active ? "active" : "neutral"}>

@@ -65,9 +65,16 @@ export async function updateSession(request: NextRequest) {
   );
 
   // Forzar el refresh del access token si está por vencer.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  let user = null;
+  try {
+    const { data } = await supabase.auth.getUser();
+    user = data.user;
+  } catch (error) {
+    // Si getUser falla por red (fetch failed), intentamos recuperar desde sesión
+    console.warn("Middleware auth.getUser() error, cayendo a getSession()", error);
+    const { data } = await supabase.auth.getSession();
+    user = data.session?.user ?? null;
+  }
 
   const { pathname } = request.nextUrl;
 

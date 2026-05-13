@@ -678,8 +678,8 @@ export function PurchaseForm({
                 <tr>
                   <Th>Producto</Th>
                   <Th className="w-[260px]">Cant. pagada / Bonif.</Th>
-                  <Th className="w-[160px] text-right">
-                    Costo unit. {isTaxInclusive ? "(bruto)" : "(neto)"}
+                  <Th className="w-[180px] text-right">
+                    Costos {isTaxInclusive ? "(brutos)" : "(netos)"}
                   </Th>
                   <Th className="w-[180px] text-right">
                     Costo total {isTaxInclusive ? "(bruto)" : "(neto)"}
@@ -792,17 +792,26 @@ export function PurchaseForm({
                         </div>
                       </td>
                       <td className="px-4 py-3 align-top text-right">
-                        <span className="block font-mono text-[14px] tabular-nums text-foreground">
-                          {unitCostFmt.format(toNum(toUnitPrice(unitCostBig)))}
-                        </span>
-                        <span className="mt-0.5 block font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground/70">
-                          {isTaxInclusive ? "bruto" : "neto"}/{r.unit}
-                        </span>
-                        {hasBonus ? (
-                          <span className="mt-1 block font-mono text-[10px] tabular-nums text-emerald-400">
-                            efect.: {unitCostFmt.format(toNum(toUnitPrice(effectiveCostBig)))}
-                          </span>
-                        ) : null}
+                        <div className="flex flex-col items-end gap-1">
+                          <div>
+                            <span className="block font-mono text-[14px] font-bold tabular-nums text-foreground">
+                              {unitCostFmt.format(toNum(toUnitPrice(unitCostBig)))}
+                            </span>
+                            <span className="block font-mono text-[9px] uppercase tracking-[0.1em] text-muted-foreground/70">
+                              {hasBonus ? "costo negociado" : `costo unit. ${isTaxInclusive ? "(bruto)" : "(neto)"}`}
+                            </span>
+                          </div>
+                          {hasBonus ? (
+                            <div className="mt-1 rounded-sm bg-emerald-950/30 px-2 py-1 border border-emerald-900/50">
+                              <span className="block font-mono text-[13px] font-bold tabular-nums text-emerald-400">
+                                {unitCostFmt.format(toNum(toUnitPrice(effectiveCostBig)))}
+                              </span>
+                              <span className="block font-mono text-[9px] uppercase tracking-[0.1em] text-emerald-500/80">
+                                costo efectivo
+                              </span>
+                            </div>
+                          ) : null}
+                        </div>
                       </td>
                       <td className="px-4 py-3 align-top">
                         <div className="w-full">

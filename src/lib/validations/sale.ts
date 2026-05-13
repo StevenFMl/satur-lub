@@ -54,7 +54,7 @@ export const saleSchema = z.object({
   customer_id:   z.string().uuid("Cliente inválido."),
   warehouse_id:  z.string().uuid("Bodega inválida.").nullable(),
   items:         z.array(saleItemSchema).min(1, "La venta requiere al menos un ítem."),
-  payments:      z.array(salePaymentSchema).min(1, "La venta requiere al menos un pago."),
+  payments:      z.array(salePaymentSchema).min(0).default([]),
   notes:         z.string().max(500).optional().nullable(),
   document_kind: z.enum(["ticket", "invoice"]).default("ticket"),
   sale_date:     z
@@ -62,6 +62,17 @@ export const saleSchema = z.object({
     .regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha inválida (YYYY-MM-DD).")
     .optional()
     .nullable(),
+  // Fiado / crédito
+  is_credit:              z.boolean().optional().default(false),
+  initial_payment:        z.number().min(0).optional().nullable(),
+  initial_payment_method: z.enum(["cash", "card", "transfer"]).optional().nullable(),
+  initial_payment_ref:    z.string().max(120).optional().nullable(),
+  due_date:               z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha inválida.")
+    .optional()
+    .nullable(),
+  credit_notes: z.string().max(500).optional().nullable(),
 });
 
 export type SaleInput   = z.infer<typeof saleSchema>;

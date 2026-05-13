@@ -311,8 +311,8 @@ export function ProductForm({ initial, onSuccess }: Props) {
             </div>
             <p className="field-hint px-1">
               {priceIncludesIva
-                ? "Precios de venta ingresados con IVA incluido (bruto). Se guarda la base neta en la DB."
-                : "Precios de venta ingresados sin IVA (neto). El precio final con IVA se muestra como referencia."}
+                ? "Precios de venta ingresados con IVA incluido (bruto). Se guarda este precio final en la DB."
+                : "Precios de venta ingresados sin IVA (neto). Se guarda convertido a precio con IVA en la DB."}
               {" "}El costo referencial de arriba es siempre neto y no se afecta por este toggle.
             </p>
           </div>

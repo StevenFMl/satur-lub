@@ -26,7 +26,7 @@ export default async function StockPage() {
       product_id,
       warehouse_id,
       quantity_on_hand,
-      products ( id, name, sku, unit, average_cost, default_price, tax_rate, has_tax ),
+      products ( id, name, sku, unit, average_cost, last_purchase_cost, default_price, tax_rate, has_tax ),
       warehouses ( id, name )
       `
     )
@@ -54,6 +54,7 @@ export default async function StockPage() {
   type RawProduct = {
     id: string; name: string; sku: string; unit: string;
     average_cost: number | null;
+    last_purchase_cost: number | null;
     default_price: number | null;
     tax_rate: number | null;
     has_tax: boolean | null;
@@ -74,6 +75,7 @@ export default async function StockPage() {
         unit: p?.unit ?? "unidad",
         quantity_on_hand: Number(b.quantity_on_hand ?? 0),
         average_cost: p?.average_cost != null ? Number(p.average_cost) : null,
+        last_purchase_cost: p?.last_purchase_cost != null ? Number(p.last_purchase_cost) : null,
         sale_price: p?.default_price != null ? Number(p.default_price) : null,
         tax_rate: Number(p?.tax_rate ?? 15),
         has_tax: p?.has_tax ?? true,

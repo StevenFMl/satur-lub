@@ -1,16 +1,19 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CONSUMIDOR_FINAL_DOC } from "@/lib/validations/customer";
 import type { CustomerRow } from "./customers-table";
+import type { ReceivableRow } from "@/lib/validations/receivable";
 
 type Props = {
-  customer: CustomerRow;
-  onEdit: () => void;
+  customer:      CustomerRow;
+  onEdit:        () => void;
   onToggleActive: () => void;
   togglePending: boolean;
+  receivables?:  ReceivableRow[];
 };
 
 function isConsumidorFinal(row: CustomerRow): boolean {
@@ -46,6 +49,7 @@ export function CustomerDetail({
   onEdit,
   onToggleActive,
   togglePending,
+  receivables = [],
 }: Props) {
   const isCF = isConsumidorFinal(customer);
   const initials = customer.full_name
@@ -123,6 +127,36 @@ export function CustomerDetail({
             value={dateFmt.format(new Date(customer.created_at))}
           />
         </div>
+
+        {/* ── Cuenta corriente (fiado) ── */}
+        {(() => {
+          if (isCF || receivables.length === 0) return null;
+          const moneyFmt = new Intl.NumberFormat("es-EC", { style: "currency", currency: "USD", minimumFractionDigits: 2 });
+          const active   = receivables.filter((r) => r.status !== "paid" && r.status !== "cancelled");
+          const overdue  = active.filter((r) => r.is_overdue);
+          const total    = active.reduce((s, r) => s + r.balance_due, 0);
+          if (active.length === 0) return null;
+          return (
+            <div className="border-t border-steel-700 px-6 py-4">
+              <div className="mb-3 flex items-center justify-between">
+                <span className="font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground/70">
+                  Cuenta corriente (fiado)
+                </span>
+                <Link
+                  href="/dashboard/pos/fiado"
+                  className="font-mono text-[10px] uppercase tracking-[0.12em] text-safety-500 hover:text-safety-400 transition-colors"
+                >
+                  Ver todo →
+                </Link>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <MiniStat label="Saldo total" value={moneyFmt.format(total)} tone={total > 0 ? "warning" : "neutral"} />
+                <MiniStat label="Cuentas" value={String(active.length)} tone="neutral" />
+                <MiniStat label="Vencidas" value={String(overdue.length)} tone={overdue.length > 0 ? "error" : "neutral"} />
+              </div>
+            </div>
+          );
+        })()}
 
         {/* ── Notas ── */}
         {customer.notes && (
@@ -262,5 +296,19 @@ function LockIcon({ className }: { className?: string }) {
       <rect x="3" y="11" width="18" height="11" rx="2" />
       <path d="M7 11V7a5 5 0 0 1 10 0v4" />
     </svg>
+  );
+}
+
+function MiniStat({ label, value, tone }: { label: string; value: string; tone: "neutral" | "warning" | "error" }) {
+  const tones = {
+    neutral: "text-foreground",
+    warning: "text-signal-400",
+    error:   "text-red-400",
+  };
+  return (
+    <div className="rounded-sm border border-steel-700 bg-steel-900/40 px-2 py-2 text-center">
+      <p className="font-mono text-[9px] font-bold uppercase tracking-[0.16em] text-muted-foreground/60">{label}</p>
+      <p className={["mt-1 font-mono text-[14px] font-bold tabular-nums", tones[tone]].join(" ")}>{value}</p>
+    </div>
   );
 }
