@@ -65,24 +65,36 @@ export const RECEIVABLE_STATUS_TONES: Record<
   cancelled: "neutral",
 };
 
+export type FollowupResult = "no_contact" | "no_answer" | "called" | "promised_pay";
+
+export const FOLLOWUP_RESULT_LABELS: Record<FollowupResult, string> = {
+  no_contact:   "Sin contactar",
+  no_answer:    "No respondió",
+  called:       "Contactado",
+  promised_pay: "Prometió pagar",
+};
+
 export type ReceivableRow = {
-  id:                  string;
-  tenant_id:           string;
-  sale_id:             string;
-  customer_id:         string;
-  customer_name:       string;
-  customer_document:   string | null;
-  customer_phone:      string | null;
-  sale_date:           string;
-  document_kind:       string;
-  total_amount:        number;
-  paid_amount:         number;
-  balance_due:         number;
-  status:              ReceivableStatus;
-  due_date:            string | null;
-  is_overdue:          boolean;
-  notes:               string | null;
-  created_at:          string;
+  id:                    string;
+  tenant_id:             string;
+  sale_id:               string;
+  customer_id:           string;
+  customer_name:         string;
+  customer_document:     string | null;
+  customer_phone:        string | null;
+  sale_date:             string;
+  document_kind:         string;
+  total_amount:          number;
+  paid_amount:           number;
+  balance_due:           number;
+  status:                ReceivableStatus;
+  due_date:              string | null;
+  is_overdue:            boolean;
+  notes:                 string | null;
+  created_at:            string;
+  last_followup_at:      string | null;
+  last_followup_result:  FollowupResult | null;
+  next_followup_date:    string | null;
 };
 
 export type ReceivablePaymentRow = {

@@ -181,7 +181,10 @@ export function PosTerminal({
   const [page, setPage]                     = React.useState(0);
   const [mobileCartOpen, setMobileCartOpen] = React.useState(false);
   const [checkoutOpen, setCheckoutOpen]     = React.useState(false);
+  const [checkoutMode, setCheckoutMode]     = React.useState<"normal" | "credit">("normal");
   const [flashKeys, setFlashKeys]           = React.useState<Set<string>>(new Set());
+
+  const searchInputRef = React.useRef<HTMLInputElement>(null);
 
   React.useEffect(() => setPage(0), [debouncedQuery]);
 
@@ -243,8 +246,8 @@ export function PosTerminal({
     else setCart((prev) => prev.map((l) => l.key === key ? { ...l, quantity: qty } : l));
   };
 
-  const removeFromCart = (key: string) =>
-    setCart((prev) => prev.filter((l) => l.key !== key));
+  const removeFromCart = React.useCallback((key: string) =>
+    setCart((prev) => prev.filter((l) => l.key !== key)), []);
 
   const applyOverride = (key: string, payload: OverridePayload | null) => {
     setCart((prev) =>
@@ -265,6 +268,66 @@ export function PosTerminal({
     setCustomer(defaultCustomer);
   };
 
+  // ── Bulk cart actions ────────────────────────────────────
+  const applyCourtesy = React.useCallback((reason: string) => {
+    setCart((prev) => prev.map((l) => ({
+      ...l,
+      override_unit_price:   0,
+      price_override_type:   "courtesy",
+      price_override_reason: reason,
+      price_override_note:   null,
+    })));
+  }, []);
+
+  const applyGlobalDiscount = React.useCallback((pct: number) => {
+    setCart((prev) => prev.map((l) => ({
+      ...l,
+      override_unit_price: Math.max(0,
+        Number(Big(l.unit_price).times(Big(100 - pct).div(100)).round(2, Big.roundHalfUp).toString())
+      ),
+      price_override_type:   "price_set",
+      price_override_reason: `Descuento ${pct}%`,
+      price_override_note:   null,
+    })));
+  }, []);
+
+  // ── Keyboard shortcuts ───────────────────────────────────
+  // Use refs to read current state inside a stable listener
+  const canCheckoutRef = React.useRef(false);
+  const checkoutOpenRef = React.useRef(false);
+  const cartRef = React.useRef<CartLine[]>([]);
+  canCheckoutRef.current = cart.length > 0 && customer != null &&
+    !(warehouseId != null && cart.some((l) => l.track_inventory && l.quantity * l.base_qty > l.stock_base));
+  checkoutOpenRef.current = checkoutOpen;
+  cartRef.current = cart;
+
+  React.useEffect(() => {
+    function handler(e: KeyboardEvent) {
+      const tag = (e.target as HTMLElement).tagName;
+      const inInput = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" ||
+                      (e.target as HTMLElement).contentEditable === "true";
+
+      if (e.key === "F4") {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+        return;
+      }
+      if (e.key === "F8" && !inInput && canCheckoutRef.current && !checkoutOpenRef.current) {
+        e.preventDefault();
+        setCheckoutMode("normal");
+        setCheckoutOpen(true);
+        return;
+      }
+      if (e.key === "Delete" && !inInput) {
+        const last = cartRef.current[cartRef.current.length - 1];
+        if (last) setCart((prev) => prev.filter((l) => l.key !== last.key));
+      }
+    }
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []); // intentionally stable — reads via refs
+
   // ── Totals ───────────────────────────────────────────────
   const totals = React.useMemo(() => calcTotals(cart), [cart]);
 
@@ -275,6 +338,11 @@ export function PosTerminal({
   );
 
   const canCheckout = cart.length > 0 && customer != null && !hasStockIssue;
+
+  const openCheckout = (mode: "normal" | "credit") => {
+    setCheckoutMode(mode);
+    setCheckoutOpen(true);
+  };
 
   // ── Render ───────────────────────────────────────────────
   return (
@@ -343,9 +411,10 @@ export function PosTerminal({
           <div className="relative">
             <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
+              ref={searchInputRef}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Buscar producto por nombre o SKU..."
+              placeholder="Buscar producto (F4)..."
               className="h-11 pl-10"
               autoComplete="off"
             />
@@ -503,7 +572,10 @@ export function PosTerminal({
             onRemove={removeFromCart}
             onOverride={applyOverride}
             onClear={clearCart}
-            onCheckout={() => setCheckoutOpen(true)}
+            onCheckout={() => openCheckout("normal")}
+            onCourtesy={applyCourtesy}
+            onGlobalDiscount={applyGlobalDiscount}
+            onFiado={() => openCheckout("credit")}
           />
         </div>
       </div>
@@ -543,10 +615,10 @@ export function PosTerminal({
             onRemove={removeFromCart}
             onOverride={applyOverride}
             onClear={clearCart}
-            onCheckout={() => {
-              setMobileCartOpen(false);
-              setTimeout(() => setCheckoutOpen(true), 200);
-            }}
+            onCheckout={() => { setMobileCartOpen(false); setTimeout(() => openCheckout("normal"), 200); }}
+            onCourtesy={applyCourtesy}
+            onGlobalDiscount={applyGlobalDiscount}
+            onFiado={() => { setMobileCartOpen(false); setTimeout(() => openCheckout("credit"), 200); }}
           />
         </div>
       </Sheet>
@@ -557,8 +629,12 @@ export function PosTerminal({
           open={checkoutOpen}
           onClose={() => setCheckoutOpen(false)}
           cashSessionId={activeCashSession?.id ?? null}
+          initialMode={checkoutMode}
           cart={cart.map((l) => ({
             product_id:            l.product_id,
+            name:                  l.name,
+            unit_price:            l.unit_price,
+            unit_label:            l.unit_label,
             quantity:              l.quantity,
             discount_amount:       l.discount_amount,
             presentation_id:       l.presentation_id,
@@ -580,6 +656,8 @@ export function PosTerminal({
 
 // ── CartPanel ──────────────────────────────────────────────────────────────
 
+type QuickAction = null | "courtesy" | "discount";
+
 function CartPanel({
   cart,
   totals,
@@ -592,22 +670,52 @@ function CartPanel({
   onOverride,
   onClear,
   onCheckout,
+  onCourtesy,
+  onGlobalDiscount,
+  onFiado,
 }: {
-  cart:          CartLine[];
-  totals:        ReturnType<typeof calcTotals>;
-  customer:      PickedCustomer | null;
-  permissions:   PosPermissions;
-  hasStockIssue: boolean;
-  canCheckout:   boolean;
-  onSetQty:      (key: string, qty: number) => void;
-  onRemove:      (key: string) => void;
-  onOverride:    (key: string, payload: OverridePayload | null) => void;
-  onClear:       () => void;
-  onCheckout:    () => void;
+  cart:             CartLine[];
+  totals:           ReturnType<typeof calcTotals>;
+  customer:         PickedCustomer | null;
+  permissions:      PosPermissions;
+  hasStockIssue:    boolean;
+  canCheckout:      boolean;
+  onSetQty:         (key: string, qty: number) => void;
+  onRemove:         (key: string) => void;
+  onOverride:       (key: string, payload: OverridePayload | null) => void;
+  onClear:          () => void;
+  onCheckout:       () => void;
+  onCourtesy:       (reason: string) => void;
+  onGlobalDiscount: (pct: number) => void;
+  onFiado:          () => void;
 }) {
-  const [editingKey, setEditingKey] = React.useState<string | null>(null);
+  const [editingKey, setEditingKey]     = React.useState<string | null>(null);
+  const [quickAction, setQuickAction]   = React.useState<QuickAction>(null);
+  const [courtesyReason, setCourtesyReason] = React.useState("");
+  const [discountPctStr, setDiscountPctStr] = React.useState("");
 
   const overrideCount = cart.filter((l) => l.override_unit_price != null).length;
+
+  function commitCourtesy() {
+    if (!courtesyReason.trim()) return;
+    onCourtesy(courtesyReason.trim());
+    setQuickAction(null);
+    setCourtesyReason("");
+  }
+
+  function commitDiscount() {
+    const pct = parseFloat(discountPctStr.replace(",", "."));
+    if (!isFinite(pct) || pct <= 0 || pct > 100) return;
+    onGlobalDiscount(pct);
+    setQuickAction(null);
+    setDiscountPctStr("");
+  }
+
+  function cancelQuickAction() {
+    setQuickAction(null);
+    setCourtesyReason("");
+    setDiscountPctStr("");
+  }
 
   return (
     <div className="panel flex flex-col rounded-sm overflow-hidden">
@@ -679,9 +787,19 @@ function CartPanel({
                           {line.name}
                         </span>
                         {hasOverride ? (
-                          <span className="shrink-0 rounded-sm border border-signal-600/50 bg-signal-700/15 px-1 py-0.5 font-mono text-[8.5px] font-bold uppercase tracking-[0.08em] text-signal-400">
-                            −{discountPct.toFixed(0)}%
-                          </span>
+                          line.price_override_type === "combo" ? (
+                            <span className="shrink-0 rounded-sm border border-emerald-600/50 bg-emerald-700/15 px-1 py-0.5 font-mono text-[8.5px] font-bold uppercase tracking-[0.08em] text-emerald-400">
+                              COMBO
+                            </span>
+                          ) : line.price_override_type === "courtesy" ? (
+                            <span className="shrink-0 rounded-sm border border-safety-500/40 bg-safety-500/10 px-1 py-0.5 font-mono text-[8.5px] font-bold uppercase tracking-[0.08em] text-safety-500">
+                              CORT.
+                            </span>
+                          ) : (
+                            <span className="shrink-0 rounded-sm border border-signal-600/50 bg-signal-700/15 px-1 py-0.5 font-mono text-[8.5px] font-bold uppercase tracking-[0.08em] text-signal-400">
+                              −{discountPct.toFixed(0)}%
+                            </span>
+                          )
                         ) : null}
                       </div>
 
@@ -807,7 +925,7 @@ function CartPanel({
         )}
       </div>
 
-      {/* Totals + Cobrar */}
+      {/* Totals + Quick actions + Cobrar */}
       {cart.length > 0 ? (
         <div className="space-y-2 border-t-2 border-steel-700 bg-steel-950/60 px-4 py-3">
           <div className="flex justify-between text-[11.5px]">
@@ -825,6 +943,99 @@ function CartPanel({
             </span>
           </div>
 
+          {/* ── Quick actions ──────────────────────────────── */}
+          <div className="space-y-2 rounded-sm border border-steel-700/60 bg-steel-900/40 p-2">
+            {/* Pills row */}
+            <div className="grid grid-cols-3 gap-1.5">
+              <QuickActionPill
+                label="Cortesía"
+                active={quickAction === "courtesy"}
+                onClick={() => setQuickAction(quickAction === "courtesy" ? null : "courtesy")}
+              />
+              <QuickActionPill
+                label="Dto. %"
+                active={quickAction === "discount"}
+                onClick={() => setQuickAction(quickAction === "discount" ? null : "discount")}
+              />
+              <QuickActionPill
+                label="Fiado ▶"
+                active={false}
+                onClick={() => { cancelQuickAction(); onFiado(); }}
+              />
+            </div>
+
+            {/* Courtesy inline form */}
+            {quickAction === "courtesy" ? (
+              <div className="space-y-1.5">
+                <input
+                  type="text"
+                  value={courtesyReason}
+                  onChange={(e) => setCourtesyReason(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") commitCourtesy(); if (e.key === "Escape") cancelQuickAction(); }}
+                  placeholder="Motivo de la cortesía *"
+                  maxLength={200}
+                  autoFocus
+                  className="h-8 w-full rounded-sm border border-steel-700 bg-steel-900 px-2.5 font-mono text-[11px] text-foreground placeholder:text-muted-foreground/40 focus:border-safety-500 focus:outline-none"
+                />
+                <div className="flex gap-1.5">
+                  <button
+                    type="button"
+                    disabled={!courtesyReason.trim()}
+                    onClick={commitCourtesy}
+                    className="flex-1 h-7 rounded-sm border border-safety-500 bg-safety-500/10 font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-safety-500 disabled:cursor-not-allowed disabled:opacity-40 hover:bg-safety-500/20"
+                  >
+                    Aplicar a todos
+                  </button>
+                  <button type="button" onClick={cancelQuickAction}
+                    className="h-7 w-7 grid place-items-center rounded-sm border border-steel-700 text-muted-foreground hover:text-foreground">
+                    <XSmallIcon className="h-3 w-3" />
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            {/* Global discount inline form */}
+            {quickAction === "discount" ? (
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1.5">
+                  <div className="relative flex-1">
+                    <input
+                      type="number"
+                      min={1} max={100} step="0.5"
+                      value={discountPctStr}
+                      onChange={(e) => setDiscountPctStr(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") commitDiscount(); if (e.key === "Escape") cancelQuickAction(); }}
+                      placeholder="10"
+                      autoFocus
+                      onFocus={(e) => e.target.select()}
+                      className="h-8 w-full rounded-sm border border-steel-700 bg-steel-900 pr-6 pl-2.5 font-mono text-[13px] tabular-nums text-foreground focus:border-safety-500 focus:outline-none"
+                    />
+                    <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 font-mono text-[11px] font-bold text-muted-foreground">%</span>
+                  </div>
+                  {discountPctStr && isFinite(parseFloat(discountPctStr)) ? (
+                    <span className="shrink-0 font-mono text-[10px] text-signal-400">
+                      → {moneyFmt.format(Number(Big(totals.gross).times(Big(parseFloat(discountPctStr)).div(100)).round(2).toString()))} dto.
+                    </span>
+                  ) : null}
+                </div>
+                <div className="flex gap-1.5">
+                  <button
+                    type="button"
+                    disabled={!discountPctStr || !isFinite(parseFloat(discountPctStr)) || parseFloat(discountPctStr) <= 0 || parseFloat(discountPctStr) > 100}
+                    onClick={commitDiscount}
+                    className="flex-1 h-7 rounded-sm border border-safety-500 bg-safety-500/10 font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-safety-500 disabled:cursor-not-allowed disabled:opacity-40 hover:bg-safety-500/20"
+                  >
+                    Aplicar a todos
+                  </button>
+                  <button type="button" onClick={cancelQuickAction}
+                    className="h-7 w-7 grid place-items-center rounded-sm border border-steel-700 text-muted-foreground hover:text-foreground">
+                    <XSmallIcon className="h-3 w-3" />
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </div>
+
           {hasStockIssue ? (
             <p className="rounded-sm border border-hazard-500/40 bg-hazard-700/10 px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-red-400">
               Stock insuficiente en un ítem
@@ -836,6 +1047,7 @@ function CartPanel({
             disabled={!canCheckout}
             size="md"
             className="h-11 w-full font-bold"
+            title="F8"
           >
             <CashIcon className="mr-1.5 h-4 w-4" />
             Cobrar {moneyFmt.format(Number(totals.gross))}
@@ -860,7 +1072,13 @@ function OverrideEditor({
   onCancel: () => void;
 }) {
   const effective = line.override_unit_price ?? line.unit_price;
+  const [inputMode, setInputMode] = React.useState<"price" | "pct">("price");
   const [priceStr, setPriceStr] = React.useState(effective.toFixed(2));
+  const [pctStr, setPctStr]     = React.useState(
+    line.override_unit_price != null && line.unit_price > 0
+      ? (100 * (1 - line.override_unit_price / line.unit_price)).toFixed(1)
+      : ""
+  );
   const [type, setType]         = React.useState<string>(line.price_override_type ?? "price_set");
   const [reason, setReason]     = React.useState<string>(
     line.price_override_reason ??
@@ -870,12 +1088,20 @@ function OverrideEditor({
   const [note, setNote] = React.useState<string>(line.price_override_note ?? "");
 
   const priceNum    = parseFloat(priceStr.replace(",", "."));
+  const pctNum      = parseFloat(pctStr.replace(",", "."));
+  const pctValid    = isFinite(pctNum) && pctNum >= 0 && pctNum <= 100;
   const priceValid  = isFinite(priceNum) && priceNum >= 0;
-  const canSave     = priceValid && reason.trim().length > 0;
+
+  // Computed price when in % mode
+  const effectivePriceNum = inputMode === "pct" && pctValid
+    ? Math.max(0, Number(Big(line.unit_price).times(Big(100 - pctNum).div(100)).round(2, Big.roundHalfUp).toString()))
+    : priceNum;
+  const effectivePriceValid = inputMode === "pct" ? pctValid : priceValid;
+  const canSave = effectivePriceValid && reason.trim().length > 0;
 
   const discountPct =
-    priceValid && line.unit_price > 0 && priceNum < line.unit_price
-      ? (100 * (1 - priceNum / line.unit_price))
+    effectivePriceValid && line.unit_price > 0 && effectivePriceNum < line.unit_price
+      ? (100 * (1 - effectivePriceNum / line.unit_price))
       : null;
 
   const handleTypeChange = (val: string) => {
@@ -888,31 +1114,66 @@ function OverrideEditor({
 
   return (
     <div className="mt-2.5 space-y-2 rounded-sm border border-steel-700/80 bg-steel-950/70 p-2.5">
+      {/* Mode toggle: Precio / % */}
+      <div className="flex overflow-hidden rounded-sm border border-steel-700">
+        {(["price", "pct"] as const).map((m) => (
+          <button
+            key={m} type="button"
+            onClick={() => setInputMode(m)}
+            className={[
+              "flex-1 py-1 font-mono text-[9.5px] font-bold uppercase tracking-[0.1em] transition-colors",
+              inputMode === m ? "bg-steel-700 text-foreground" : "text-muted-foreground/60 hover:text-muted-foreground",
+            ].join(" ")}
+          >
+            {m === "price" ? "Precio $" : "Descuento %"}
+          </button>
+        ))}
+      </div>
+
       {/* Price input */}
       <div className="space-y-0.5">
         <label className="block font-mono text-[9.5px] uppercase tracking-[0.12em] text-muted-foreground/60">
-          Precio ajustado (USD)
+          {inputMode === "price" ? "Precio ajustado (USD)" : "Descuento (%)"}
         </label>
-        <div className="relative">
-          <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 font-mono text-[10px] font-bold text-muted-foreground/60">
-            $
-          </span>
-          <input
-            type="number"
-            min={0}
-            step="any"
-            value={priceStr}
-            onChange={(e) => setPriceStr(e.target.value)}
-            onFocus={(e) => e.target.select()}
-            autoFocus
-            className="h-8 w-full rounded-sm border border-steel-700 bg-steel-900 pl-6 pr-2 text-right font-mono text-[13px] tabular-nums text-foreground focus:border-safety-500 focus:outline-none"
-          />
-        </div>
-        {discountPct !== null ? (
-          <p className="font-mono text-[10px] text-signal-400">
-            −{discountPct.toFixed(1)}% del precio de lista
-          </p>
-        ) : null}
+        {inputMode === "pct" ? (
+          <>
+            <div className="relative">
+              <input
+                type="number" min={0} max={100} step="any"
+                value={pctStr}
+                onChange={(e) => setPctStr(e.target.value)}
+                onFocus={(e) => e.target.select()}
+                autoFocus
+                className="h-8 w-full rounded-sm border border-steel-700 bg-steel-900 pr-8 pl-2.5 text-right font-mono text-[13px] tabular-nums text-foreground focus:border-safety-500 focus:outline-none"
+              />
+              <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 font-mono text-[11px] font-bold text-muted-foreground/60">%</span>
+            </div>
+            {pctValid && line.unit_price > 0 ? (
+              <p className="font-mono text-[10px] text-signal-400">
+                Precio resultante: {moneyFmt.format(effectivePriceNum)} (−{pctNum.toFixed(1)}%)
+              </p>
+            ) : null}
+          </>
+        ) : (
+          <>
+            <div className="relative">
+              <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 font-mono text-[10px] font-bold text-muted-foreground/60">$</span>
+              <input
+                type="number" min={0} step="any"
+                value={priceStr}
+                onChange={(e) => setPriceStr(e.target.value)}
+                onFocus={(e) => e.target.select()}
+                autoFocus
+                className="h-8 w-full rounded-sm border border-steel-700 bg-steel-900 pl-6 pr-2 text-right font-mono text-[13px] tabular-nums text-foreground focus:border-safety-500 focus:outline-none"
+              />
+            </div>
+            {discountPct !== null ? (
+              <p className="font-mono text-[10px] text-signal-400">
+                −{discountPct.toFixed(1)}% del precio de lista
+              </p>
+            ) : null}
+          </>
+        )}
       </div>
 
       {/* Type select */}
@@ -946,6 +1207,21 @@ function OverrideEditor({
         />
       </div>
 
+      {/* Note (optional) */}
+      <div className="space-y-0.5">
+        <label className="block font-mono text-[9.5px] uppercase tracking-[0.12em] text-muted-foreground/60">
+          Nota interna <span className="text-muted-foreground/40">(opcional)</span>
+        </label>
+        <textarea
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          maxLength={500}
+          rows={2}
+          placeholder="Para registros internos..."
+          className="w-full resize-none rounded-sm border border-steel-700 bg-steel-900 px-2.5 py-1.5 font-mono text-[11px] text-foreground placeholder:text-muted-foreground/40 focus:border-safety-500 focus:outline-none"
+        />
+      </div>
+
       {/* Actions */}
       <div className="flex gap-1.5">
         <button
@@ -953,7 +1229,7 @@ function OverrideEditor({
           onClick={() =>
             canSave &&
             onSave({
-              override_unit_price:   priceNum,
+              override_unit_price:   effectivePriceNum,
               price_override_type:   type || null,
               price_override_reason: reason.trim(),
               price_override_note:   note.trim() || null,
@@ -1064,5 +1340,30 @@ function CashRegisterIcon({ className }: { className?: string }) {
       <path d="M16 12h.01M12 12h.01M8 12h.01M16 16h.01M12 16h.01M8 16h.01" />
       <path d="M6 7v13" />
     </svg>
+  );
+}
+
+function QuickActionPill({
+  label,
+  active,
+  onClick,
+}: {
+  label:   string;
+  active:  boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={[
+        "rounded-sm border py-1 font-mono text-[9.5px] font-bold uppercase tracking-[0.1em] transition-all",
+        active
+          ? "border-safety-500/60 bg-safety-500/10 text-safety-500"
+          : "border-steel-700 text-muted-foreground/70 hover:border-steel-600 hover:text-foreground",
+      ].join(" ")}
+    >
+      {label}
+    </button>
   );
 }

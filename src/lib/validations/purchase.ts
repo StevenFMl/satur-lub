@@ -6,6 +6,9 @@ const itemSchema = z.object({
   quantity_bonus: z.number().nonnegative("Bonificación no puede ser negativa.").default(0),
   unit_cost: z.number().nonnegative("Costo no puede ser negativo."),
   is_taxable: z.boolean().default(true),
+  // Unidades base por unidad de compra (p.ej. 1 caneca = 55 litros → base_qty = 55).
+  // Usado para actualizar inventory_balances en unidades base, consistente con el POS.
+  base_qty: z.number().positive("Factor de conversión debe ser > 0.").default(1),
 });
 
 const trimmedOrUndef = (v: unknown): string | undefined => {

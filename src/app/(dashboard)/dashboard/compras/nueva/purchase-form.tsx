@@ -62,6 +62,7 @@ type Row = {
   quantity_bonus: string; // unidades recibidas gratis (bonificación)
   total_cost: string;
   unit: string;
+  base_qty: string;       // unidades base por unidad de compra (factor de conversión)
 };
 
 const newRow = (): Row => ({
@@ -74,6 +75,7 @@ const newRow = (): Row => ({
   quantity_bonus: "0",
   total_cost: "0",
   unit: "galón",
+  base_qty: "1",
 });
 
 // Totales (subtotal, IVA, total factura): 2 decimales fijos.
@@ -276,6 +278,7 @@ export function PurchaseForm({
             quantity_bonus: "0",
             total_cost: totalCostStr,
             unit: product.unit,
+            base_qty: "1",
           },
         ];
       }
@@ -379,6 +382,7 @@ export function PurchaseForm({
             quantity: qtyNum,
             quantity_bonus: bonusNum,
             unit_cost: Number(toFixedStr(rawUnitCostBig, 4)),
+            base_qty: Math.max(1, Number(r.base_qty) || 1),
           };
         })
     );
@@ -790,28 +794,125 @@ export function PurchaseForm({
                             </span>
                           ) : null}
                         </div>
-                      </td>
-                      <td className="px-4 py-3 align-top text-right">
-                        <div className="flex flex-col items-end gap-1">
-                          <div>
-                            <span className="block font-mono text-[14px] font-bold tabular-nums text-foreground">
-                              {unitCostFmt.format(toNum(toUnitPrice(unitCostBig)))}
-                            </span>
-                            <span className="block font-mono text-[9px] uppercase tracking-[0.1em] text-muted-foreground/70">
-                              {hasBonus ? "costo negociado" : `costo unit. ${isTaxInclusive ? "(bruto)" : "(neto)"}`}
-                            </span>
-                          </div>
-                          {hasBonus ? (
-                            <div className="mt-1 rounded-sm bg-emerald-950/30 px-2 py-1 border border-emerald-900/50">
-                              <span className="block font-mono text-[13px] font-bold tabular-nums text-emerald-400">
-                                {unitCostFmt.format(toNum(toUnitPrice(effectiveCostBig)))}
+                        {/* Conversión de unidades */}
+                        <div className="mt-1.5 flex items-center gap-1.5">
+                          <span
+                            className="w-[70px] shrink-0 text-right font-mono text-[9px] uppercase tracking-[0.1em] text-muted-foreground/50"
+                            title="Factor de conversión: ¿cuántas unidades base hay en cada unidad comprada? Ej: 1 caneca = 55 litros → ingresar 55"
+                          >
+                            u.base/un.
+                          </span>
+                          <Input
+                            type="text"
+                            inputMode="decimal"
+                            mono
+                            className="w-[70px] shrink-0 text-right text-[12px]"
+                            value={r.base_qty}
+                            onFocus={(e) => e.target.select()}
+                            onChange={(e) => updateRow(r.uid, { base_qty: e.target.value })}
+                            aria-label="Unidades base por unidad comprada"
+                            title="Factor de conversión: ¿cuántas unidades base hay en cada unidad comprada? Ej: 1 caneca = 55 litros → ingresar 55"
+                          />
+                          {Number(r.base_qty) > 1 ? (
+                            <div className="flex flex-col gap-0.5">
+                              <span className="font-mono text-[9px] text-muted-foreground/60">
+                                1&nbsp;{r.unit}&nbsp;=&nbsp;{(Number(r.base_qty) || 1).toFixed(r.base_qty.includes(".") ? 2 : 0)}&nbsp;u.base
                               </span>
-                              <span className="block font-mono text-[9px] uppercase tracking-[0.1em] text-emerald-500/80">
-                                costo efectivo
+                              <span className="font-mono text-[9px] text-emerald-400/80">
+                                +{(totalReceived * (Number(r.base_qty) || 1)).toFixed(2)}&nbsp;stock
                               </span>
                             </div>
                           ) : null}
                         </div>
+                      </td>
+                      <td className="px-4 py-3 align-top text-right">
+                        {(() => {
+                          const product = productById.get(r.product_id);
+                          const isTaxable = product?.has_tax ?? true;
+                          const taxRateBig = Big(invoiceTaxRate).div(100);
+                          const baseQtyNum = Math.max(1, Number(r.base_qty) || 1);
+                          // Costo por unidad comprada (en el modo que el usuario ingresó)
+                          const displayedUnitCost = unitCostBig;
+                          // Costo derivado en el otro modo (para mostrar el desglose)
+                          const netUnitCost = isTaxInclusive && isTaxable && invoiceTaxRate > 0
+                            ? displayedUnitCost.div(Big(1).plus(taxRateBig))
+                            : displayedUnitCost;
+                          const grossUnitCost = !isTaxInclusive && isTaxable && invoiceTaxRate > 0
+                            ? displayedUnitCost.times(Big(1).plus(taxRateBig))
+                            : displayedUnitCost;
+                          const ivaUnitCost = isTaxable && invoiceTaxRate > 0
+                            ? grossUnitCost.minus(netUnitCost)
+                            : Big(0);
+                          // Costo neto por unidad base (cuando base_qty > 1)
+                          const netCostPerBase = netUnitCost.div(baseQtyNum);
+
+                          return (
+                            <div className="flex flex-col items-end gap-1">
+                              {/* Costo principal (como lo ingresó el usuario) */}
+                              <div>
+                                <span className="block font-mono text-[14px] font-bold tabular-nums text-foreground">
+                                  {unitCostFmt.format(toNum(toUnitPrice(displayedUnitCost)))}
+                                </span>
+                                <span className="block font-mono text-[9px] uppercase tracking-[0.1em] text-muted-foreground/70">
+                                  {hasBonus ? "costo negociado" : `unit. ${isTaxInclusive ? "c/IVA" : "s/IVA"}`}
+                                </span>
+                              </div>
+
+                              {/* Desglose IVA por línea */}
+                              {isTaxable && invoiceTaxRate > 0 ? (
+                                <div className="mt-0.5 space-y-0.5 border-t border-steel-700/40 pt-0.5 text-right">
+                                  {isTaxInclusive ? (
+                                    <>
+                                      <div className="flex items-center justify-end gap-2">
+                                        <span className="font-mono text-[9px] text-muted-foreground/50">s/IVA</span>
+                                        <span className="font-mono text-[11px] tabular-nums text-muted-foreground">{unitCostFmt.format(toNum(toUnitPrice(netUnitCost)))}</span>
+                                      </div>
+                                      <div className="flex items-center justify-end gap-2">
+                                        <span className="font-mono text-[9px] text-muted-foreground/50">IVA {invoiceTaxRate}%</span>
+                                        <span className="font-mono text-[11px] tabular-nums text-signal-400/80">{unitCostFmt.format(toNum(toUnitPrice(ivaUnitCost)))}</span>
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <div className="flex items-center justify-end gap-2">
+                                        <span className="font-mono text-[9px] text-muted-foreground/50">IVA {invoiceTaxRate}%</span>
+                                        <span className="font-mono text-[11px] tabular-nums text-signal-400/80">+{unitCostFmt.format(toNum(toUnitPrice(ivaUnitCost)))}</span>
+                                      </div>
+                                      <div className="flex items-center justify-end gap-2">
+                                        <span className="font-mono text-[9px] text-muted-foreground/50">c/IVA</span>
+                                        <span className="font-mono text-[11px] tabular-nums text-foreground/70">{unitCostFmt.format(toNum(toUnitPrice(grossUnitCost)))}</span>
+                                      </div>
+                                    </>
+                                  )}
+                                </div>
+                              ) : null}
+
+                              {/* Costo por unidad base cuando hay conversión */}
+                              {baseQtyNum > 1 ? (
+                                <div className="mt-1 rounded-sm bg-emerald-950/20 border border-emerald-900/40 px-2 py-1 text-right">
+                                  <span className="block font-mono text-[12px] font-bold tabular-nums text-emerald-400">
+                                    {unitCostFmt.format(toNum(toUnitPrice(netCostPerBase)))}
+                                  </span>
+                                  <span className="block font-mono text-[8.5px] uppercase tracking-[0.08em] text-emerald-500/70">
+                                    /u.base s/IVA
+                                  </span>
+                                </div>
+                              ) : null}
+
+                              {/* Costo efectivo cuando hay bonificación */}
+                              {hasBonus ? (
+                                <div className="mt-1 rounded-sm bg-emerald-950/30 px-2 py-1 border border-emerald-900/50">
+                                  <span className="block font-mono text-[13px] font-bold tabular-nums text-emerald-400">
+                                    {unitCostFmt.format(toNum(toUnitPrice(effectiveCostBig)))}
+                                  </span>
+                                  <span className="block font-mono text-[9px] uppercase tracking-[0.1em] text-emerald-500/80">
+                                    costo efectivo
+                                  </span>
+                                </div>
+                              ) : null}
+                            </div>
+                          );
+                        })()}
                       </td>
                       <td className="px-4 py-3 align-top">
                         <div className="w-full">

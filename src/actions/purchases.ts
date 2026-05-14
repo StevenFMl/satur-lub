@@ -116,7 +116,8 @@ export async function receivePurchaseAction(
       quantity: Number(item.quantity),
       quantity_bonus: Number(item.quantity_bonus ?? 0),
       unit_cost: Number(netUnitCostStr),
-      is_taxable: isTaxable
+      is_taxable: isTaxable,
+      base_qty: Number(item.base_qty ?? 1),
     };
   });
 

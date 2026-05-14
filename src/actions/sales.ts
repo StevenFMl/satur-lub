@@ -330,3 +330,46 @@ export async function getReceivablePaymentsAction(
 
   return { rows: (data ?? []) as ReceivablePaymentRow[] };
 }
+
+/* ------------------------------------------------------------------ */
+/* Seguimiento de cobranza (follow-ups)                                */
+/* ------------------------------------------------------------------ */
+
+export type FollowupState = { ok?: boolean; error?: string } | null;
+
+export async function addFollowupAction(input: {
+  receivable_id:  string;
+  result:         string;
+  note:           string | null;
+  next_followup:  string | null;
+}): Promise<FollowupState> {
+  const { user, membership } = await getActiveMembership();
+  if (!user || !membership) return { error: "Sesión expirada." };
+
+  const supabase = await createClient();
+
+  const { error } = await supabase.rpc("add_receivable_followup", {
+    p_tenant_id:     membership.tenant_id,
+    p_receivable_id: input.receivable_id,
+    p_result:        input.result,
+    p_note:          input.note || null,
+    p_next_followup: input.next_followup || null,
+  } as never);
+
+  if (error) {
+    console.error("add_receivable_followup:", error.message);
+    const msg = error.message ?? "";
+    if (
+      msg.startsWith("Cuenta") ||
+      msg.startsWith("Usuario") ||
+      msg.startsWith("Resultado") ||
+      msg.startsWith("p_tenant_id")
+    ) {
+      return { error: msg };
+    }
+    return { error: "No se pudo registrar la gestión." };
+  }
+
+  revalidatePath("/dashboard/pos/fiado");
+  return { ok: true };
+}

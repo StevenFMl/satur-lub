@@ -33,6 +33,7 @@ type RawItem = {
   unit_cost: number | string;
   line_total: number | string;
   is_taxable: boolean | null;
+  base_qty?: number | string | null;
   products: { id: string; name: string; sku: string; unit: string } | null;
 };
 
@@ -99,7 +100,7 @@ export default async function PurchaseDetailPage({
       .from("purchase_order_items")
       .select(
         `
-        id, quantity, quantity_bonus, unit_cost, line_total, is_taxable,
+        id, quantity, quantity_bonus, unit_cost, line_total, is_taxable, base_qty,
         products ( id, name, sku, unit )
         `
       )
@@ -177,6 +178,7 @@ export default async function PurchaseDetailPage({
     unit_cost: Number(it.unit_cost),
     line_total: Number(it.line_total),
     is_taxable: it.is_taxable ?? true,
+    base_qty: Number(it.base_qty ?? 1),
     product: it.products
       ? {
           id: it.products.id,

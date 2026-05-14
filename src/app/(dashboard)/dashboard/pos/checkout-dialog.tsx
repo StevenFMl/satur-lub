@@ -8,13 +8,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert } from "@/components/ui/alert";
 import { createSaleAction } from "@/actions/sales";
-import { PRICE_OVERRIDE_LABELS, type PriceOverrideType } from "@/lib/validations/sale";
+import { type PriceOverrideType } from "@/lib/validations/sale";
 
 type PaymentMethod = "cash" | "card" | "transfer";
 type CheckoutMode  = "normal" | "credit";
 
 type CartItem = {
   product_id:            string;
+  name:                  string;
+  unit_price:            number;
+  unit_label:            string;
   quantity:              number;
   discount_amount:       number;
   presentation_id:       string | null | undefined;
@@ -34,6 +37,7 @@ type Props = {
   warehouseId:    string | null;
   cashSessionId:  string | null;
   onSuccess:      () => void;
+  initialMode?:   CheckoutMode;
 };
 
 const moneyFmt = new Intl.NumberFormat("es-EC", {
@@ -50,8 +54,9 @@ const METHODS: { method: PaymentMethod; label: string }[] = [
 
 export function CheckoutDialog({
   open, onClose, cart, totals, customerId, warehouseId, cashSessionId, onSuccess,
+  initialMode,
 }: Props) {
-  const [mode, setMode]                   = React.useState<CheckoutMode>("normal");
+  const [mode, setMode]                   = React.useState<CheckoutMode>(initialMode ?? "normal");
   const [method, setMethod]               = React.useState<PaymentMethod>("cash");
   const [cashReceived, setCashReceived]   = React.useState("");
   const [reference, setReference]         = React.useState("");
@@ -71,15 +76,17 @@ export function CheckoutDialog({
 
   React.useEffect(() => {
     if (open) {
-      setMode("normal"); setMethod("cash"); setCashReceived(""); setReference("");
+      setMode(initialMode ?? "normal"); setMethod("cash"); setCashReceived(""); setReference("");
       setSaleDate(today()); setIsHistorical(false); setError(null);
       setConfirmed(false); setSaleId(null); setSubmitting(false);
       setInitialPayment(""); setCreditMethod("cash"); setCreditRef("");
       setDueDate(""); setCreditNotes("");
     }
-  }, [open]);
+  }, [open, initialMode]);
 
   const gross = totals.gross;
+
+  const isZeroTotal = gross < 0.01;
 
   const cashReceivedNum = React.useMemo(() => {
     const n = parseFloat(cashReceived.replace(",", "."));
@@ -111,16 +118,7 @@ export function CheckoutDialog({
     return true;
   }, [initialPaymentNum, gross, creditMethod]);
 
-  const overriddenItems = cart.filter((i) => i.override_unit_price != null);
-
   const handleConfirm = async () => {
-    if (mode === "normal" && !cashValid) {
-      setError("El monto recibido es menor al total."); return;
-    }
-    if (mode === "credit" && !creditValid) {
-      setError("El pago inicial no puede superar el total de la venta."); return;
-    }
-
     setSubmitting(true); setError(null);
 
     const basePayload = {
@@ -140,6 +138,28 @@ export function CheckoutDialog({
       document_kind: "ticket" as const,
       sale_date:     isHistorical ? saleDate : null,
     };
+
+    // Zero-total (courtesy): RPC accepts payments:[] when total=0
+    if (isZeroTotal) {
+      const result = await createSaleAction(
+        { ...basePayload, payments: [], is_credit: false },
+        cashSessionId
+      );
+      setSubmitting(false);
+      if (result?.error) { setError(result.error); return; }
+      setSaleId(result?.saleId ?? null);
+      setConfirmed(true);
+      return;
+    }
+
+    if (mode === "normal" && !cashValid) {
+      setSubmitting(false);
+      setError("El monto recibido es menor al total."); return;
+    }
+    if (mode === "credit" && !creditValid) {
+      setSubmitting(false);
+      setError("El pago inicial no puede superar el total de la venta."); return;
+    }
 
     const result = mode === "credit"
       ? await createSaleAction({
@@ -166,65 +186,119 @@ export function CheckoutDialog({
 
   const handleClose = () => { if (confirmed) onSuccess(); onClose(); };
 
-  // ── Success screen ──────────────────────────────────────────────────────
+  // ── Success / Receipt screen ────────────────────────────────────────────
   if (confirmed) {
+    const receiptDate = new Date().toLocaleDateString("es-EC", { day: "2-digit", month: "long", year: "numeric" });
+
     return (
-      <Dialog open={open} onClose={handleClose} title="¡Venta registrada!" description="">
-        <div className="space-y-5 px-6 py-6 text-center">
-          <div className="mx-auto grid h-16 w-16 place-items-center rounded-full border-2 border-signal-500 bg-signal-500/10">
-            <CheckCircleIcon className="h-8 w-8 text-signal-500" />
+      <Dialog open={open} onClose={handleClose} title="" description="">
+        {/* Receipt body — scrollable */}
+        <div className="max-h-[75vh] overflow-y-auto">
+          {/* Receipt header */}
+          <div className="border-b-2 border-dashed border-steel-700 px-6 py-4 text-center">
+            <div className="mx-auto mb-2 grid h-10 w-10 place-items-center rounded-full border border-signal-500/50 bg-signal-500/10">
+              <CheckCircleIcon className="h-5 w-5 text-signal-500" />
+            </div>
+            <p className="font-display text-[16px] font-bold tracking-[0.04em] text-foreground">
+              {mode === "credit" ? "VENTA FIADA" : "COMPROBANTE DE VENTA"}
+            </p>
+            {saleId ? (
+              <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
+                # {saleId.slice(0, 8).toUpperCase()}
+              </p>
+            ) : null}
+            <p className="mt-0.5 font-mono text-[10px] text-muted-foreground/70">{receiptDate}</p>
           </div>
 
-          {saleId ? (
-            <p className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-muted-foreground">
-              Venta # {saleId.slice(0, 8).toUpperCase()}
-            </p>
+          {/* Line items */}
+          {cart.length > 0 ? (
+            <div className="border-b border-dashed border-steel-700 px-6 py-3">
+              <p className="mb-2 font-mono text-[9px] font-bold uppercase tracking-[0.18em] text-muted-foreground/60">
+                Productos
+              </p>
+              <div className="space-y-2">
+                {cart.map((item, i) => {
+                  const effectivePrice = item.override_unit_price ?? item.unit_price;
+                  const lineTotal = effectivePrice * item.quantity;
+                  const isCombo = item.price_override_type === "combo";
+                  const isCourt = item.price_override_type === "courtesy";
+                  const hasDiscount = item.override_unit_price != null && item.override_unit_price < item.unit_price;
+                  return (
+                    <div key={i} className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[12px] font-semibold text-foreground">{item.name}</span>
+                          {isCombo ? (
+                            <span className="rounded-sm border border-emerald-700/40 bg-emerald-900/20 px-1 font-mono text-[8px] font-bold uppercase text-emerald-400">COMBO</span>
+                          ) : isCourt ? (
+                            <span className="rounded-sm border border-safety-500/30 bg-safety-500/10 px-1 font-mono text-[8px] font-bold uppercase text-safety-500">CORT.</span>
+                          ) : hasDiscount ? (
+                            <span className="rounded-sm border border-signal-600/40 bg-signal-700/10 px-1 font-mono text-[8px] font-bold uppercase text-signal-400">DESC.</span>
+                          ) : null}
+                        </div>
+                        <p className="mt-0.5 font-mono text-[10px] text-muted-foreground/70">
+                          {item.quantity} {item.unit_label} × {moneyFmt.format(effectivePrice)}
+                          {hasDiscount ? (
+                            <span className="ml-1 line-through text-muted-foreground/40">{moneyFmt.format(item.unit_price)}</span>
+                          ) : null}
+                        </p>
+                        {item.price_override_reason ? (
+                          <p className="font-mono text-[9px] italic text-muted-foreground/50">{item.price_override_reason}</p>
+                        ) : null}
+                      </div>
+                      <span className="shrink-0 font-mono text-[12px] font-bold tabular-nums text-foreground">
+                        {moneyFmt.format(lineTotal)}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           ) : null}
 
-          {mode === "credit" ? (
-            <div className="rounded-sm border border-safety-500/30 bg-safety-500/5 px-4 py-3 space-y-1.5 text-left">
-              <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-safety-400/70 mb-2">
-                Venta fiada registrada
-              </p>
-              <SummaryRow label="Total venta"    value={moneyFmt.format(gross)} />
-              <SummaryRow label="Abono inicial"  value={moneyFmt.format(initialPaymentNum)} />
-              <div className="my-1 h-px bg-steel-700/60" />
-              <SummaryRow label="Saldo pendiente" value={moneyFmt.format(creditBalance)} bold />
-              {dueDate ? <SummaryRow label="Vence" value={dueDate} /> : null}
-            </div>
-          ) : (
-            <div className="rounded-sm border border-steel-700 bg-steel-900/60 px-4 py-3 space-y-1.5 text-left">
-              <p className="font-display text-[32px] leading-none tracking-[0.02em] text-safety-500 text-center mb-2">
+          {/* Totals */}
+          <div className="border-b border-dashed border-steel-700 px-6 py-3 space-y-1.5">
+            <SummaryRow label="Subtotal (s/IVA)" value={moneyFmt.format(totals.net)} />
+            <SummaryRow label="IVA (15%)"         value={moneyFmt.format(totals.iva)} />
+            <div className="my-1 h-px border-t border-dashed border-steel-700" />
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-foreground">TOTAL</span>
+              <span className="font-display text-[22px] leading-none tracking-[0.02em] text-safety-500">
                 {moneyFmt.format(gross)}
-              </p>
-              <SummaryRow label="Subtotal (neto)" value={moneyFmt.format(totals.net)} />
-              <SummaryRow label="IVA"             value={moneyFmt.format(totals.iva)} />
-              <div className="my-1 h-px bg-steel-700/60" />
-              <SummaryRow label="Total" value={moneyFmt.format(gross)} bold />
-              {method === "cash" && change !== null && change > 0 ? (
-                <SummaryRow label="Cambio" value={moneyFmt.format(change)} />
-              ) : null}
+              </span>
             </div>
-          )}
+          </div>
 
-          {overriddenItems.length > 0 ? (
-            <div className="rounded-sm border border-signal-700/30 bg-signal-900/20 px-4 py-3 text-left">
-              <p className="mb-1.5 font-mono text-[9.5px] uppercase tracking-[0.14em] text-signal-500/70">
-                Ajustes de precio aplicados
-              </p>
-              <ul className="space-y-1">
-                {overriddenItems.map((item, i) => (
-                  <li key={i} className="font-mono text-[10.5px] text-signal-400">
-                    {item.price_override_reason ?? PRICE_OVERRIDE_LABELS[(item.price_override_type ?? "price_set") as PriceOverrideType]}
-                    {" · "}<span className="tabular-nums">{moneyFmt.format(item.override_unit_price ?? 0)}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
+          {/* Payment / credit info */}
+          <div className="px-6 py-3 space-y-1.5">
+            {mode === "credit" ? (
+              <>
+                <p className="mb-1 font-mono text-[9px] font-bold uppercase tracking-[0.16em] text-safety-400/70">Condiciones de crédito</p>
+                <SummaryRow label="Abono inicial"   value={moneyFmt.format(initialPaymentNum)} />
+                <SummaryRow label="Saldo pendiente" value={moneyFmt.format(creditBalance)} bold />
+                {dueDate ? <SummaryRow label="Vencimiento" value={dueDate} /> : null}
+              </>
+            ) : (
+              <>
+                {method === "cash" && change !== null && change > 0 ? (
+                  <SummaryRow label="Cambio entregado" value={moneyFmt.format(change)} />
+                ) : null}
+              </>
+            )}
+          </div>
         </div>
-        <div className="flex justify-end border-t-2 border-steel-700 bg-steel-900/60 px-6 py-4">
-          <Button size="md" className="min-w-[130px]" onClick={handleClose}>
+
+        {/* Footer actions */}
+        <div className="flex gap-2.5 border-t-2 border-steel-700 bg-steel-900/60 px-6 py-4">
+          <button
+            type="button"
+            onClick={() => window.print()}
+            className="flex items-center gap-1.5 rounded-sm border border-steel-700 bg-steel-900 px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground transition-colors hover:border-steel-600 hover:text-foreground"
+          >
+            <PrinterIcon className="h-3.5 w-3.5" />
+            Imprimir
+          </button>
+          <Button size="md" className="flex-1" onClick={handleClose}>
             Nueva venta
           </Button>
         </div>
@@ -257,177 +331,176 @@ export function CheckoutDialog({
           <SummaryRow label="IVA"             value={moneyFmt.format(totals.iva)} />
         </div>
 
-        {/* Mode toggle: Normal / Fiado */}
-        <div className="grid grid-cols-2 gap-2 rounded-sm border border-steel-700 p-1">
-          <ModeBtn active={mode === "normal"} onClick={() => { setMode("normal"); setError(null); }}>
-            <CashIcon className="h-4 w-4" /> Cobro normal
-          </ModeBtn>
-          <ModeBtn active={mode === "credit"} onClick={() => { setMode("credit"); setError(null); }}>
-            <CreditIcon className="h-4 w-4" /> Fiado
-          </ModeBtn>
-        </div>
-
-        {/* ── Modo NORMAL ────────────────────────────────────────────── */}
-        {mode === "normal" ? (
+        {/* ── Cortesía / venta gratis ─────────────────────────────────── */}
+        {isZeroTotal ? (
+          <div className="rounded-sm border border-signal-600/40 bg-signal-700/10 px-4 py-3 space-y-1">
+            <p className="font-mono text-[11px] font-bold uppercase tracking-[0.12em] text-signal-400">
+              ★ Venta cortesía — $0.00
+            </p>
+            <p className="font-mono text-[10.5px] text-signal-400/70">
+              Sin método de pago. La venta queda registrada con trazabilidad completa.
+            </p>
+          </div>
+        ) : (
           <>
-            {/* Payment method */}
-            <div className="space-y-1.5">
-              <Label className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground/70">
-                Método de pago
-              </Label>
-              <div className="grid grid-cols-3 gap-2">
-                {METHODS.map(({ method: m, label }) => (
-                  <button
-                    key={m} type="button"
-                    onClick={() => { setMethod(m); setError(null); }}
-                    className={[
-                      "flex flex-col items-center gap-1.5 rounded-sm border-2 px-2 py-2.5 transition-all",
-                      method === m
-                        ? "border-safety-500 bg-safety-500/10 text-safety-500 shadow-safety-glow"
-                        : "border-steel-700 bg-steel-900 text-muted-foreground hover:border-steel-600 hover:text-foreground",
-                    ].join(" ")}
-                  >
-                    <span className="font-mono text-[10px] font-bold uppercase tracking-[0.1em]">{label}</span>
-                  </button>
-                ))}
-              </div>
+            {/* Mode toggle: Normal / Fiado */}
+            <div className="grid grid-cols-2 gap-2 rounded-sm border border-steel-700 p-1">
+              <ModeBtn active={mode === "normal"} onClick={() => { setMode("normal"); setError(null); }}>
+                <CashIcon className="h-4 w-4" /> Cobro normal
+              </ModeBtn>
+              <ModeBtn active={mode === "credit"} onClick={() => { setMode("credit"); setError(null); }}>
+                <CreditIcon className="h-4 w-4" /> Fiado
+              </ModeBtn>
             </div>
 
-            {method === "cash" ? (
-              <div className="space-y-1.5">
-                <Label htmlFor="cash-received">Monto recibido</Label>
-                <div className="relative">
-                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-mono text-[11px] font-bold uppercase tracking-[0.1em] text-muted-foreground">
-                    USD
-                  </span>
-                  <Input
-                    id="cash-received" type="number" min={0} step="0.01"
-                    value={cashReceived}
-                    onChange={(e) => { setCashReceived(e.target.value); setError(null); }}
-                    placeholder={String(gross.toFixed(2))}
-                    mono className="h-11 pl-14 text-right text-[15px]"
-                    onFocus={(e) => e.target.select()} autoFocus
-                  />
-                </div>
-                {change !== null && change >= 0 ? (
-                  <div className="flex items-baseline justify-between rounded-sm border border-signal-600/30 bg-signal-700/15 px-3 py-2">
-                    <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-signal-400">Cambio</span>
-                    <span className="font-mono text-[15px] font-bold tabular-nums text-signal-400">{moneyFmt.format(change)}</span>
+                {/* ── Modo NORMAL ─────────────────────────────────────────── */}
+            {mode === "normal" ? (
+              <>
+                <div className="space-y-1.5">
+                  <Label className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground/70">
+                    Método de pago
+                  </Label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {METHODS.map(({ method: m, label }) => (
+                      <button
+                        key={m} type="button"
+                        onClick={() => { setMethod(m); setError(null); }}
+                        className={[
+                          "flex flex-col items-center gap-1.5 rounded-sm border-2 px-2 py-2.5 transition-all",
+                          method === m
+                            ? "border-safety-500 bg-safety-500/10 text-safety-500 shadow-safety-glow"
+                            : "border-steel-700 bg-steel-900 text-muted-foreground hover:border-steel-600 hover:text-foreground",
+                        ].join(" ")}
+                      >
+                        <span className="font-mono text-[10px] font-bold uppercase tracking-[0.1em]">{label}</span>
+                      </button>
+                    ))}
                   </div>
-                ) : cashReceived && !cashValid ? (
-                  <p className="font-mono text-[11px] text-red-400">Faltan {moneyFmt.format(gross - cashReceivedNum)}</p>
-                ) : null}
-              </div>
+                </div>
+
+                {method === "cash" ? (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="cash-received">Monto recibido</Label>
+                    <div className="relative">
+                      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-mono text-[11px] font-bold uppercase tracking-[0.1em] text-muted-foreground">
+                        USD
+                      </span>
+                      <Input
+                        id="cash-received" type="number" min={0} step="0.01"
+                        value={cashReceived}
+                        onChange={(e) => { setCashReceived(e.target.value); setError(null); }}
+                        placeholder={String(gross.toFixed(2))}
+                        mono className="h-11 pl-14 text-right text-[15px]"
+                        onFocus={(e) => e.target.select()} autoFocus
+                      />
+                    </div>
+                    {change !== null && change >= 0 ? (
+                      <div className="flex items-baseline justify-between rounded-sm border border-signal-600/30 bg-signal-700/15 px-3 py-2">
+                        <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-signal-400">Cambio</span>
+                        <span className="font-mono text-[15px] font-bold tabular-nums text-signal-400">{moneyFmt.format(change)}</span>
+                      </div>
+                    ) : cashReceived && !cashValid ? (
+                      <p className="font-mono text-[11px] text-red-400">Faltan {moneyFmt.format(gross - cashReceivedNum)}</p>
+                    ) : null}
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="reference">
+                      Referencia <span className="font-normal normal-case tracking-normal text-muted-foreground/60">(opcional)</span>
+                    </Label>
+                    <Input
+                      id="reference" value={reference}
+                      onChange={(e) => setReference(e.target.value)}
+                      placeholder={method === "card" ? "Últimos 4 dígitos" : "N.° transferencia"}
+                      maxLength={60} autoFocus
+                    />
+                  </div>
+                )}
+              </>
             ) : (
-              <div className="space-y-1.5">
-                <Label htmlFor="reference">
-                  Referencia <span className="font-normal normal-case tracking-normal text-muted-foreground/60">(opcional)</span>
-                </Label>
-                <Input
-                  id="reference" value={reference}
-                  onChange={(e) => setReference(e.target.value)}
-                  placeholder={method === "card" ? "Últimos 4 dígitos" : "N.° transferencia"}
-                  maxLength={60} autoFocus
-                />
+              /* ── Modo FIADO ──────────────────────────────────────────── */
+              <div className="space-y-3">
+                <div className="rounded-sm border border-safety-500/20 bg-safety-500/5 px-3 py-2">
+                  <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-safety-400/80">
+                    La venta se registra normalmente. El cliente puede abonar después.
+                  </p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="initial-payment">
+                    Pago inicial <span className="font-normal normal-case tracking-normal text-muted-foreground/60">(0 para fiado total)</span>
+                  </Label>
+                  <div className="relative">
+                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-mono text-[11px] font-bold uppercase tracking-[0.1em] text-muted-foreground">
+                      USD
+                    </span>
+                    <Input
+                      id="initial-payment" type="number" min={0} step="0.01"
+                      max={gross}
+                      value={initialPayment}
+                      onChange={(e) => { setInitialPayment(e.target.value); setError(null); }}
+                      placeholder="0.00"
+                      mono className="h-11 pl-14 text-right text-[15px]"
+                      onFocus={(e) => e.target.select()} autoFocus
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-baseline justify-between rounded-sm border-2 border-signal-600/40 bg-signal-700/10 px-4 py-2.5">
+                  <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-signal-400">Saldo a fiar</span>
+                  <span className="font-mono text-[18px] font-bold tabular-nums text-signal-400">{moneyFmt.format(creditBalance)}</span>
+                </div>
+
+                {initialPaymentNum > 0 ? (
+                  <div className="space-y-1.5">
+                    <Label className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground/70">
+                      Método del pago inicial
+                    </Label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {METHODS.map(({ method: m, label }) => (
+                        <button
+                          key={m} type="button"
+                          onClick={() => setCreditMethod(m)}
+                          className={[
+                            "rounded-sm border-2 px-2 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.1em] transition-all",
+                            creditMethod === m
+                              ? "border-safety-500 bg-safety-500/10 text-safety-500"
+                              : "border-steel-700 bg-steel-900 text-muted-foreground hover:border-steel-600",
+                          ].join(" ")}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    <Input
+                      value={creditRef}
+                      onChange={(e) => setCreditRef(e.target.value)}
+                      placeholder={creditMethod === "card" ? "Últimos 4 dígitos" : creditMethod === "transfer" ? "N.° transferencia" : "Referencia (opcional)"}
+                      maxLength={60}
+                    />
+                  </div>
+                ) : null}
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="due-date">
+                    Vencimiento <span className="font-normal normal-case tracking-normal text-muted-foreground/60">(opcional)</span>
+                  </Label>
+                  <Input id="due-date" type="date" value={dueDate} mono className="h-10"
+                    min={today()} onChange={(e) => setDueDate(e.target.value)} />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="credit-notes">
+                    Nota <span className="font-normal normal-case tracking-normal text-muted-foreground/60">(opcional)</span>
+                  </Label>
+                  <Input id="credit-notes" value={creditNotes}
+                    onChange={(e) => setCreditNotes(e.target.value)}
+                    placeholder="Ej: Cliente de confianza, paga fin de mes"
+                    maxLength={200} />
+                </div>
               </div>
             )}
           </>
-        ) : (
-          /* ── Modo FIADO ──────────────────────────────────────────────── */
-          <div className="space-y-3">
-            <div className="rounded-sm border border-safety-500/20 bg-safety-500/5 px-3 py-2">
-              <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-safety-400/80">
-                La venta se registra normalmente. El cliente puede abonar después.
-              </p>
-            </div>
-
-            {/* Pago inicial */}
-            <div className="space-y-1.5">
-              <Label htmlFor="initial-payment">
-                Pago inicial <span className="font-normal normal-case tracking-normal text-muted-foreground/60">(0 para fiado total)</span>
-              </Label>
-              <div className="relative">
-                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-mono text-[11px] font-bold uppercase tracking-[0.1em] text-muted-foreground">
-                  USD
-                </span>
-                <Input
-                  id="initial-payment" type="number" min={0} step="0.01"
-                  max={gross}
-                  value={initialPayment}
-                  onChange={(e) => { setInitialPayment(e.target.value); setError(null); }}
-                  placeholder="0.00"
-                  mono className="h-11 pl-14 text-right text-[15px]"
-                  onFocus={(e) => e.target.select()} autoFocus
-                />
-              </div>
-            </div>
-
-            {/* Saldo a fiar */}
-            <div className="flex items-baseline justify-between rounded-sm border-2 border-signal-600/40 bg-signal-700/10 px-4 py-2.5">
-              <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-signal-400">
-                Saldo a fiar
-              </span>
-              <span className="font-mono text-[18px] font-bold tabular-nums text-signal-400">
-                {moneyFmt.format(creditBalance)}
-              </span>
-            </div>
-
-            {/* Método si hay pago inicial */}
-            {initialPaymentNum > 0 ? (
-              <div className="space-y-1.5">
-                <Label className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground/70">
-                  Método del pago inicial
-                </Label>
-                <div className="grid grid-cols-3 gap-2">
-                  {METHODS.map(({ method: m, label }) => (
-                    <button
-                      key={m} type="button"
-                      onClick={() => setCreditMethod(m)}
-                      className={[
-                        "rounded-sm border-2 px-2 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.1em] transition-all",
-                        creditMethod === m
-                          ? "border-safety-500 bg-safety-500/10 text-safety-500"
-                          : "border-steel-700 bg-steel-900 text-muted-foreground hover:border-steel-600",
-                      ].join(" ")}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                <Input
-                  value={creditRef}
-                  onChange={(e) => setCreditRef(e.target.value)}
-                  placeholder={creditMethod === "card" ? "Últimos 4 dígitos" : creditMethod === "transfer" ? "N.° transferencia" : "Referencia (opcional)"}
-                  maxLength={60}
-                />
-              </div>
-            ) : null}
-
-            {/* Vencimiento */}
-            <div className="space-y-1.5">
-              <Label htmlFor="due-date">
-                Fecha de vencimiento <span className="font-normal normal-case tracking-normal text-muted-foreground/60">(opcional)</span>
-              </Label>
-              <Input
-                id="due-date" type="date" value={dueDate} mono className="h-10"
-                min={today()}
-                onChange={(e) => setDueDate(e.target.value)}
-              />
-            </div>
-
-            {/* Nota */}
-            <div className="space-y-1.5">
-              <Label htmlFor="credit-notes">
-                Nota / motivo <span className="font-normal normal-case tracking-normal text-muted-foreground/60">(opcional)</span>
-              </Label>
-              <Input
-                id="credit-notes" value={creditNotes}
-                onChange={(e) => setCreditNotes(e.target.value)}
-                placeholder="Ej: Cliente de confianza, paga fin de mes"
-                maxLength={200}
-              />
-            </div>
-          </div>
         )}
 
         {/* Historical date */}
@@ -457,11 +530,11 @@ export function CheckoutDialog({
         </Button>
         <Button
           size="md" loading={submitting}
-          disabled={submitting || (mode === "normal" ? !cashValid : !creditValid)}
+          disabled={submitting || (!isZeroTotal && (mode === "normal" ? !cashValid : !creditValid))}
           onClick={handleConfirm}
           className="min-w-[130px]"
         >
-          {mode === "credit" ? "Registrar fiado" : "Confirmar cobro"}
+          {isZeroTotal ? "Confirmar cortesía" : mode === "credit" ? "Registrar fiado" : "Confirmar cobro"}
         </Button>
       </div>
     </Dialog>
@@ -534,6 +607,16 @@ function ChevronIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <path d="m9 18 6-6-6-6" />
+    </svg>
+  );
+}
+
+function PrinterIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <polyline points="6 9 6 2 18 2 18 9" />
+      <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+      <rect x="6" y="14" width="12" height="8" />
     </svg>
   );
 }
