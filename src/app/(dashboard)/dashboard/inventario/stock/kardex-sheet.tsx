@@ -17,6 +17,7 @@ export type KardexMovement = {
   created_at: string;
   movement_type: MovementType;
   quantity: number | string;
+  direction: number | null;
   unit_cost: number | string | null;
   reason: string;
   reference_type: string | null;
@@ -130,19 +131,18 @@ export function KardexSheet({
                         <Badge tone={meta.tone}>{meta.label}</Badge>
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <span
-                          className={
-                            "font-mono text-[14px] font-bold tabular-nums " +
-                            (meta.sign === "+"
-                              ? "text-emerald-300"
-                              : meta.sign === "−"
-                                ? "text-red-300"
-                                : "text-foreground")
-                          }
-                        >
-                          {meta.sign}
-                          {qtyFmt.format(qty)}
-                        </span>
+                        {(() => {
+                          // Use direction if available (v10+), else fall back to type meta
+                          const sign = m.direction === 1 ? "+" : m.direction === -1 ? "−" : meta.sign;
+                          return (
+                            <span className={
+                              "font-mono text-[14px] font-bold tabular-nums " +
+                              (sign === "+" ? "text-emerald-300" : sign === "−" ? "text-red-300" : "text-foreground")
+                            }>
+                              {sign}{qtyFmt.format(qty)}
+                            </span>
+                          );
+                        })()}
                       </td>
                     </tr>
                   );

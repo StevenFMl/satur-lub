@@ -26,7 +26,7 @@ export default async function StockPage() {
       product_id,
       warehouse_id,
       quantity_on_hand,
-      products ( id, name, sku, unit, average_cost, last_purchase_cost, default_price, tax_rate, has_tax ),
+      products ( id, name, sku, unit, average_cost, last_purchase_cost, default_price, tax_rate, has_tax, reorder_point ),
       warehouses ( id, name )
       `
     )
@@ -58,6 +58,7 @@ export default async function StockPage() {
     default_price: number | null;
     tax_rate: number | null;
     has_tax: boolean | null;
+    reorder_point: number | null;
   };
 
   // Aplanar los joins. Conservamos product_id/warehouse_id como claves duras
@@ -76,9 +77,10 @@ export default async function StockPage() {
         quantity_on_hand: Number(b.quantity_on_hand ?? 0),
         average_cost: p?.average_cost != null ? Number(p.average_cost) : null,
         last_purchase_cost: p?.last_purchase_cost != null ? Number(p.last_purchase_cost) : null,
-        sale_price: p?.default_price != null ? Number(p.default_price) : null,
-        tax_rate: Number(p?.tax_rate ?? 15),
-        has_tax: p?.has_tax ?? true,
+        sale_price:    p?.default_price != null ? Number(p.default_price) : null,
+        tax_rate:      Number(p?.tax_rate ?? 15),
+        has_tax:       p?.has_tax ?? true,
+        reorder_point: Number(p?.reorder_point ?? 0),
       };
     }
   );

@@ -26,7 +26,8 @@ export type ProductRow = {
   last_purchase_cost: number | null;
   price_mayorista: number | null;
   price_distribuidor: number | null;
-  product_kind: "item" | "service" | "kit";
+  product_kind: "item" | "service" | "kit" | "bundle";
+  reorder_point: number;
   tax_rate: number | null;
   has_tax: boolean;
   is_active: boolean;

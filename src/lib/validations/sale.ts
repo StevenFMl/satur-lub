@@ -20,6 +20,15 @@ export const PRICE_OVERRIDE_LABELS: Record<PriceOverrideType, string> = {
   loyalty:   "Fidelización",
 };
 
+// Kit/bundle component shape (passed to create_sale RPC for atomic stock decrement)
+export const bundleComponentSchema = z.object({
+  product_id: z.string().uuid(),
+  quantity:   z.number().positive(),
+  base_qty:   z.number().positive().default(1),
+});
+
+export type BundleComponent = z.infer<typeof bundleComponentSchema>;
+
 const saleItemSchema = z
   .object({
     product_id:            z.string().uuid("Producto inválido."),
@@ -31,6 +40,8 @@ const saleItemSchema = z
     price_override_type:   z.enum(PRICE_OVERRIDE_TYPES).nullable().optional(),
     price_override_reason: z.string().max(200).nullable().optional(),
     price_override_note:   z.string().max(500).nullable().optional(),
+    // For kit/bundle items: array of components to decrement in inventory
+    components:            z.array(bundleComponentSchema).optional().nullable(),
   })
   .superRefine((data, ctx) => {
     if (data.override_unit_price != null && !data.price_override_reason?.trim()) {

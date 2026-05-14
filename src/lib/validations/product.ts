@@ -95,6 +95,22 @@ export const productSchema = z.object({
   price_mayorista: tierPriceOptional,
   // DISTRIBUIDOR: precio para canal/revendedor (no es el proveedor).
   price_distribuidor: tierPriceOptional,
+  // Tipos: item (físico), service (sin inventario), kit (paquete servicio),
+  // bundle (combo físico). kit y bundle comparten la misma lógica de componentes.
+  product_kind: z.preprocess(
+    (v) => (typeof v === "string" && v.length > 0 ? v : "item"),
+    z.enum(["item", "service", "kit", "bundle"]).default("item")
+  ),
+  // Punto de reorden: 0 = sin mínimo configurado (no genera alerta).
+  // Solo relevante para product_kind="item"; para los demás se envía 0.
+  reorder_point: z.preprocess(
+    toNumberOrNaN,
+    z
+      .number({ error: "Punto de reorden inválido." })
+      .nonnegative("No puede ser negativo.")
+      .max(99_999_999.9999, "Valor demasiado alto.")
+      .default(0)
+  ),
 });
 
 export type ProductInput = z.infer<typeof productSchema>;

@@ -979,6 +979,18 @@ export function PurchaseForm({
                 const product = productById.get(r.product_id);
                 const isOverHistoric =
                   product?.best_cost != null && unitCostBig.gt(product.best_cost);
+                // IVA breakdown for mobile (mirrors desktop table logic)
+                const isTaxable   = product?.has_tax ?? true;
+                const taxRateBig  = Big(invoiceTaxRate).div(100);
+                const netUnitCostM = isTaxInclusive && isTaxable && invoiceTaxRate > 0
+                  ? unitCostBig.div(Big(1).plus(taxRateBig))
+                  : unitCostBig;
+                const grossUnitCostM = !isTaxInclusive && isTaxable && invoiceTaxRate > 0
+                  ? unitCostBig.times(Big(1).plus(taxRateBig))
+                  : unitCostBig;
+                const ivaUnitCostM = isTaxable && invoiceTaxRate > 0
+                  ? grossUnitCostM.minus(netUnitCostM)
+                  : Big(0);
                 return (
                   <div
                     key={r.uid}
@@ -1118,14 +1130,55 @@ export function PurchaseForm({
                         onChange={(e) => onTotalCostChange(r.uid, e.target.value)}
                         aria-label="Costo total de la fila"
                       />
-                      <div className="mt-1 text-right font-mono text-[11px] tabular-nums text-muted-foreground/80">
-                        {unitCostFmt.format(toNum(toUnitPrice(unitCostBig)))}{" "}
-                        <span className="text-muted-foreground/60">
-                          {isTaxInclusive ? "bruto" : "neto"}/{r.unit}
+                      {/* Principal: precio como lo ingresó el usuario */}
+                      <div className="mt-1 flex items-baseline justify-between gap-2">
+                        <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-muted-foreground/55">
+                          {isTaxInclusive ? "c/IVA" : "s/IVA"} / {r.unit}
+                        </span>
+                        <span className="font-mono text-[13px] font-bold tabular-nums text-foreground">
+                          {unitCostFmt.format(toNum(toUnitPrice(unitCostBig)))}
                         </span>
                       </div>
+
+                      {/* Desglose IVA — solo si el producto es gravado */}
+                      {isTaxable && invoiceTaxRate > 0 ? (
+                        <div className="mt-1.5 space-y-0.5 rounded-sm border border-steel-700/40 bg-steel-950/30 px-2.5 py-1.5">
+                          {isTaxInclusive ? (
+                            <>
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="font-mono text-[9px] text-muted-foreground/55">s/IVA</span>
+                                <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+                                  {unitCostFmt.format(toNum(toUnitPrice(netUnitCostM)))}
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="font-mono text-[9px] text-muted-foreground/55">IVA {invoiceTaxRate}%</span>
+                                <span className="font-mono text-[11px] tabular-nums text-signal-400/80">
+                                  {unitCostFmt.format(toNum(toUnitPrice(ivaUnitCostM)))}
+                                </span>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="font-mono text-[9px] text-muted-foreground/55">IVA {invoiceTaxRate}%</span>
+                                <span className="font-mono text-[11px] tabular-nums text-signal-400/80">
+                                  +{unitCostFmt.format(toNum(toUnitPrice(ivaUnitCostM)))}
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between gap-2 border-t border-steel-700/30 pt-0.5">
+                                <span className="font-mono text-[9px] text-muted-foreground/55">c/IVA</span>
+                                <span className="font-mono text-[11px] font-semibold tabular-nums text-foreground/80">
+                                  {unitCostFmt.format(toNum(toUnitPrice(grossUnitCostM)))}
+                                </span>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      ) : null}
+
                       {hasBonus ? (
-                        <div className="mt-0.5 text-right font-mono text-[11px] tabular-nums text-emerald-400">
+                        <div className="mt-1 text-right font-mono text-[11px] tabular-nums text-emerald-400">
                           Efectivo: {unitCostFmt.format(toNum(toUnitPrice(effectiveCostBig)))}/{r.unit}
                         </div>
                       ) : null}
@@ -1159,7 +1212,7 @@ export function PurchaseForm({
           <div className="px-6 py-6">
             <div className="ml-auto w-full max-w-md space-y-3">
               <SummaryRow
-                label="Subtotal"
+                label="Subtotal (neto s/IVA)"
                 value={moneyFmt.format(toNum(toMoney(subtotalBig)))}
               />
 

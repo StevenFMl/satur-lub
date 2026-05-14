@@ -40,7 +40,9 @@
       "Bash(npm list *)",
       "Bash(npm view *)",
       "Bash(grep -E \"\\\\.sql$\")",
-      "Bash(xargs grep *)"
+      "Bash(xargs grep *)",
+      "Bash(grep -E \"\\\\.\\(ts|d\\\\.ts\\)$\")",
+      "Bash(grep -E \"\\\\.\\(ts|sql\\)$\")"
     ]
   }
 }

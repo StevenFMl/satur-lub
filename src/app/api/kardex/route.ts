@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
   const { data, error } = await supabase
     .from("inventory_movements")
     .select(
-      "id, created_at, movement_type, quantity, unit_cost, reason, reference_type"
+      "id, created_at, movement_type, quantity, direction, unit_cost, reason, reference_type"
     )
     .eq("product_id", productId)
     .eq("warehouse_id", warehouseId)

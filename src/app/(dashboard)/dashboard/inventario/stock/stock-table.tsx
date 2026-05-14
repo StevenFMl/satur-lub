@@ -4,8 +4,10 @@ import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import Link from "next/link";
 import { KardexSheet, type KardexMovement } from "./kardex-sheet";
 import { InitialBalanceDialog } from "./initial-balance-dialog";
+import { AdjustmentDialog } from "./adjustment-dialog";
 import { Button } from "@/components/ui/button";
 import { PlusCircle } from "lucide-react";
 
@@ -23,9 +25,10 @@ export type StockRow = {
   sale_price: number | null;    // precio público c/IVA (default_price)
   tax_rate: number;
   has_tax: boolean;
+  reorder_point: number;        // 0 = sin mínimo configurado
 };
 
-const LOW_STOCK_THRESHOLD = 5;
+type StockStatus = "all" | "reorder" | "zero";
 
 const numberFmt = new Intl.NumberFormat("es-EC", {
   minimumFractionDigits: 0,
@@ -39,6 +42,20 @@ const moneyFmt = new Intl.NumberFormat("es-EC", {
   maximumFractionDigits: 2,
 });
 
+function downloadCsv(filename: string, headers: string[], rows: string[][]): void {
+  const esc = (v: string) => `"${String(v).replace(/"/g, '""')}"`;
+  const content = [headers, ...rows].map((r) => r.map(esc).join(",")).join("\r\n");
+  const blob = new Blob(["﻿" + content], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 export function StockTable({ 
   initialRows, 
   products = [], 
@@ -51,6 +68,7 @@ export function StockTable({
   const router = useRouter();
   const searchParams = useSearchParams();
   const [query, setQuery] = React.useState("");
+  const [statusFilter, setStatusFilter] = React.useState<StockStatus>("all");
 
   // Micro-Kárdex state — controlado por ?productId & ?warehouseId en la URL
   const activeProductId = searchParams.get("productId");
@@ -60,6 +78,13 @@ export function StockTable({
   const [movements, setMovements] = React.useState<KardexMovement[]>([]);
   const [loadingKardex, setLoadingKardex] = React.useState(false);
   const [initialBalanceOpen, setInitialBalanceOpen] = React.useState(false);
+
+  // Per-row adjustment dialog
+  const [adjustmentRow, setAdjustmentRow] = React.useState<StockRow | null>(null);
+  const [adjustmentOpen, setAdjustmentOpen] = React.useState(false);
+
+  // Local optimistic stock update after adjustment
+  const [localStock, setLocalStock] = React.useState<Record<string, number>>({});
 
   // La fila activa para mostrar nombre en el Sheet
   const activeRow = React.useMemo(
@@ -106,6 +131,11 @@ export function StockTable({
     };
   }, [isSheetOpen, activeProductId, activeWarehouseId]);
 
+  const openAdjustment = (row: StockRow) => {
+    setAdjustmentRow(row);
+    setAdjustmentOpen(true);
+  };
+
   const openKardex = (row: StockRow) => {
     const params = new URLSearchParams(searchParams.toString());
     params.set("productId", row.product_id);
@@ -127,20 +157,38 @@ export function StockTable({
   };
 
   const filtered = React.useMemo(() => {
+    let result = initialRows;
     const q = query.trim().toLowerCase();
-    if (!q) return initialRows;
-    return initialRows.filter(
-      (r) =>
-        r.product_name.toLowerCase().includes(q) ||
-        r.sku.toLowerCase().includes(q) ||
-        r.warehouse_name.toLowerCase().includes(q)
-    );
-  }, [initialRows, query]);
+    if (q) {
+      result = result.filter(
+        (r) =>
+          r.product_name.toLowerCase().includes(q) ||
+          r.sku.toLowerCase().includes(q) ||
+          r.warehouse_name.toLowerCase().includes(q)
+      );
+    }
+    if (statusFilter !== "all") {
+      result = result.filter((r) => {
+        const qty = localStock[`${r.product_id}:${r.warehouse_id}`] ?? r.quantity_on_hand;
+        if (statusFilter === "zero")   return qty <= 0;
+        if (statusFilter === "reorder") return r.reorder_point > 0 && qty > 0 && qty <= r.reorder_point;
+        return true;
+      });
+    }
+    return result;
+  }, [initialRows, query, statusFilter, localStock]);
 
-  const lowCount = React.useMemo(
+  // reorderCount: configured minimum breached (qty > 0 but <= reorder_point)
+  // zeroCount:    completely out of stock
+  const reorderCount = React.useMemo(
     () =>
-      initialRows.filter((r) => r.quantity_on_hand <= LOW_STOCK_THRESHOLD)
-        .length,
+      initialRows.filter(
+        (r) => r.reorder_point > 0 && r.quantity_on_hand > 0 && r.quantity_on_hand <= r.reorder_point
+      ).length,
+    [initialRows]
+  );
+  const zeroCount = React.useMemo(
+    () => initialRows.filter((r) => r.quantity_on_hand <= 0).length,
     [initialRows]
   );
 
@@ -158,13 +206,59 @@ export function StockTable({
           />
         </div>
         <div className="flex items-center gap-3">
-          {lowCount > 0 ? (
+          {zeroCount > 0 ? (
             <div className="flex items-center gap-2">
               <WarningIcon className="h-4 w-4 text-red-400" />
               <span className="font-mono text-[12px] font-bold uppercase tracking-[0.12em] text-red-300">
-                {lowCount} producto{lowCount !== 1 ? "s" : ""} con stock bajo
+                {zeroCount} sin stock
               </span>
             </div>
+          ) : null}
+          {reorderCount > 0 ? (
+            <div className="flex items-center gap-2">
+              <WarningIcon className="h-4 w-4 text-safety-500/80" />
+              <span className="font-mono text-[12px] font-bold uppercase tracking-[0.12em] text-safety-500/80">
+                {reorderCount} reponer
+              </span>
+            </div>
+          ) : null}
+          {filtered.length > 0 ? (
+            <button
+              type="button"
+              onClick={() => {
+                const today = new Date().toISOString().slice(0, 10);
+                downloadCsv(
+                  `existencias_${today}.csv`,
+                  ["Producto", "SKU", "Unidad", "Bodega", "Stock_Actual", "Stock_Minimo", "Estado", "Costo_Promedio", "Valor_Stock", "Precio_Venta_cIVA"],
+                  filtered.map((r) => {
+                    const qty  = localStock[`${r.product_id}:${r.warehouse_id}`] ?? r.quantity_on_hand;
+                    const cpp  = r.average_cost ?? 0;
+                    const valorStock = Math.round(qty * cpp * 10000) / 10000;
+                    const estado = qty <= 0
+                      ? "Sin stock"
+                      : r.reorder_point > 0 && qty <= r.reorder_point
+                        ? "Reponer"
+                        : "Normal";
+                    return [
+                      r.product_name,
+                      r.sku,
+                      r.unit,
+                      r.warehouse_name,
+                      String(qty),
+                      String(r.reorder_point),
+                      estado,
+                      r.average_cost != null ? String(r.average_cost) : "",
+                      r.average_cost != null ? String(valorStock) : "",
+                      r.sale_price != null ? String(r.sale_price) : "",
+                    ];
+                  })
+                );
+              }}
+              className="inline-flex h-9 items-center gap-1.5 rounded-sm border border-steel-700 bg-steel-800 px-3 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground transition-colors hover:border-steel-600 hover:text-foreground"
+            >
+              <DownloadIcon className="h-3.5 w-3.5" />
+              CSV
+            </button>
           ) : null}
           <Button size="md" onClick={() => setInitialBalanceOpen(true)}>
             <PlusCircle className="mr-2 h-4 w-4" />
@@ -172,6 +266,39 @@ export function StockTable({
           </Button>
         </div>
       </div>
+
+      {/* ── Status filter pills ─────────────────────────────────── */}
+      {(reorderCount > 0 || zeroCount > 0) ? (
+        <div className="flex flex-wrap gap-1.5">
+          {(["all", "reorder", "zero"] as const).map((f) => {
+            const active = statusFilter === f;
+            const label = f === "all"
+              ? `Todos (${initialRows.length})`
+              : f === "reorder"
+                ? `Reponer (${reorderCount})`
+                : `Sin stock (${zeroCount})`;
+            return (
+              <button
+                key={f}
+                type="button"
+                onClick={() => setStatusFilter(f)}
+                className={[
+                  "rounded-sm border px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.1em] transition-colors",
+                  active
+                    ? f === "zero"
+                      ? "border-red-600/70 bg-red-700/15 text-red-300"
+                      : f === "reorder"
+                        ? "border-safety-500/60 bg-safety-500/10 text-safety-500"
+                        : "border-safety-500 bg-safety-500/10 text-safety-500"
+                    : "border-steel-700 bg-steel-900/40 text-muted-foreground hover:border-steel-600 hover:text-foreground",
+                ].join(" ")}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
 
       <div className="panel overflow-hidden rounded-sm">
         <div className="overflow-x-auto">
@@ -201,7 +328,9 @@ export function StockTable({
                 </tr>
               ) : (
                 filtered.map((r) => {
-                  const isLow = r.quantity_on_hand <= LOW_STOCK_THRESHOLD;
+                  const displayQty  = localStock[`${r.product_id}:${r.warehouse_id}`] ?? r.quantity_on_hand;
+                  const isZero      = displayQty <= 0;
+                  const isReorder   = !isZero && r.reorder_point > 0 && displayQty <= r.reorder_point;
                   const priceWithTax = r.sale_price;
                   const priceWithoutTax = r.sale_price != null && r.has_tax && r.tax_rate > 0
                     ? r.sale_price / (1 + r.tax_rate / 100)
@@ -223,11 +352,16 @@ export function StockTable({
                         <span
                           className={
                             "font-mono text-[15px] font-bold tabular-nums " +
-                            (isLow ? "text-red-300" : "text-foreground")
+                            (isZero ? "text-red-400" : isReorder ? "text-safety-500" : "text-foreground")
                           }
                         >
-                          {numberFmt.format(r.quantity_on_hand)}
+                          {numberFmt.format(displayQty)}
                         </span>
+                        {r.reorder_point > 0 ? (
+                          <div className="mt-0.5 font-mono text-[9.5px] tabular-nums text-muted-foreground/50">
+                            mín. {numberFmt.format(r.reorder_point)}
+                          </div>
+                        ) : null}
                       </Td>
                       <Td>
                         <div className="flex items-center gap-2">
@@ -286,24 +420,48 @@ export function StockTable({
                         )}
                       </Td>
                       <Td>
-                        {isLow ? (
+                        {isZero ? (
                           <Badge tone="danger">
                             <WarningIcon className="h-3 w-3" />
-                            Stock Bajo
+                            Sin stock
+                          </Badge>
+                        ) : isReorder ? (
+                          <Badge tone="warning">
+                            <WarningIcon className="h-3 w-3" />
+                            Reponer
                           </Badge>
                         ) : (
                           <Badge tone="active">Normal</Badge>
                         )}
                       </Td>
                       <Td className="text-right">
-                        <button
-                          type="button"
-                          onClick={() => openKardex(r)}
-                          className="inline-flex items-center gap-1.5 rounded-sm border border-steel-700 bg-steel-800 px-3 py-1.5 font-mono text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground transition-colors hover:border-safety-500/60 hover:text-safety-500"
-                        >
-                          <KardexIcon className="h-3.5 w-3.5" />
-                          Historial
-                        </button>
+                        <div className="flex justify-end gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => openAdjustment(r)}
+                            className="inline-flex items-center gap-1.5 rounded-sm border border-safety-500/40 bg-safety-500/5 px-3 py-1.5 font-mono text-[11px] font-bold uppercase tracking-[0.12em] text-safety-500 transition-colors hover:border-safety-500/70 hover:bg-safety-500/10"
+                          >
+                            <AdjustIcon className="h-3.5 w-3.5" />
+                            Ajustar
+                          </button>
+                          <div className="flex items-stretch">
+                            <button
+                              type="button"
+                              onClick={() => openKardex(r)}
+                              className="inline-flex items-center gap-1.5 rounded-l-sm border border-r-0 border-steel-700 bg-steel-800 px-3 py-1.5 font-mono text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground transition-colors hover:border-steel-600 hover:text-foreground"
+                            >
+                              <KardexIcon className="h-3.5 w-3.5" />
+                              Historial
+                            </button>
+                            <Link
+                              href={`/dashboard/inventario/movimientos?product_id=${r.product_id}&warehouse_id=${r.warehouse_id}`}
+                              className="inline-flex items-center rounded-r-sm border border-steel-700 bg-steel-800 px-2 py-1.5 font-mono text-[10px] text-muted-foreground/60 transition-colors hover:border-steel-600 hover:text-safety-500"
+                              title="Ver todos los movimientos de este producto"
+                            >
+                              ↗
+                            </Link>
+                          </div>
+                        </div>
                       </Td>
                     </tr>
                   );
@@ -336,6 +494,22 @@ export function StockTable({
         onClose={() => setInitialBalanceOpen(false)}
         products={products}
         warehouses={warehouses}
+      />
+
+      {/* Ajuste de inventario por fila */}
+      <AdjustmentDialog
+        open={adjustmentOpen}
+        onClose={() => setAdjustmentOpen(false)}
+        row={adjustmentRow}
+        onSuccess={(_before, qtyAfter, _delta) => {
+          if (adjustmentRow) {
+            setLocalStock((prev) => ({
+              ...prev,
+              [`${adjustmentRow.product_id}:${adjustmentRow.warehouse_id}`]: qtyAfter,
+            }));
+          }
+          setAdjustmentOpen(false);
+        }}
       />
     </div>
   );
@@ -429,6 +603,16 @@ function KardexIcon({ className }: { className?: string }) {
   );
 }
 
+function AdjustIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <line x1="12" y1="20" x2="12" y2="10" />
+      <line x1="18" y1="20" x2="18" y2="4" />
+      <line x1="6"  y1="20" x2="6"  y2="16" />
+    </svg>
+  );
+}
+
 function WarehouseIcon({ className }: { className?: string }) {
   return (
     <svg
@@ -443,6 +627,16 @@ function WarehouseIcon({ className }: { className?: string }) {
     >
       <path d="M3 9 12 4l9 5" />
       <path d="M5 9v11h4v-7h6v7h4V9" />
+    </svg>
+  );
+}
+
+function DownloadIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="7 10 12 15 17 10" />
+      <line x1="12" y1="15" x2="12" y2="3" />
     </svg>
   );
 }

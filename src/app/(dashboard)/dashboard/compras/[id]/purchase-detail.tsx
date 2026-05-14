@@ -166,9 +166,9 @@ export function PurchaseDetail({
 
       {/* ── Summary cards ──────────────────────────────────────── */}
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 sm:gap-3">
-        <SummaryCard label="Total" value={moneyFmt.format(purchase.total)} highlight />
-        <SummaryCard label="Subtotal" value={moneyFmt.format(purchase.subtotal)} />
-        <SummaryCard label="IVA" value={moneyFmt.format(purchase.tax_total)} />
+        <SummaryCard label="Total" value={moneyFmt.format(purchase.total)} sub="c/IVA" highlight />
+        <SummaryCard label="Subtotal" value={moneyFmt.format(purchase.subtotal)} sub="sin IVA" />
+        <SummaryCard label="IVA" value={moneyFmt.format(purchase.tax_total)} sub={`${purchase.tax_rate}%`} />
         <SummaryCard label="Ítems" value={String(items.length)} />
       </div>
 
@@ -621,10 +621,12 @@ export function PurchaseDetail({
 function SummaryCard({
   label,
   value,
+  sub,
   highlight,
 }: {
   label: string;
   value: string;
+  sub?: string;
   highlight?: boolean;
 }) {
   return (
@@ -645,6 +647,11 @@ function SummaryCard({
       >
         {value}
       </div>
+      {sub ? (
+        <div className="mt-0.5 font-mono text-[9px] uppercase tracking-[0.1em] text-muted-foreground/50">
+          {sub}
+        </div>
+      ) : null}
     </div>
   );
 }

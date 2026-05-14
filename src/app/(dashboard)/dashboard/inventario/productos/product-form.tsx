@@ -14,6 +14,7 @@ import {
   type ProductState,
 } from "@/actions/products";
 import type { ProductRow } from "./products-table";
+import { BundleEditor } from "./bundle-editor";
 
 const IVA_RATE = 15;
 const IVA_MULT = 1 + IVA_RATE / 100; // 1.15
@@ -102,6 +103,9 @@ export function ProductForm({ initial, onSuccess }: Props) {
     setPriceDistribuidor((p) => p ? cvt(p) : p);
     setPriceIncludesIva(next);
   }, []);
+  const [productKind, setProductKind] = useState<"item" | "service" | "kit" | "bundle">(
+    initial?.product_kind ?? "item"
+  );
   const [unit, setUnit] = useState(initial?.unit ?? "unidad");
   const [pricePublico, setPricePublico] = useState(
     initial?.default_price != null ? String(initial.default_price) : ""
@@ -163,6 +167,7 @@ export function ProductForm({ initial, onSuccess }: Props) {
   const previewDistribuidor = useMemo(() => pricePreview(priceDistribuidor, priceIncludesIva), [priceDistribuidor, priceIncludesIva]);
 
   return (
+    <>
     <form
       ref={formRef}
       key={formKey}
@@ -181,6 +186,7 @@ export function ProductForm({ initial, onSuccess }: Props) {
       <input type="hidden" name="price_publico" value={grossPublico} />
       <input type="hidden" name="price_mayorista" value={grossMayorista} />
       <input type="hidden" name="price_distribuidor" value={grossDistribuidor} />
+      <input type="hidden" name="product_kind" value={productKind} />
 
       <fieldset
         disabled={pending}
@@ -192,6 +198,48 @@ export function ProductForm({ initial, onSuccess }: Props) {
             Producto guardado — ingresa el siguiente
           </div>
         ) : null}
+
+        {/* ── BLOQUE 0: Tipo de producto ───────────────────────────── */}
+        <SectionHeader label="Tipo de producto" />
+        <div className="flex flex-wrap gap-2">
+          {(["item", "service", "kit", "bundle"] as const).map((k) => {
+            const labels: Record<typeof k, string> = {
+              item:    "Producto",
+              service: "Servicio",
+              kit:     "Kit",
+              bundle:  "Bundle",
+            };
+            return (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setProductKind(k)}
+                className={[
+                  "rounded-sm border px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.1em] transition-colors",
+                  productKind === k
+                    ? "border-safety-500 bg-safety-500/10 text-safety-500"
+                    : "border-steel-700 text-muted-foreground hover:border-steel-600",
+                ].join(" ")}
+              >
+                {labels[k]}
+              </button>
+            );
+          })}
+        </div>
+        <p className="field-hint pb-5 pt-1.5">
+          {productKind === "item"
+            ? "Producto físico. Control de inventario habilitado."
+            : productKind === "service"
+              ? "Servicio (mano de obra, diagnóstico…). Sin control de inventario."
+              : productKind === "kit"
+                ? "Paquete de servicio (ej: cambio de aceite). El stock se calcula desde los componentes — define los componentes abajo."
+                : "Combo comercial de productos físicos. Igual que Kit: define los componentes abajo y el stock se calcula automáticamente."}
+          {(productKind === "kit" || productKind === "bundle") && (
+            <span className="ml-1 text-safety-500/80">
+              El inventario propio queda desactivado.
+            </span>
+          )}
+        </p>
 
         {/* ── BLOQUE 1: Identificación ─────────────────────────────── */}
         <SectionHeader label="Identificación" />
@@ -363,6 +411,48 @@ export function ProductForm({ initial, onSuccess }: Props) {
           </div>
         </div>
 
+        {/* ── BLOQUE 4: Control de inventario ──────────────────── */}
+        {productKind === "item" ? (
+          <>
+            <SectionHeader label="Control de inventario" />
+            <div className="space-y-1.5 pb-5">
+              <Label htmlFor="reorder_point">
+                Stock mínimo{" "}
+                <span className="font-normal normal-case tracking-normal text-muted-foreground/70">
+                  (0 = sin mínimo)
+                </span>
+              </Label>
+              <div className="flex items-center gap-2.5">
+                <Input
+                  id="reorder_point"
+                  name="reorder_point"
+                  type="number"
+                  min="0"
+                  step="0.0001"
+                  defaultValue={
+                    initial?.reorder_point != null && initial.reorder_point > 0
+                      ? String(initial.reorder_point)
+                      : "0"
+                  }
+                  placeholder="0"
+                  mono
+                  className="w-36 text-right"
+                  invalid={Boolean(errors.reorder_point)}
+                  onFocus={(e) => e.target.select()}
+                />
+                <span className="font-mono text-[12px] text-muted-foreground/60">
+                  {unit}
+                </span>
+              </div>
+              <p className="field-hint">
+                El sistema marcará "Reponer" en Existencias cuando el stock sea
+                ≤ a este valor. Ingresa 0 para no definir un mínimo.
+              </p>
+              <FieldError fieldId="reorder_point" message={errors.reorder_point} />
+            </div>
+          </>
+        ) : null}
+
         {state?.error && !state.fieldErrors ? (
           <Alert tone="error">{state.error}</Alert>
         ) : null}
@@ -405,6 +495,12 @@ export function ProductForm({ initial, onSuccess }: Props) {
         </div>
       </div>
     </form>
+    {initial?.id && (productKind === "kit" || productKind === "bundle") ? (
+      <div className="px-6 pb-6">
+        <BundleEditor productId={initial.id} />
+      </div>
+    ) : null}
+    </>
   );
 }
 

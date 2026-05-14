@@ -21,7 +21,7 @@ export default async function ProductosPage() {
   const { data: productsV1, error: v1Error } = await supabase
     .from("products")
     .select(
-      "id, name, sku, unit, cost_price, default_price, average_cost, last_purchase_cost, product_kind, is_active, has_tax, tax_rate, created_at"
+      "id, name, sku, unit, cost_price, default_price, average_cost, last_purchase_cost, product_kind, is_active, has_tax, tax_rate, reorder_point, created_at"
     )
     .order("created_at", { ascending: false });
 
@@ -76,11 +76,12 @@ export default async function ProductosPage() {
       last_purchase_cost: (p.last_purchase_cost as number | null) ?? null,
       price_mayorista: extra?.mayorista ?? null,
       price_distribuidor: extra?.distribuidor ?? null,
-      product_kind: p.product_kind as ProductRow["product_kind"],
-      tax_rate: p.tax_rate as number | null,
-      has_tax: (p.has_tax as boolean | null) ?? true,
-      is_active: p.is_active as boolean,
-      created_at: p.created_at as string,
+      product_kind:  p.product_kind as ProductRow["product_kind"],
+      reorder_point: Number((p as { reorder_point?: number | null }).reorder_point ?? 0),
+      tax_rate:      p.tax_rate as number | null,
+      has_tax:       (p.has_tax as boolean | null) ?? true,
+      is_active:     p.is_active as boolean,
+      created_at:    p.created_at as string,
     };
   });
 

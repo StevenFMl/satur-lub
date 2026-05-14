@@ -80,16 +80,17 @@ async function persistTierPrices(
 
 function parseFormData(formData: FormData) {
   return productSchema.safeParse({
-    id: formData.get("id"),
-    name: formData.get("name"),
-    sku: formData.get("sku"),
-    unit: formData.get("unit"),
-    cost_price: formData.get("cost_price"),
-    has_tax:
-      formData.get("has_tax") === "on" || formData.get("has_tax") === "true",
-    price_publico: formData.get("price_publico"),
-    price_mayorista: formData.get("price_mayorista"),
+    id:                 formData.get("id"),
+    name:               formData.get("name"),
+    sku:                formData.get("sku"),
+    unit:               formData.get("unit"),
+    cost_price:         formData.get("cost_price"),
+    has_tax:            formData.get("has_tax") === "on" || formData.get("has_tax") === "true",
+    price_publico:      formData.get("price_publico"),
+    price_mayorista:    formData.get("price_mayorista"),
     price_distribuidor: formData.get("price_distribuidor"),
+    product_kind:       formData.get("product_kind"),
+    reorder_point:      formData.get("reorder_point"),
   });
 }
 
@@ -102,7 +103,7 @@ function parseFormData(formData: FormData) {
  *
  * Reglas:
  *  - `tenant_id` se inyecta en el servidor desde la sesión activa.
- *  - `product_kind` queda fijo en 'item'.
+ *  - `product_kind` viene del formulario; kit/bundle fuerzan track_inventory=false.
  *  - Si `sku` viene vacío, se genera uno determinista a partir del nombre.
  *  - Solo owner/admin pueden crear/editar.
  *  - PUBLICO es obligatorio; MAYORISTA / DISTRIBUIDOR opcionales.
@@ -139,13 +140,15 @@ export async function upsertProductAction(
   const sku = data.sku ?? makeSkuFromName(data.name);
 
   const payload = {
-    tenant_id: tenantId,
-    name: data.name,
+    tenant_id:    tenantId,
+    name:         data.name,
     sku,
-    unit: data.unit,
-    cost_price: data.cost_price,
-    has_tax: data.has_tax,
-    product_kind: "item" as const,
+    unit:         data.unit,
+    cost_price:   data.cost_price,
+    has_tax:      data.has_tax,
+    product_kind:  data.product_kind,
+    reorder_point: data.reorder_point,
+    ...((data.product_kind === "kit" || data.product_kind === "bundle") ? { track_inventory: false } : {}),
   };
 
   const { data: row, error } = data.id
@@ -246,13 +249,15 @@ export async function quickCreateProductAction(
   const sku = data.sku ?? makeSkuFromName(data.name);
 
   const payload = {
-    tenant_id: tenantId,
-    name: data.name,
+    tenant_id:    tenantId,
+    name:         data.name,
     sku,
-    unit: data.unit,
-    cost_price: data.cost_price,
-    has_tax: data.has_tax,
-    product_kind: "item" as const,
+    unit:         data.unit,
+    cost_price:   data.cost_price,
+    has_tax:      data.has_tax,
+    product_kind:  data.product_kind,
+    reorder_point: data.reorder_point,
+    ...((data.product_kind === "kit" || data.product_kind === "bundle") ? { track_inventory: false } : {}),
   };
 
   const { data: row, error } = data.id
@@ -394,6 +399,30 @@ export async function duplicateProductAction(
     });
   }
 
+  // Copy bundle_items for kit/bundle products
+  const srcKind = (src.product_kind as string) || "item";
+  if (srcKind === "kit" || srcKind === "bundle") {
+    const { data: srcItems } = await supabase
+      .from("bundle_items")
+      .select("component_product_id, quantity, base_qty, sort_order")
+      .eq("bundle_product_id", id)
+      .eq("tenant_id", tenantId);
+
+    if (srcItems?.length) {
+      type BundleRow = { component_product_id: string; quantity: number; base_qty: number; sort_order: number };
+      await supabase.from("bundle_items").insert(
+        (srcItems as unknown as BundleRow[]).map((item) => ({
+          tenant_id:            tenantId,
+          bundle_product_id:    newProductId,
+          component_product_id: item.component_product_id,
+          quantity:             item.quantity,
+          base_qty:             item.base_qty,
+          sort_order:           item.sort_order,
+        }))
+      );
+    }
+  }
+
   invalidateProducts();
   return { ok: true, newId: newProductId };
 }
@@ -508,5 +537,70 @@ export async function bulkImportProductsAction(
   }
 
   invalidateProducts();
+  return { ok: true };
+}
+
+/* ------------------------------------------------------------------ */
+/* Bundle / Kit — gestión de componentes                               */
+/* ------------------------------------------------------------------ */
+
+export type BundleItemsState = { ok?: boolean; error?: string } | null;
+
+export async function saveBundleItemsAction(
+  bundleProductId: string,
+  items: { component_product_id: string; quantity: number; base_qty: number; sort_order: number }[]
+): Promise<BundleItemsState> {
+  const { user, membership } = await getActiveMembership();
+  if (!user || !membership) return { error: "Sesión expirada." };
+  if (membership.role !== "owner" && membership.role !== "admin") {
+    return { error: "Solo administradores pueden editar componentes de kits." };
+  }
+  if (!bundleProductId) return { error: "ID de producto requerido." };
+
+  const supabase = await createClient();
+  const tenantId = membership.tenant_id;
+
+  const { data: prod } = await supabase
+    .from("products")
+    .select("id, product_kind")
+    .eq("id", bundleProductId)
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+
+  if (!prod) return { error: "Producto no encontrado." };
+  if (prod.product_kind !== "kit" && prod.product_kind !== "bundle")
+    return { error: "El producto no es de tipo kit o bundle." };
+
+  // Replace all components (delete + insert — simplest idempotent approach)
+  const { error: delErr } = await supabase
+    .from("bundle_items")
+    .delete()
+    .eq("bundle_product_id", bundleProductId)
+    .eq("tenant_id", tenantId);
+
+  if (delErr) {
+    console.error("saveBundleItemsAction delete:", delErr.message);
+    return { error: "No se pudieron actualizar los componentes." };
+  }
+
+  if (items.length > 0) {
+    const rows = items.map((it) => ({
+      tenant_id:            tenantId,
+      bundle_product_id:    bundleProductId,
+      component_product_id: it.component_product_id,
+      quantity:             it.quantity,
+      base_qty:             it.base_qty,
+      sort_order:           it.sort_order,
+    }));
+    const { error: insErr } = await supabase.from("bundle_items").insert(rows);
+    if (insErr) {
+      console.error("saveBundleItemsAction insert:", insErr.message);
+      return { error: "No se pudieron guardar los componentes." };
+    }
+  }
+
+  revalidateTag("products");
+  revalidatePath("/dashboard/inventario/productos");
+  revalidatePath("/dashboard/pos");
   return { ok: true };
 }

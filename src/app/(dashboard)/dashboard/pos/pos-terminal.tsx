@@ -26,6 +26,13 @@ export type PosPresentation = {
   sort_order: number;
 };
 
+export type PosBundleComponent = {
+  product_id:  string;
+  quantity:    number;
+  base_qty:    number;
+  sort_order:  number;
+};
+
 export type PosProduct = {
   id:              string;
   name:            string;
@@ -36,8 +43,10 @@ export type PosProduct = {
   has_tax:         boolean;
   track_inventory: boolean;
   product_kind:    string;
-  stock:           number;      // in base units, total across warehouses
+  stock:           number;      // in base units (or min-sellable for kits)
   presentations:   PosPresentation[];
+  is_kit:          boolean;
+  kit_components:  PosBundleComponent[];
 };
 
 export type PosWarehouse = { id: string; name: string };
@@ -67,6 +76,9 @@ type CartLine = {
   price_override_type:   string | null;
   price_override_reason: string | null;
   price_override_note:   string | null;
+  // kit/bundle
+  is_kit:          boolean;
+  kit_components:  PosBundleComponent[];
 };
 
 type OverridePayload = {
@@ -186,6 +198,12 @@ export function PosTerminal({
 
   const searchInputRef = React.useRef<HTMLInputElement>(null);
 
+  // Map productId → name for kit component display in cart
+  const productNameById = React.useMemo(
+    () => new Map(products.map((p) => [p.id, p.name])),
+    [products]
+  );
+
   React.useEffect(() => setPage(0), [debouncedQuery]);
 
   // ── Catalog ──────────────────────────────────────────────
@@ -233,6 +251,8 @@ export function PosTerminal({
           price_override_type:   null,
           price_override_reason: null,
           price_override_note:   null,
+          is_kit:          product.is_kit,
+          kit_components:  product.kit_components,
         },
       ];
     });
@@ -297,7 +317,7 @@ export function PosTerminal({
   const checkoutOpenRef = React.useRef(false);
   const cartRef = React.useRef<CartLine[]>([]);
   canCheckoutRef.current = cart.length > 0 && customer != null &&
-    !(warehouseId != null && cart.some((l) => l.track_inventory && l.quantity * l.base_qty > l.stock_base));
+    !(warehouseId != null && cart.some((l) => (l.track_inventory || (l.is_kit && l.kit_components.length > 0)) && l.quantity * l.base_qty > l.stock_base));
   checkoutOpenRef.current = checkoutOpen;
   cartRef.current = cart;
 
@@ -333,7 +353,7 @@ export function PosTerminal({
 
   const hasStockIssue = React.useMemo(() =>
     warehouseId != null &&
-    cart.some((l) => l.track_inventory && l.quantity * l.base_qty > l.stock_base),
+    cart.some((l) => (l.track_inventory || (l.is_kit && l.kit_components.length > 0)) && l.quantity * l.base_qty > l.stock_base),
     [cart, warehouseId]
   );
 
@@ -443,7 +463,8 @@ export function PosTerminal({
                 const cartLines   = cart.filter((l) => l.product_id === product.id);
                 const totalInCart = cartLines.reduce((s, l) => s + l.quantity, 0);
                 const baseInCart  = cartLines.reduce((s, l) => s + l.quantity * l.base_qty, 0);
-                const noStock     = warehouseId != null && product.track_inventory && product.stock - baseInCart <= 0;
+                const isConfiguredKit = product.is_kit && product.kit_components.length > 0;
+                const noStock     = warehouseId != null && (product.track_inventory || isConfiguredKit) && product.stock - baseInCart <= 0;
                 const noPrice     = product.price === 0 && !product.presentations.some((p) => p.unit_price);
                 const isFlashing  = cartLines.some((l) => flashKeys.has(l.key));
 
@@ -474,8 +495,13 @@ export function PosTerminal({
                       <div className="line-clamp-2 text-[13px] font-semibold leading-tight text-foreground">
                         {product.name}
                       </div>
-                      <div className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground/60">
-                        {product.sku}
+                      <div className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground/60">
+                        <span>{product.sku}</span>
+                        {product.is_kit ? (
+                          <span className="rounded-sm border border-sky-600/50 bg-sky-700/15 px-1 py-px font-mono text-[8px] font-bold uppercase tracking-[0.06em] text-sky-400">
+                            {product.product_kind === "bundle" ? "BUNDLE" : "KIT"}
+                          </span>
+                        ) : null}
                       </div>
                     </div>
 
@@ -488,7 +514,11 @@ export function PosTerminal({
                       >
                         {noPrice ? "—" : moneyFmt.format(defaultPres?.unit_price ?? product.price)}
                       </span>
-                      {product.track_inventory ? (
+                      {product.is_kit && product.kit_components.length === 0 ? (
+                        <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-amber-500/70">
+                          Sin configurar
+                        </span>
+                      ) : (product.track_inventory || (isConfiguredKit && warehouseId != null)) ? (
                         <span
                           className={
                             "font-mono text-[10px] uppercase tracking-[0.08em] " +
@@ -576,6 +606,7 @@ export function PosTerminal({
             onCourtesy={applyCourtesy}
             onGlobalDiscount={applyGlobalDiscount}
             onFiado={() => openCheckout("credit")}
+            productNameById={productNameById}
           />
         </div>
       </div>
@@ -619,6 +650,7 @@ export function PosTerminal({
             onCourtesy={applyCourtesy}
             onGlobalDiscount={applyGlobalDiscount}
             onFiado={() => { setMobileCartOpen(false); setTimeout(() => openCheckout("credit"), 200); }}
+            productNameById={productNameById}
           />
         </div>
       </Sheet>
@@ -643,6 +675,10 @@ export function PosTerminal({
             price_override_type:   l.price_override_type   ?? undefined,
             price_override_reason: l.price_override_reason ?? undefined,
             price_override_note:   l.price_override_note   ?? undefined,
+            // Kit: pass components so create_sale can decrement them atomically
+            components: l.is_kit && l.kit_components.length > 0
+              ? l.kit_components
+              : undefined,
           }))}
           totals={{ gross: Number(totals.gross), net: Number(totals.net), iva: Number(totals.iva) }}
           customerId={customer?.id ?? ""}
@@ -673,6 +709,7 @@ function CartPanel({
   onCourtesy,
   onGlobalDiscount,
   onFiado,
+  productNameById,
 }: {
   cart:             CartLine[];
   totals:           ReturnType<typeof calcTotals>;
@@ -688,6 +725,7 @@ function CartPanel({
   onCourtesy:       (reason: string) => void;
   onGlobalDiscount: (pct: number) => void;
   onFiado:          () => void;
+  productNameById:  Map<string, string>;
 }) {
   const [editingKey, setEditingKey]     = React.useState<string | null>(null);
   const [quickAction, setQuickAction]   = React.useState<QuickAction>(null);
@@ -771,7 +809,7 @@ function CartPanel({
           <ul className="divide-y divide-steel-800/50">
             {cart.map((line) => {
               const gross      = Number(lineGross(line).round(2).toString());
-              const stockWarn  = line.track_inventory && line.quantity * line.base_qty > line.stock_base;
+              const stockWarn  = (line.track_inventory || (line.is_kit && line.kit_components.length > 0)) && line.quantity * line.base_qty > line.stock_base;
               const hasOverride = line.override_unit_price != null;
               const isEditing  = editingKey === line.key;
               const discountPct = hasOverride && line.unit_price > 0
@@ -833,6 +871,34 @@ function CartPanel({
                       {moneyFmt.format(gross)}
                     </span>
                   </div>
+
+                  {/* Kit/bundle component sub-items — visual only, no fiscal impact */}
+                  {line.is_kit && line.kit_components.length > 0 ? (
+                    <ul className="mt-1 space-y-px border-l-2 border-sky-700/40 pl-2">
+                      {[...line.kit_components]
+                        .sort((a, b) => a.sort_order - b.sort_order)
+                        .slice(0, 3)
+                        .map((c) => {
+                          const totalQty = c.quantity * c.base_qty;
+                          const display  = totalQty % 1 === 0 ? String(totalQty) : totalQty.toFixed(2);
+                          return (
+                            <li key={c.product_id} className="flex items-center justify-between gap-1.5 min-w-0">
+                              <span className="truncate font-mono text-[9px] leading-4 text-muted-foreground/55">
+                                {productNameById.get(c.product_id) ?? "—"}
+                              </span>
+                              <span className="shrink-0 font-mono text-[9px] tabular-nums text-muted-foreground/40">
+                                ×{display}
+                              </span>
+                            </li>
+                          );
+                        })}
+                      {line.kit_components.length > 3 ? (
+                        <li className="font-mono text-[9px] leading-4 text-muted-foreground/35">
+                          +{line.kit_components.length - 3} componente{line.kit_components.length - 3 !== 1 ? "s" : ""}
+                        </li>
+                      ) : null}
+                    </ul>
+                  ) : null}
 
                   {/* Qty controls + override toggle + remove */}
                   <div className="mt-2 flex items-center gap-1.5">

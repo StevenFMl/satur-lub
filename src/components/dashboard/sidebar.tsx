@@ -236,6 +236,27 @@ const NAV: NavEntry[] = [
           ),
         },
         {
+          href: "/dashboard/inventario/valor",
+          label: "Valor",
+          icon: (
+            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="12" y1="1" x2="12" y2="23" />
+              <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+            </svg>
+          ),
+        },
+        {
+          href: "/dashboard/inventario/reposicion",
+          label: "Reposición",
+          icon: (
+            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 9h18M3 15h18" />
+              <path d="M8 3 2 9l6 6" />
+              <path d="M16 21l6-6-6-6" />
+            </svg>
+          ),
+        },
+        {
           href: "/dashboard/inventario/infraestructura",
           label: "Locales y Bodegas",
           icon: (
@@ -243,6 +264,29 @@ const NAV: NavEntry[] = [
               <path d="M3 21h18" />
               <path d="M5 21V7l7-4 7 4v14" />
               <path d="M9 21v-6h6v6" />
+            </svg>
+          ),
+        },
+        {
+          href: "/dashboard/inventario/movimientos",
+          label: "Movimientos",
+          icon: (
+            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 12h18" />
+              <path d="M3 6h18" />
+              <path d="M3 18h18" />
+              <path d="M9 3 3 9l6 6" />
+              <path d="M15 21l6-6-6-6" />
+            </svg>
+          ),
+        },
+        {
+          href: "/dashboard/inventario/conteo",
+          label: "Conteo físico",
+          icon: (
+            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 11l3 3L22 4" />
+              <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
             </svg>
           ),
         },

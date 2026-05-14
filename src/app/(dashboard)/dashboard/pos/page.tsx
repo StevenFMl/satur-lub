@@ -9,6 +9,7 @@ import {
   type PosPresentation,
   type PosWarehouse,
   type ActiveCashSession,
+  type PosBundleComponent,
 } from "./pos-terminal";
 import type { PickedCustomer } from "@/components/dashboard/customer-picker";
 
@@ -58,6 +59,37 @@ export default async function PosPage() {
     stockByProduct.set(b.product_id as string, cur + Number(b.quantity_on_hand ?? 0));
   }
 
+  // ── Bundle items (kit components) ──────────────────────────
+  type RawBundleItem = {
+    bundle_product_id:    string;
+    component_product_id: string;
+    quantity:             number;
+    base_qty:             number;
+    sort_order:           number;
+  };
+
+  let kitComponentsByProduct = new Map<string, PosBundleComponent[]>();
+  {
+    const { data: rawBundles } = await supabase
+      .from("bundle_items")
+      .select("bundle_product_id, component_product_id, quantity, base_qty, sort_order")
+      .eq("tenant_id", tenantId)
+      .order("sort_order");
+
+    if (rawBundles) {
+      for (const b of rawBundles as unknown as RawBundleItem[]) {
+        const arr = kitComponentsByProduct.get(b.bundle_product_id) ?? [];
+        arr.push({
+          product_id: b.component_product_id,
+          quantity:   Number(b.quantity ?? 1),
+          base_qty:   Number(b.base_qty  ?? 1),
+          sort_order: b.sort_order,
+        });
+        kitComponentsByProduct.set(b.bundle_product_id, arr);
+      }
+    }
+  }
+
   // ── Presentations (post-v3 migration, graceful fallback) ───
   type RawPres = {
     id: string;
@@ -97,8 +129,24 @@ export default async function PosPage() {
 
   // ── Build PosProduct list ───────────────────────────────────
   const products: PosProduct[] = (rawProducts ?? []).map((p) => {
-    const pid   = p.id as string;
-    const price = priceByProduct.get(pid) ?? (p.default_price as number | null) ?? 0;
+    const pid        = p.id as string;
+    const price      = priceByProduct.get(pid) ?? (p.default_price as number | null) ?? 0;
+    const isKit      = p.product_kind === "kit" || p.product_kind === "bundle";
+    const components = kitComponentsByProduct.get(pid) ?? [];
+
+    // Kit stock = min sellable units based on component availability
+    let kitStock = 0;
+    if (isKit && components.length > 0) {
+      kitStock = Math.floor(
+        Math.min(
+          ...components.map((c) => {
+            const compStock = stockByProduct.get(c.product_id) ?? 0;
+            return compStock / (c.quantity * c.base_qty);
+          })
+        )
+      );
+    }
+
     return {
       id:              pid,
       name:            p.name as string,
@@ -109,8 +157,10 @@ export default async function PosPage() {
       has_tax:         (p.has_tax as boolean | null) ?? true,
       track_inventory: (p.track_inventory as boolean | null) ?? true,
       product_kind:    p.product_kind as string,
-      stock:           stockByProduct.get(pid) ?? 0,
+      stock:           isKit ? kitStock : (stockByProduct.get(pid) ?? 0),
       presentations:   presByProduct.get(pid) ?? [],
+      is_kit:          isKit,
+      kit_components:  components,
     };
   });
 
