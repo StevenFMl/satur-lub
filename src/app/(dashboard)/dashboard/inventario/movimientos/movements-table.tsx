@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import Link from "next/link";
+import { todayEC } from "@/lib/date-ec";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -291,7 +292,7 @@ export function MovementsTable({ rows, products, warehouses, hasFilter }: Props)
             <button
               type="button"
               onClick={() => {
-                const today = new Date().toISOString().slice(0, 10);
+                const today = todayEC();
                 downloadCsv(
                   `kardex_${today}.csv`,
                   ["Fecha", "Hora", "Producto", "SKU", "Bodega", "Tipo", "Signo", "Cantidad", "Unidad", "Costo_Unit", "Motivo", "Referencia", "Usuario"],

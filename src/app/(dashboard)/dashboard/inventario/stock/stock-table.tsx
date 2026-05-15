@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import Link from "next/link";
 import { KardexSheet, type KardexMovement } from "./kardex-sheet";
+import { todayEC } from "@/lib/date-ec";
 import { InitialBalanceDialog } from "./initial-balance-dialog";
 import { AdjustmentDialog } from "./adjustment-dialog";
 import { Button } from "@/components/ui/button";
@@ -226,7 +227,7 @@ export function StockTable({
             <button
               type="button"
               onClick={() => {
-                const today = new Date().toISOString().slice(0, 10);
+                const today = todayEC();
                 downloadCsv(
                   `existencias_${today}.csv`,
                   ["Producto", "SKU", "Unidad", "Bodega", "Stock_Actual", "Stock_Minimo", "Estado", "Costo_Promedio", "Valor_Stock", "Precio_Venta_cIVA"],

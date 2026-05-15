@@ -3,6 +3,7 @@
 import * as React from "react";
 import Big from "big.js";
 import { Button } from "@/components/ui/button";
+import { todayEC } from "@/lib/date-ec";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -296,7 +297,7 @@ export function ReceivableTable({
   // Sync if parent re-fetches
   React.useEffect(() => { setRows(initialRows); }, [initialRows]);
 
-  const todayIso = React.useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const todayIso = React.useMemo(() => todayEC(), []);
 
   // Aging stats over ALL active (non-paid, non-cancelled) rows
   const agingStats = React.useMemo(() => {

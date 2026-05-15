@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Alert } from "@/components/ui/alert";
 import { Select } from "@/components/ui/select";
 import { Sheet } from "@/components/ui/sheet";
+import { Dialog } from "@/components/ui/dialog";
 import { CustomerPicker, type PickedCustomer } from "@/components/dashboard/customer-picker";
 import type { PosPermissions } from "@/lib/auth/permissions";
 import { PRICE_OVERRIDE_LABELS, type PriceOverrideType } from "@/lib/validations/sale";
@@ -60,7 +61,7 @@ export type ActiveCashSession = {
 
 type CartLine = {
   key:             string;
-  product_id:      string;
+  product_id:      string | null;
   presentation_id: string | null;
   name:            string;
   unit_label:      string;
@@ -193,10 +194,13 @@ export function PosTerminal({
   const [searchQuery, setSearchQuery]       = React.useState("");
   const debouncedQuery                      = useDebounce(searchQuery, 150);
   const [page, setPage]                     = React.useState(0);
-  const [mobileCartOpen, setMobileCartOpen] = React.useState(false);
-  const [checkoutOpen, setCheckoutOpen]     = React.useState(false);
-  const [checkoutMode, setCheckoutMode]     = React.useState<"normal" | "credit">("normal");
-  const [flashKeys, setFlashKeys]           = React.useState<Set<string>>(new Set());
+  const [mobileCartOpen, setMobileCartOpen]   = React.useState(false);
+  const [checkoutOpen, setCheckoutOpen]       = React.useState(false);
+  const [checkoutMode, setCheckoutMode]       = React.useState<"normal" | "credit">("normal");
+  const [flashKeys, setFlashKeys]             = React.useState<Set<string>>(new Set());
+  const [manualItemOpen, setManualItemOpen]   = React.useState(false);
+  // Presentation picker: set when clicking a product that has presentations
+  const [pickingProduct, setPickingProduct]   = React.useState<PosProduct | null>(null);
 
   const searchInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -221,7 +225,35 @@ export function PosTerminal({
   const safePage     = Math.min(page, totalPages - 1);
   const pageProducts = filteredProducts.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE);
 
-  // ── Cart operations ──────────────────────────────────────
+  const addManualToCart = React.useCallback((item: { name: string; unit_price: number; quantity: number; has_tax: boolean; average_cost: number }) => {
+    const lineKey = `manual::${crypto.randomUUID()}`;
+    setCart((prev) => [
+      ...prev,
+      {
+        key:             lineKey,
+        product_id:      null,
+        presentation_id: null,
+        name:            item.name,
+        unit_label:      "unidad",
+        unit_price:      item.unit_price,
+        base_qty:        1,
+        tax_rate:        15,
+        has_tax:         item.has_tax,
+        track_inventory: false,
+        stock_base:      0,
+        quantity:        item.quantity,
+        discount_amount: 0,
+        average_cost:    item.average_cost,
+        override_unit_price: null,
+        price_override_type: null,
+        price_override_reason: null,
+        price_override_note: null,
+        is_kit:          false,
+        kit_components:  [],
+      }
+    ]);
+  }, []);
+
   const addToCart = React.useCallback((product: PosProduct, pres: PosPresentation | null = null) => {
     const resolved = resolvePresentation(product, pres);
     const lineKey  = `${product.id}::${resolved.presentation_id ?? "base"}`;
@@ -368,7 +400,9 @@ export function PosTerminal({
       const netLine = l.has_tax && l.tax_rate > 0
         ? gross / (1 + l.tax_rate / 100)
         : gross;
-      return netLine < l.average_cost;
+      // Scale by base_qty: a galón (base_qty=0.2) of a $15/caneca product
+      // costs $3/galón — compare net price per presentation, not per base unit.
+      return netLine < l.average_cost * l.base_qty;
     }),
     [cart]
   );
@@ -444,25 +478,35 @@ export function PosTerminal({
 
         {/* ── CATALOG ─────────────────────────────────────── */}
         <div className="flex min-w-0 flex-1 flex-col gap-3">
-          <div className="relative">
-            <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              ref={searchInputRef}
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Buscar producto (F4)..."
-              className="h-11 pl-10"
-              autoComplete="off"
-            />
-            {searchQuery ? (
-              <button
-                type="button"
-                onClick={() => setSearchQuery("")}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
-              >
-                <XSmallIcon className="h-4 w-4" />
-              </button>
-            ) : null}
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                ref={searchInputRef}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Buscar producto (F4)..."
+                className="h-11 pl-10"
+                autoComplete="off"
+              />
+              {searchQuery ? (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  <XSmallIcon className="h-4 w-4" />
+                </button>
+              ) : null}
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setManualItemOpen(true)}
+              className="h-11 shrink-0 bg-steel-900/50 border-steel-700 hover:border-safety-500 hover:text-safety-500"
+            >
+              + Ítem Manual
+            </Button>
           </div>
 
           {filteredProducts.length === 0 ? (
@@ -484,23 +528,34 @@ export function PosTerminal({
                 const noPrice     = product.price === 0 && !product.presentations.some((p) => p.unit_price);
                 const isFlashing  = cartLines.some((l) => flashKeys.has(l.key));
 
+                // Card is a <div role="button"> (not <button>) so we can nest the
+                // secondary "Fracción" <button> inside it — valid HTML, no hydration error.
+                const hasFractions = product.presentations.length >= 1;
+
                 return (
-                  <button
+                  <div
                     key={product.id}
-                    type="button"
+                    role="button"
+                    tabIndex={noStock ? -1 : 0}
                     onClick={() => !noStock && addToCart(product, defaultPres)}
-                    disabled={noStock}
+                    onKeyDown={(e) => {
+                      if (!noStock && (e.key === "Enter" || e.key === " ")) {
+                        e.preventDefault();
+                        addToCart(product, defaultPres);
+                      }
+                    }}
                     className={[
-                      "group relative flex min-h-[96px] flex-col rounded-sm border-2 p-3 text-left transition-all duration-150",
+                      "group relative flex min-h-[96px] select-none flex-col rounded-sm border-2 p-3 text-left transition-all duration-150",
                       noStock
                         ? "cursor-not-allowed border-steel-800 bg-steel-900/20 opacity-50"
                         : isFlashing
-                          ? "scale-[0.97] border-safety-500 bg-safety-500/10"
+                          ? "scale-[0.97] border-safety-500 bg-safety-500/10 cursor-pointer"
                           : totalInCart > 0
-                            ? "border-safety-500/40 bg-safety-500/5 hover:border-safety-500/70 hover:bg-safety-500/10"
-                            : "border-steel-700 bg-steel-900 hover:border-safety-500/50 hover:bg-steel-800 active:scale-[0.97]",
+                            ? "cursor-pointer border-safety-500/40 bg-safety-500/5 hover:border-safety-500/70 hover:bg-safety-500/10"
+                            : "cursor-pointer border-steel-700 bg-steel-900 hover:border-safety-500/50 hover:bg-steel-800 active:scale-[0.97]",
                     ].join(" ")}
                   >
+                    {/* Cart badge */}
                     {totalInCart > 0 ? (
                       <span className="absolute right-2 top-2 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-safety-500 px-1 font-mono text-[10px] font-bold tabular-nums text-steel-950">
                         {totalInCart}
@@ -552,38 +607,21 @@ export function PosTerminal({
                       ) : null}
                     </div>
 
-                    {product.presentations.length > 1 ? (
-                      <div
-                        className="mt-2 flex flex-wrap gap-1"
-                        onClick={(e) => e.stopPropagation()}
+                    {/* Secondary action: pick a fraction. Valid here because the card
+                        is a <div role="button">, not a <button>. stopPropagation
+                        prevents triggering the card's own click (add default). */}
+                    {hasFractions ? (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setPickingProduct(product); }}
+                        onKeyDown={(e) => e.stopPropagation()}
+                        className="mt-2 flex w-full items-center justify-center gap-1 rounded-sm border border-steel-600/40 bg-steel-800/30 py-1 font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-muted-foreground/40 transition-colors hover:border-safety-500/40 hover:bg-safety-500/5 hover:text-safety-500/70"
                       >
-                        {product.presentations.map((pres) => {
-                          const inCart      = cart.find((l) => l.product_id === product.id && l.presentation_id === pres.id);
-                          const presStock   = stockForPresentation(product.stock, pres.base_qty);
-                          const presNoStock = warehouseId != null && product.track_inventory && presStock <= 0;
-                          return (
-                            <button
-                              key={pres.id}
-                              type="button"
-                              disabled={presNoStock}
-                              onClick={() => !presNoStock && addToCart(product, pres)}
-                              title={`${pres.unit_label} · ${moneyFmt.format(pres.unit_price ?? product.price)}`}
-                              className={[
-                                "rounded-sm border px-1.5 py-0.5 font-mono text-[9.5px] font-bold uppercase tracking-[0.08em] transition-colors",
-                                presNoStock
-                                  ? "cursor-not-allowed border-steel-800 text-muted-foreground/30"
-                                  : inCart
-                                    ? "border-safety-500 bg-safety-500/20 text-safety-500"
-                                    : "border-steel-600 text-muted-foreground hover:border-safety-500/50 hover:text-foreground",
-                              ].join(" ")}
-                            >
-                              {pres.unit_label}
-                            </button>
-                          );
-                        })}
-                      </div>
+                        <LayersIcon className="h-2.5 w-2.5" />
+                        Fracción
+                      </button>
                     ) : null}
-                  </button>
+                  </div>
                 );
               })}
             </div>
@@ -708,7 +746,144 @@ export function PosTerminal({
           onSuccess={clearCart}
         />
       ) : null}
+
+      <ManualItemModal
+        open={manualItemOpen}
+        onClose={() => setManualItemOpen(false)}
+        onAdd={addManualToCart}
+      />
+
+      {/* Presentation picker — opens when clicking a product that has presentations */}
+      {pickingProduct ? (
+        <PresentationPickerDialog
+          product={pickingProduct}
+          warehouseId={warehouseId}
+          cart={cart}
+          onPick={(prod, pres) => addToCart(prod, pres)}
+          onClose={() => setPickingProduct(null)}
+        />
+      ) : null}
     </div>
+  );
+}
+
+// ── PresentationPickerDialog ───────────────────────────────────────────────
+// Opens when the user taps a product card that has presentations configured.
+// Lives OUTSIDE the product <button>, so there are no nested interactive elements.
+
+const numFmtPres = new Intl.NumberFormat("es-EC", {
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 4,
+});
+
+function PresentationPickerDialog({
+  product,
+  warehouseId,
+  cart,
+  onPick,
+  onClose,
+}: {
+  product:     PosProduct;
+  warehouseId: string | null;
+  cart:        CartLine[];
+  onPick:      (product: PosProduct, pres: PosPresentation) => void;
+  onClose:     () => void;
+}) {
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      title={product.name}
+      description={`SKU ${product.sku} · Selecciona la presentación a vender`}
+      className="max-w-[460px]"
+    >
+      <div className="space-y-2 px-6 pb-6 pt-4">
+        {product.presentations.map((pres) => {
+          const presStock   = stockForPresentation(product.stock, pres.base_qty);
+          const presNoStock = warehouseId != null && product.track_inventory && presStock <= 0;
+          const presPrice   = pres.unit_price ?? product.price;
+          const inCart      = cart.find(
+            (l) => l.product_id === product.id && l.presentation_id === pres.id
+          );
+
+          return (
+            <button
+              key={pres.id}
+              type="button"
+              disabled={presNoStock}
+              onClick={() => { onPick(product, pres); onClose(); }}
+              className={[
+                "flex w-full items-center justify-between rounded-sm border-2 px-5 py-4 text-left transition-all active:scale-[0.99]",
+                presNoStock
+                  ? "cursor-not-allowed border-steel-800 opacity-40"
+                  : inCart
+                    ? "border-safety-500 bg-safety-500/8"
+                    : "border-steel-700 bg-steel-800/40 hover:border-safety-500/60 hover:bg-safety-500/5",
+              ].join(" ")}
+            >
+              {/* Left: label + equivalence */}
+              <div className="min-w-0">
+                <p className={[
+                  "text-[17px] font-bold leading-tight",
+                  inCart ? "text-safety-400" : "text-foreground",
+                ].join(" ")}>
+                  {pres.unit_label}
+                  {pres.is_default ? (
+                    <span className="ml-2 font-mono text-[9px] font-normal uppercase tracking-[0.1em] text-muted-foreground/40">
+                      predeterminada
+                    </span>
+                  ) : null}
+                </p>
+                <p className="mt-0.5 font-mono text-[10px] text-muted-foreground/50">
+                  = {numFmtPres.format(pres.base_qty)} {product.unit} del inventario
+                </p>
+                {inCart ? (
+                  <p className="mt-0.5 font-mono text-[9.5px] text-safety-500/70">
+                    {inCart.quantity} en carrito → toca para sumar 1 más
+                  </p>
+                ) : null}
+              </div>
+
+              {/* Right: stock + price */}
+              <div className="flex shrink-0 items-center gap-5 pl-4">
+                {product.track_inventory ? (
+                  <div className="text-right">
+                    <p className={[
+                      "font-mono text-[15px] font-bold tabular-nums",
+                      presNoStock   ? "text-red-400"
+                      : presStock <= 3 ? "text-signal-400"
+                      : "text-muted-foreground/60",
+                    ].join(" ")}>
+                      {presNoStock ? "0" : presStock}
+                    </p>
+                    <p className="font-mono text-[8.5px] text-muted-foreground/35">disp.</p>
+                  </div>
+                ) : null}
+                <div className="text-right">
+                  <p className={[
+                    "font-display text-[22px] leading-none tabular-nums",
+                    inCart ? "text-safety-400" : "text-safety-500",
+                  ].join(" ")}>
+                    {moneyFmt.format(presPrice)}
+                  </p>
+                  <p className="mt-0.5 font-mono text-[8.5px] text-muted-foreground/35">
+                    precio sugerido
+                  </p>
+                </div>
+              </div>
+            </button>
+          );
+        })}
+
+        <button
+          type="button"
+          onClick={onClose}
+          className="mt-1 w-full rounded-sm border border-steel-700/60 py-2.5 font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground/50 transition-colors hover:border-steel-600 hover:text-muted-foreground/80"
+        >
+          Cancelar
+        </button>
+      </div>
+    </Dialog>
   );
 }
 
@@ -848,6 +1023,11 @@ function CartPanel({
                         <span className="truncate text-[12.5px] font-semibold leading-tight text-foreground">
                           {line.name}
                         </span>
+                        {line.product_id === null ? (
+                          <span className="shrink-0 rounded-sm border border-sky-700/50 bg-sky-900/20 px-1 py-0.5 font-mono text-[8px] font-bold uppercase tracking-[0.08em] text-sky-400/80">
+                            Manual
+                          </span>
+                        ) : null}
                         {hasOverride ? (
                           line.price_override_type === "combo" ? (
                             <span className="shrink-0 rounded-sm border border-emerald-600/50 bg-emerald-700/15 px-1 py-0.5 font-mono text-[8.5px] font-bold uppercase tracking-[0.08em] text-emerald-400">
@@ -1359,6 +1539,16 @@ function OverrideEditor({
 
 // ── Icons ──────────────────────────────────────────────────────────────────
 
+function LayersIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <polygon points="12 2 2 7 12 12 22 7 12 2" />
+      <polyline points="2 17 12 22 22 17" />
+      <polyline points="2 12 12 17 22 12" />
+    </svg>
+  );
+}
+
 function SearchIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -1461,5 +1651,134 @@ function QuickActionPill({
     >
       {label}
     </button>
+  );
+}
+
+function ManualItemModal({
+  open,
+  onClose,
+  onAdd,
+}: {
+  open:    boolean;
+  onClose: () => void;
+  onAdd:   (item: { name: string; unit_price: number; quantity: number; has_tax: boolean; average_cost: number }) => void;
+}) {
+  const [name, setName]               = React.useState("");
+  const [priceStr, setPriceStr]       = React.useState("");
+  const [qtyStr, setQtyStr]           = React.useState("1");
+  const [costStr, setCostStr]         = React.useState("");
+  const [hasTax, setHasTax]           = React.useState(true);
+
+  React.useEffect(() => {
+    if (open) {
+      setName("");
+      setPriceStr("");
+      setQtyStr("1");
+      setCostStr("");
+      setHasTax(true);
+    }
+  }, [open]);
+
+  const price = parseFloat(priceStr.replace(",", "."));
+  const qty   = parseFloat(qtyStr.replace(",", "."));
+  const cost  = costStr.trim() ? parseFloat(costStr.replace(",", ".")) : 0;
+  
+  const isValid = name.trim().length > 0 && isFinite(price) && price >= 0 && isFinite(qty) && qty > 0 && isFinite(cost) && cost >= 0;
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!isValid) return;
+    onAdd({
+      name:         name.trim(),
+      unit_price:   price,
+      quantity:     qty,
+      has_tax:      hasTax,
+      average_cost: cost,
+    });
+    onClose();
+  }
+
+  return (
+    <Sheet open={open} onClose={onClose} side="right" title="Agregar Ítem Manual" className="w-full max-w-sm">
+      <div className="p-5">
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <div className="space-y-1">
+            <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground/80">Descripción *</label>
+            <Input
+              autoFocus
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Ej: Filtro de aire especial..."
+              className="font-sans text-sm"
+              required
+            />
+          </div>
+
+          <div className="flex gap-3">
+            <div className="space-y-1 flex-1">
+              <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground/80">Cantidad *</label>
+              <Input
+                type="number"
+                step="0.01"
+                min="0.01"
+                value={qtyStr}
+                onChange={(e) => setQtyStr(e.target.value)}
+                className="font-mono text-sm"
+                required
+              />
+            </div>
+            <div className="space-y-1 flex-1">
+              <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground/80">PVP (con IVA) *</label>
+              <Input
+                type="number"
+                step="0.01"
+                min="0"
+                value={priceStr}
+                onChange={(e) => setPriceStr(e.target.value)}
+                placeholder="0.00"
+                className="font-mono text-sm"
+                required
+              />
+            </div>
+          </div>
+
+          <div className="flex gap-3 items-end">
+            <div className="space-y-1 flex-1">
+              <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground/80">Costo (Rentabilidad)</label>
+              <Input
+                type="number"
+                step="0.01"
+                min="0"
+                value={costStr}
+                onChange={(e) => setCostStr(e.target.value)}
+                placeholder="0.00 (Opcional)"
+                className="font-mono text-sm text-amber-500/80 focus:text-amber-500"
+              />
+            </div>
+            <div className="mb-2 flex items-center gap-2 flex-1 justify-center">
+              <input
+                type="checkbox"
+                id="manual-tax"
+                checked={hasTax}
+                onChange={(e) => setHasTax(e.target.checked)}
+                className="h-4 w-4 rounded border-steel-700 bg-steel-900 text-safety-500 focus:ring-safety-500 focus:ring-offset-steel-950"
+              />
+              <label htmlFor="manual-tax" className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground cursor-pointer select-none">
+                Grava IVA (15%)
+              </label>
+            </div>
+          </div>
+
+          <div className="mt-2 flex gap-2">
+            <Button type="button" variant="outline" onClick={onClose} className="flex-1">
+              Cancelar
+            </Button>
+            <Button type="submit" disabled={!isValid} className="flex-1 bg-safety-500 text-steel-950 hover:bg-safety-400">
+              Añadir
+            </Button>
+          </div>
+        </form>
+      </div>
+    </Sheet>
   );
 }

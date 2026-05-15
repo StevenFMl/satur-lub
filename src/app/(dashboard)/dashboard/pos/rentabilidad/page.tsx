@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getActiveMembership } from "@/lib/supabase/membership";
 import { RentabilidadTable, type ProductProfitRow, type SaleProfitRow } from "./rentabilidad-table";
+import { todayEC, clampToTodayEC } from "@/lib/date-ec";
 
 export const metadata: Metadata = { title: "Rentabilidad · SaturLub" };
 export const dynamic = "force-dynamic";
@@ -10,18 +11,18 @@ export const dynamic = "force-dynamic";
 // ── Default range: current month ──────────────────────────────────────────────
 
 function defaultRange(): { from: string; to: string } {
-  const now  = new Date();
-  const year = now.getFullYear();
-  const mo   = String(now.getMonth() + 1).padStart(2, "0");
-  const day  = String(now.getDate()).padStart(2, "0");
-  return { from: `${year}-${mo}-01`, to: `${year}-${mo}-${day}` };
+  const today      = todayEC();
+  const [year, mo] = today.split("-");
+  return { from: `${year}-${mo}-01`, to: today };
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type RawItem = {
-  product_id: string;
+  product_id: string | null;       // NULL for manual items (v21+)
+  item_name:  string | null;       // snapshot name — always set for v21+ sales
   quantity:   number | string;
+  base_qty:   number | string | null; // presentation conversion factor (v3+); default 1
   line_total: number | string;
   tax_rate:   number | string;
   is_taxable: boolean;
@@ -93,7 +94,7 @@ export default async function RentabilidadPage({
   const params = await searchParams;
   const def    = defaultRange();
   const from   = params.from ?? def.from;
-  const to     = params.to   ?? def.to;
+  const to     = clampToTodayEC(params.to ?? def.to);
 
   const supabase = await createClient();
 
@@ -105,7 +106,7 @@ export default async function RentabilidadPage({
         .select(`
           id, created_at, sale_date, document_kind, total,
           business_partners ( full_name, document_number ),
-          sale_items ( product_id, quantity, line_total, tax_rate, is_taxable, unit_cost )
+          sale_items ( product_id, item_name, quantity, base_qty, line_total, tax_rate, is_taxable, unit_cost )
         `)
         .eq("status", "confirmed")
         .gte("created_at", `${from}T00:00:00`)
@@ -150,15 +151,19 @@ export default async function RentabilidadPage({
     let saleCostSource: CostSource = "zero";
 
     for (const item of s.sale_items ?? []) {
-      const pid     = item.product_id;
-      const qty     = Number(item.quantity  ?? 0);
-      const gross   = Number(item.line_total ?? 0);
-      const rate    = Number(item.tax_rate   ?? 0);
-      const taxable = item.is_taxable !== false;
-      const lineNet = taxable && rate > 0 ? gross / (1 + rate / 100) : gross;
+      const pid      = item.product_id;  // null for manual items
+      const qty      = Number(item.quantity   ?? 0);
+      // base_qty: how many base-unit (caneca) each presentation unit represents.
+      // For a galón with base_qty=0.2 of a caneca, 2 gallons → 0.4 canecas consumed.
+      // unit_cost is always per BASE unit (caneca), so we must scale by base_qty here.
+      const baseQty  = Number(item.base_qty   ?? 1);
+      const gross    = Number(item.line_total  ?? 0);
+      const rate     = Number(item.tax_rate    ?? 0);
+      const taxable  = item.is_taxable !== false;
+      const lineNet  = taxable && rate > 0 ? gross / (1 + rate / 100) : gross;
 
-      const { unitCost, source } = resolveItemCost(item.unit_cost, productById.get(pid));
-      const lineCost = qty * unitCost;
+      const { unitCost, source } = resolveItemCost(item.unit_cost, pid ? productById.get(pid) : undefined);
+      const lineCost = qty * baseQty * unitCost;
 
       saleRevenueNet   += lineNet;
       saleRevenueGross += gross;
@@ -167,13 +172,19 @@ export default async function RentabilidadPage({
       else if (source === "cpp"  && saleCostSource === "zero") saleCostSource = "cpp";
       else if (source === "last" && saleCostSource === "zero") saleCostSource = "last";
 
-      // Aggregate per product
-      const p = productById.get(pid);
-      const existing = prodMap.get(pid) ?? {
-        product_id:    pid,
-        name:          p?.name ?? "Producto eliminado",
-        sku:           p?.sku  ?? "—",
-        unit:          p?.unit ?? "unidad",
+      // For manual items (null product_id), use item_name as name and a composite key
+      // to avoid collapsing different manual items under a single null key.
+      const p        = pid ? productById.get(pid) : undefined;
+      const itemName = pid
+        ? (p?.name ?? "Producto eliminado")
+        : (item.item_name ?? "Ítem manual");
+      const mapKey   = pid ?? `manual::${itemName}`;
+
+      const existing = prodMap.get(mapKey) ?? {
+        product_id:    pid ?? "manual",
+        name:          itemName,
+        sku:           pid ? (p?.sku ?? "—") : "MANUAL",
+        unit:          pid ? (p?.unit ?? "unidad") : "unidad",
         qty_sold:      0,
         revenue_net:   0,
         revenue_gross: 0,
@@ -184,10 +195,9 @@ export default async function RentabilidadPage({
       existing.revenue_net   += lineNet;
       existing.revenue_gross += gross;
       existing.cost_total    += lineCost;
-      // Upgrade source: snapshot > cpp > last > zero
       const rank = (src: CostSource) => src === "snapshot" ? 4 : src === "cpp" ? 3 : src === "last" ? 2 : 1;
       if (rank(source) > rank(existing.cost_source)) existing.cost_source = source;
-      prodMap.set(pid, existing);
+      prodMap.set(mapKey, existing);
     }
 
     const saleProfit = saleRevenueNet - saleCostTotal;

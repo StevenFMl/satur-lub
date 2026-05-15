@@ -4,6 +4,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { todayEC } from "@/lib/date-ec";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -147,15 +148,19 @@ export function RentabilidadTable({
   negativeProducts, negativeSales, snapshotPct,
 }: Props) {
   const router = useRouter();
+  // Memoised so it doesn't drift during the session
+  const today = React.useMemo(() => todayEC(), []);
   const [fromInput, setFromInput] = React.useState(from);
-  const [toInput,   setToInput]   = React.useState(to);
+  // Clamp: if the server somehow passed a future date, cap it to today
+  const [toInput, setToInput] = React.useState(() => (to > today ? today : to));
   const [tab,         setTab]         = React.useState<Tab>("product");
   const [sortProduct, setSortProduct] = React.useState<SortProduct>("profit");
   const [sortSale,    setSortSale]    = React.useState<SortSale>("profit");
 
   const applyFilter = () => {
     if (!fromInput || !toInput) return;
-    router.push(`/dashboard/pos/rentabilidad?from=${fromInput}&to=${toInput}`, { scroll: false });
+    const clampedTo = toInput > today ? today : toInput;
+    router.push(`/dashboard/pos/rentabilidad?from=${fromInput}&to=${clampedTo}`, { scroll: false });
   };
 
   // ── Sorted product rows ──────────────────────────────────────────────────
@@ -231,13 +236,13 @@ export function RentabilidadTable({
             <label className="font-mono text-[9px] font-bold uppercase tracking-[0.16em] text-muted-foreground/60">
               Desde
             </label>
-            <Input type="date" value={fromInput} onChange={(e) => setFromInput(e.target.value)} mono className="h-9 w-full sm:w-40" />
+            <Input type="date" value={fromInput} max={today} onChange={(e) => setFromInput(e.target.value)} mono className="h-9 w-full sm:w-40" />
           </div>
           <div className="space-y-1">
             <label className="font-mono text-[9px] font-bold uppercase tracking-[0.16em] text-muted-foreground/60">
               Hasta
             </label>
-            <Input type="date" value={toInput} onChange={(e) => setToInput(e.target.value)} mono className="h-9 w-full sm:w-40" />
+            <Input type="date" value={toInput} max={today} onChange={(e) => setToInput(e.target.value > today ? today : e.target.value)} mono className="h-9 w-full sm:w-40" />
           </div>
           <Button type="button" size="md" onClick={applyFilter}>Aplicar</Button>
         </div>

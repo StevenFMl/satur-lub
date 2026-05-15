@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { todayEC } from "@/lib/date-ec";
 import { FieldError } from "@/components/ui/field-error";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -128,7 +129,7 @@ export function PurchaseForm({
     warehouses.length === 1 ? warehouses[0]?.id ?? "" : ""
   );
   const [purchaseDate, setPurchaseDate] = useState<string>(
-    () => new Date().toISOString().slice(0, 10) // YYYY-MM-DD, default hoy
+    () => todayEC()
   );
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
   const [dueDate, setDueDate] = useState("");

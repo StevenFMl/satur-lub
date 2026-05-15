@@ -31,7 +31,12 @@ export type BundleComponent = z.infer<typeof bundleComponentSchema>;
 
 const saleItemSchema = z
   .object({
-    product_id:            z.string().uuid("Producto inválido."),
+    product_id:            z.string().uuid("Producto inválido.").nullable().optional(),
+    name:                  z.string().min(1, "El nombre es obligatorio.").optional(),
+    unit_price:            z.number().min(0).optional(),
+    has_tax:               z.boolean().optional(),
+    tax_rate:              z.number().min(0).optional(),
+    average_cost:          z.number().min(0).optional(),
     quantity:              z.number().positive("Cantidad debe ser > 0."),
     discount_amount:       z.number().min(0, "Descuento no puede ser negativo.").default(0),
     presentation_id:       z.string().uuid().nullable().optional(),
@@ -44,6 +49,22 @@ const saleItemSchema = z
     components:            z.array(bundleComponentSchema).optional().nullable(),
   })
   .superRefine((data, ctx) => {
+    if (!data.product_id) {
+      if (!data.name?.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "El nombre es obligatorio para ítems manuales.",
+          path: ["name"],
+        });
+      }
+      if (data.unit_price == null || data.unit_price < 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "El precio unitario es obligatorio y debe ser >= 0.",
+          path: ["unit_price"],
+        });
+      }
+    }
     if (data.override_unit_price != null && !data.price_override_reason?.trim()) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,

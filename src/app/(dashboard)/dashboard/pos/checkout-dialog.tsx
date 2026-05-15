@@ -9,12 +9,13 @@ import { Label } from "@/components/ui/label";
 import { Alert } from "@/components/ui/alert";
 import { createSaleAction } from "@/actions/sales";
 import { type PriceOverrideType } from "@/lib/validations/sale";
+import { todayEC, formatDateEC } from "@/lib/date-ec";
 
 type PaymentMethod = "cash" | "card" | "transfer";
 type CheckoutMode  = "normal" | "credit";
 
 type CartItem = {
-  product_id:            string;
+  product_id:            string | null;
   name:                  string;
   unit_price:            number;
   unit_label:            string;
@@ -48,7 +49,7 @@ const moneyFmt = new Intl.NumberFormat("es-EC", {
   style: "currency", currency: "USD", minimumFractionDigits: 2,
 });
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => todayEC();
 
 const METHODS: { method: PaymentMethod; label: string }[] = [
   { method: "cash",     label: "Efectivo"     },
@@ -80,17 +81,26 @@ export function CheckoutDialog({
   const [belowCostAcknowledged, setBelowCostAcknowledged] = React.useState(false);
 
   // ── Below-cost detection ─────────────────────────────────────────────────
-  type BelowCostItem = CartItem & { net_price: number; loss_per_unit: number; total_loss: number };
+  // average_cost is per BASE UNIT (caneca). For presentation-based items
+  // (galón with base_qty=0.2) the cost per presentation = average_cost × base_qty.
+  // We compare net_price per presentation against that scaled cost.
+  type BelowCostItem = CartItem & {
+    net_price:     number;
+    cost_per_pres: number;  // average_cost × base_qty
+    loss_per_unit: number;
+    total_loss:    number;
+  };
   const belowCostItems = React.useMemo<BelowCostItem[]>(() =>
     cart.flatMap((item) => {
       if (item.average_cost <= 0) return [];
-      const gross    = item.override_unit_price ?? item.unit_price;
-      const netPrice = item.has_tax && item.tax_rate > 0
+      const gross        = item.override_unit_price ?? item.unit_price;
+      const netPrice     = item.has_tax && item.tax_rate > 0
         ? gross / (1 + item.tax_rate / 100)
         : gross;
-      const lossPerUnit = item.average_cost - netPrice;
+      const costPerPres  = item.average_cost * item.base_qty;
+      const lossPerUnit  = costPerPres - netPrice;
       if (lossPerUnit <= 0.001) return [];
-      return [{ ...item, net_price: netPrice, loss_per_unit: lossPerUnit, total_loss: lossPerUnit * item.quantity }];
+      return [{ ...item, net_price: netPrice, cost_per_pres: costPerPres, loss_per_unit: lossPerUnit, total_loss: lossPerUnit * item.quantity }];
     }),
     [cart]
   );
@@ -154,7 +164,12 @@ export function CheckoutDialog({
       customer_id:   customerId,
       warehouse_id:  warehouseId,
       items: cart.map((l) => ({
-        product_id:            l.product_id,
+        product_id:            l.product_id ?? undefined,
+        name:                  l.name,
+        unit_price:            l.unit_price,
+        has_tax:               l.has_tax,
+        tax_rate:              l.tax_rate,
+        average_cost:          l.average_cost,
         quantity:              l.quantity,
         discount_amount:       l.discount_amount,
         presentation_id:       l.presentation_id ?? undefined,
@@ -220,7 +235,7 @@ export function CheckoutDialog({
 
   // ── Success / Receipt screen ────────────────────────────────────────────
   if (confirmed) {
-    const receiptDate = new Date().toLocaleDateString("es-EC", { day: "2-digit", month: "long", year: "numeric" });
+    const receiptDate = formatDateEC(new Date());
 
     return (
       <Dialog open={open} onClose={handleClose} title="" description="">
@@ -369,7 +384,7 @@ export function CheckoutDialog({
                 <tr>
                   <th className="px-3 py-2 font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-muted-foreground/70">Producto</th>
                   <th className="px-3 py-2 text-right font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-muted-foreground/70">Precio neto</th>
-                  <th className="px-3 py-2 text-right font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-muted-foreground/70">CPP</th>
+                  <th className="px-3 py-2 text-right font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-muted-foreground/70">Costo unit.</th>
                   <th className="px-3 py-2 text-right font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-red-400/70">Pérdida est.</th>
                 </tr>
               </thead>
@@ -386,7 +401,7 @@ export function CheckoutDialog({
                       {moneyFmt.format(item.net_price)}
                     </td>
                     <td className="px-3 py-2.5 text-right font-mono text-[12px] tabular-nums text-muted-foreground/70">
-                      {moneyFmt.format(item.average_cost)}
+                      {moneyFmt.format(item.cost_per_pres)}
                     </td>
                     <td className="px-3 py-2.5 text-right font-mono text-[13px] font-bold tabular-nums text-red-400">
                       −{moneyFmt.format(item.total_loss)}

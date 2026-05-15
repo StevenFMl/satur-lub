@@ -23,10 +23,18 @@ export function daysBetween(from: Date, to: Date): number {
 }
 
 export function formatDate(value: string | Date): string {
-  const d = typeof value === "string" ? new Date(value) : value;
+  let d: Date;
+  if (typeof value === "string") {
+    // Date-only strings (YYYY-MM-DD): parse as noon UTC so EC timezone (UTC-5)
+    // never slips back to the previous calendar day.
+    d = value.length === 10 ? new Date(value + "T12:00:00Z") : new Date(value);
+  } else {
+    d = value;
+  }
   return new Intl.DateTimeFormat("es-EC", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
+    timeZone: "America/Guayaquil",
+    day:      "2-digit",
+    month:    "short",
+    year:     "numeric",
   }).format(d);
 }

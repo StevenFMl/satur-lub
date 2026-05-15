@@ -4,6 +4,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { todayEC } from "@/lib/date-ec";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -115,7 +116,7 @@ export function IvaReportTable({
   }, [rows]);
 
   const exportCsv = () => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayEC();
     downloadCsv(
       `iva_compras_${from}_${to}.csv`,
       ["Fecha", "Ref_Documento", "Proveedor", "RUC_CI_Proveedor", "Subtotal_Neto",

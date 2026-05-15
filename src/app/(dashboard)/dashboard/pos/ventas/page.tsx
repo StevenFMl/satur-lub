@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getActiveMembership } from "@/lib/supabase/membership";
 import { getPosPermissions } from "@/lib/auth/permissions";
 import { SalesHistory } from "./sales-history";
+import { todayEC } from "@/lib/date-ec";
 
 export const metadata: Metadata = { title: "Ventas · SaturLub" };
 export const dynamic = "force-dynamic";
@@ -49,7 +50,7 @@ export default async function VentasPage({
   if (!permissions.canUsePOS) redirect("/dashboard");
 
   const params    = await searchParams;
-  const today     = new Date().toISOString().slice(0, 10);
+  const today     = todayEC();
   const dateParam = params.date ?? today;
   const date      = /^\d{4}-\d{2}-\d{2}$/.test(dateParam) ? dateParam : today;
 

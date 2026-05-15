@@ -15,6 +15,7 @@ import {
 } from "@/actions/products";
 import type { ProductRow } from "./products-table";
 import { BundleEditor } from "./bundle-editor";
+import { PresentationsEditor } from "./presentations-editor";
 
 const IVA_RATE = 15;
 const IVA_MULT = 1 + IVA_RATE / 100; // 1.15
@@ -498,6 +499,11 @@ export function ProductForm({ initial, onSuccess }: Props) {
     {initial?.id && (productKind === "kit" || productKind === "bundle") ? (
       <div className="px-6 pb-6">
         <BundleEditor productId={initial.id} />
+      </div>
+    ) : null}
+    {initial?.id && productKind === "item" ? (
+      <div className="px-6 pb-6">
+        <PresentationsEditor productId={initial.id} baseUnit={unit} />
       </div>
     ) : null}
     </>

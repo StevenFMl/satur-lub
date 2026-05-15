@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { getActiveMembership } from "@/lib/supabase/membership";
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
+import { todayEC, todayLabelEC } from "@/lib/date-ec";
 
 export const metadata: Metadata = { title: "Inicio · SaturLub" };
 export const dynamic = "force-dynamic";
@@ -27,7 +28,7 @@ export default async function DashboardPage() {
 
   const supabase   = await createClient();
   const tenantId   = membership.tenant_id;
-  const todayStr   = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD
+  const todayStr   = todayEC(); // YYYY-MM-DD pinned to America/Guayaquil
 
   // ── Parallel queries ───────────────────────────────────────────────────
   const [
@@ -101,9 +102,7 @@ export default async function DashboardPage() {
   ).length;
 
   // ── Date label ─────────────────────────────────────────────────────────
-  const dateLabel = new Date().toLocaleDateString("es-EC", {
-    weekday: "long", day: "numeric", month: "long",
-  }).replace(/^\w/, c => c.toUpperCase());
+  const dateLabel = todayLabelEC();
 
   return (
     <div className="mx-auto w-full max-w-5xl space-y-8">

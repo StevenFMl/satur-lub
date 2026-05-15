@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import type { SaleListItem, DaySummary } from "./page";
 import { useVoidDialog } from "./void-dialog";
+import { todayEC } from "@/lib/date-ec";
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
@@ -56,7 +57,7 @@ export function SalesHistory({
   canVoidSale: boolean;
 }) {
   const router               = useRouter();
-  const today                = new Date().toISOString().slice(0, 10);
+  const today                = todayEC();
   const yesterday            = adjDate(today, -1);
   const isToday              = date === today;
 
