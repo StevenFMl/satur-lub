@@ -30,7 +30,7 @@ export default async function NuevaCompraPage() {
     supabase
       .from("products")
       .select(
-        "id, sku, name, unit, cost_price, default_price, average_cost, last_purchase_cost, has_tax"
+        "id, sku, name, unit, cost_price, default_price, average_cost, last_purchase_cost, has_tax, tax_rate"
       )
       .eq("is_active", true)
       .order("name")

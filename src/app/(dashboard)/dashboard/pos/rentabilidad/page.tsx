@@ -1,0 +1,261 @@
+import type { Metadata } from "next";
+import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
+import { getActiveMembership } from "@/lib/supabase/membership";
+import { RentabilidadTable, type ProductProfitRow, type SaleProfitRow } from "./rentabilidad-table";
+
+export const metadata: Metadata = { title: "Rentabilidad · SaturLub" };
+export const dynamic = "force-dynamic";
+
+// ── Default range: current month ──────────────────────────────────────────────
+
+function defaultRange(): { from: string; to: string } {
+  const now  = new Date();
+  const year = now.getFullYear();
+  const mo   = String(now.getMonth() + 1).padStart(2, "0");
+  const day  = String(now.getDate()).padStart(2, "0");
+  return { from: `${year}-${mo}-01`, to: `${year}-${mo}-${day}` };
+}
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+type RawItem = {
+  product_id: string;
+  quantity:   number | string;
+  line_total: number | string;
+  tax_rate:   number | string;
+  is_taxable: boolean;
+  unit_cost:  number | string | null; // populated by trigger v17 for new sales; NULL for old
+};
+
+type RawSale = {
+  id:             string;
+  created_at:     string;
+  sale_date:      string | null;
+  document_kind:  string;
+  total:          number | string;
+  business_partners: { full_name: string; document_number: string | null } | null;
+  sale_items:     RawItem[];
+};
+
+type RawProduct = {
+  id:                 string;
+  name:               string;
+  sku:                string;
+  unit:               string;
+  average_cost:       number | string | null;
+  last_purchase_cost: number | string | null;
+};
+
+// ── Cost resolution ───────────────────────────────────────────────────────────
+// Prioridad:
+//   1. sale_items.unit_cost  → snapshot histórico (trigger v17, ventas nuevas)
+//   2. products.average_cost → CPP actual (ventas anteriores al trigger)
+//   3. products.last_purchase_cost → fallback
+//   4. 0 → sin costo (servicios o productos sin compras)
+//
+// "snapshot" = garantía de que el costo corresponde al momento exacto de la venta.
+// "cpp"      = CPP vigente hoy (puede diferir del momento de venta).
+// "last"     = último costo de compra; aproximación, no histórico.
+// "zero"     = sin costo registrado.
+
+type CostSource = "snapshot" | "cpp" | "last" | "zero";
+
+function resolveItemCost(
+  saleItemCost: number | string | null | undefined,
+  product: RawProduct | undefined,
+): { unitCost: number; source: CostSource } {
+  // Snapshot: sale_items.unit_cost existe (trigger v17)
+  if (saleItemCost !== null && saleItemCost !== undefined) {
+    const snap = Number(saleItemCost);
+    return { unitCost: snap, source: snap > 0 ? "snapshot" : "zero" };
+  }
+  // Fallback: producto con CPP actual
+  if (!product) return { unitCost: 0, source: "zero" };
+  const cpp  = Number(product.average_cost       ?? 0);
+  const last = Number(product.last_purchase_cost ?? 0);
+  if (cpp  > 0) return { unitCost: cpp,  source: "cpp"  };
+  if (last > 0) return { unitCost: last, source: "last" };
+  return            { unitCost: 0,     source: "zero" };
+}
+
+// ── Page ──────────────────────────────────────────────────────────────────────
+
+export default async function RentabilidadPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ from?: string; to?: string }>;
+}) {
+  const { user, membership } = await getActiveMembership();
+  if (!user)       redirect("/login");
+  if (!membership) redirect("/onboarding");
+
+  const params = await searchParams;
+  const def    = defaultRange();
+  const from   = params.from ?? def.from;
+  const to     = params.to   ?? def.to;
+
+  const supabase = await createClient();
+
+  // ── Parallel queries ────────────────────────────────────────────────────
+  const [{ data: salesData, error: saleErr }, { data: productsData, error: prodErr }] =
+    await Promise.all([
+      supabase
+        .from("sales")
+        .select(`
+          id, created_at, sale_date, document_kind, total,
+          business_partners ( full_name, document_number ),
+          sale_items ( product_id, quantity, line_total, tax_rate, is_taxable, unit_cost )
+        `)
+        .eq("status", "confirmed")
+        .gte("created_at", `${from}T00:00:00`)
+        .lte("created_at", `${to}T23:59:59`)
+        .order("created_at", { ascending: false })
+        .limit(1000),
+
+      supabase
+        .from("products")
+        .select("id, name, sku, unit, average_cost, last_purchase_cost")
+        .eq("is_active", true)
+        .limit(3000),
+    ]);
+
+  if (saleErr) console.error("RentabilidadPage [sales]:", saleErr);
+  if (prodErr) console.error("RentabilidadPage [products]:", prodErr);
+
+  const sales    = (salesData    ?? []) as unknown as RawSale[];
+  const products = (productsData ?? []) as unknown as RawProduct[];
+
+  const productById = new Map<string, RawProduct>(products.map((p) => [p.id, p]));
+
+  // ── Per-product aggregation ──────────────────────────────────────────────
+  type ProdAcc = {
+    product_id:    string;
+    name:          string;
+    sku:           string;
+    unit:          string;
+    qty_sold:      number;
+    revenue_net:   number;
+    revenue_gross: number;
+    cost_total:    number;
+    cost_source:   CostSource;
+  };
+  const prodMap = new Map<string, ProdAcc>();
+  const saleRows: SaleProfitRow[] = [];
+
+  for (const s of sales) {
+    let saleRevenueNet   = 0;
+    let saleRevenueGross = 0;
+    let saleCostTotal    = 0;
+    let saleCostSource: CostSource = "zero";
+
+    for (const item of s.sale_items ?? []) {
+      const pid     = item.product_id;
+      const qty     = Number(item.quantity  ?? 0);
+      const gross   = Number(item.line_total ?? 0);
+      const rate    = Number(item.tax_rate   ?? 0);
+      const taxable = item.is_taxable !== false;
+      const lineNet = taxable && rate > 0 ? gross / (1 + rate / 100) : gross;
+
+      const { unitCost, source } = resolveItemCost(item.unit_cost, productById.get(pid));
+      const lineCost = qty * unitCost;
+
+      saleRevenueNet   += lineNet;
+      saleRevenueGross += gross;
+      saleCostTotal    += lineCost;
+      if (source === "snapshot") saleCostSource = "snapshot";
+      else if (source === "cpp"  && saleCostSource === "zero") saleCostSource = "cpp";
+      else if (source === "last" && saleCostSource === "zero") saleCostSource = "last";
+
+      // Aggregate per product
+      const p = productById.get(pid);
+      const existing = prodMap.get(pid) ?? {
+        product_id:    pid,
+        name:          p?.name ?? "Producto eliminado",
+        sku:           p?.sku  ?? "—",
+        unit:          p?.unit ?? "unidad",
+        qty_sold:      0,
+        revenue_net:   0,
+        revenue_gross: 0,
+        cost_total:    0,
+        cost_source:   source,
+      };
+      existing.qty_sold      += qty;
+      existing.revenue_net   += lineNet;
+      existing.revenue_gross += gross;
+      existing.cost_total    += lineCost;
+      // Upgrade source: snapshot > cpp > last > zero
+      const rank = (src: CostSource) => src === "snapshot" ? 4 : src === "cpp" ? 3 : src === "last" ? 2 : 1;
+      if (rank(source) > rank(existing.cost_source)) existing.cost_source = source;
+      prodMap.set(pid, existing);
+    }
+
+    const saleProfit = saleRevenueNet - saleCostTotal;
+    const saleMargin = saleRevenueNet > 0 ? (saleProfit / saleRevenueNet) * 100 : 0;
+
+    saleRows.push({
+      id:            s.id,
+      display_date:  s.sale_date ?? s.created_at.slice(0, 10),
+      document_kind: s.document_kind,
+      customer_name: s.business_partners?.full_name ?? "—",
+      revenue_net:   saleRevenueNet,
+      revenue_gross: Number(s.total ?? 0),
+      cost_total:    saleCostTotal,
+      profit:        saleProfit,
+      margin:        saleMargin,
+      cost_source:   saleCostSource,
+    });
+  }
+
+  const productRows: ProductProfitRow[] = Array.from(prodMap.values()).map((acc) => {
+    const profit = acc.revenue_net - acc.cost_total;
+    const margin = acc.revenue_net > 0 ? (profit / acc.revenue_net) * 100 : 0;
+    return { ...acc, profit, margin };
+  });
+
+  // ── Global KPIs ──────────────────────────────────────────────────────────
+  const totalRevenueNet    = saleRows.reduce((s, r) => s + r.revenue_net,  0);
+  const totalCost          = saleRows.reduce((s, r) => s + r.cost_total,   0);
+  const totalProfit        = totalRevenueNet - totalCost;
+  const globalMargin       = totalRevenueNet > 0 ? (totalProfit / totalRevenueNet) * 100 : 0;
+  const countSales         = saleRows.length;
+  const hasMissingCosts    = productRows.some((r) => r.cost_source === "zero");
+  const negativeProducts   = productRows.filter((r) => r.cost_source !== "zero" && r.profit < 0).length;
+  const negativeSales      = saleRows.filter((r) => r.cost_total > 0 && r.profit < 0).length;
+  // % of items with historical snapshot cost (v17 trigger)
+  const snapshotPct = productRows.length > 0
+    ? Math.round(productRows.filter((r) => r.cost_source === "snapshot").length / productRows.length * 100)
+    : 0;
+
+  return (
+    <div className="mx-auto w-full max-w-7xl space-y-8">
+      <header className="space-y-2">
+        <span className="hud-readout">POS · Análisis</span>
+        <div>
+          <h1 className="font-display text-[36px] leading-none tracking-[0.02em] text-foreground sm:text-[42px]">
+            RENTABILIDAD
+          </h1>
+          <p className="mt-1 text-[13px] leading-5 text-muted-foreground">
+            Utilidad bruta por producto y por venta. Costo s/IVA · Ventas s/IVA.
+          </p>
+        </div>
+      </header>
+
+      <RentabilidadTable
+        from={from}
+        to={to}
+        productRows={productRows}
+        saleRows={saleRows}
+        totalRevenueNet={totalRevenueNet}
+        totalCost={totalCost}
+        totalProfit={totalProfit}
+        globalMargin={globalMargin}
+        countSales={countSales}
+        hasMissingCosts={hasMissingCosts}
+        negativeProducts={negativeProducts}
+        negativeSales={negativeSales}
+        snapshotPct={snapshotPct}
+      />
+    </div>
+  );
+}

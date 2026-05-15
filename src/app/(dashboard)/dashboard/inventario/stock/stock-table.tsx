@@ -372,36 +372,47 @@ export function StockTable({
                         </div>
                       </Td>
                       <Td className="text-right">
-                        <div className="flex flex-col items-end gap-1">
-                          {r.last_purchase_cost != null ? (
-                            <>
-                              <div className="flex items-center gap-2">
-                                <span className="text-[10px] uppercase text-muted-foreground/60">Últ. compra</span>
-                                <span className="font-mono text-[13px] font-bold tabular-nums text-foreground">
-                                  {moneyFmt.format(r.last_purchase_cost)}
-                                </span>
+                        {(() => {
+                          const rate = r.has_tax && r.tax_rate > 0 ? r.tax_rate : 0;
+                          const withIva = (net: number) => rate > 0 ? net * (1 + rate / 100) : null;
+                          const cpp  = r.average_cost ?? 0;
+                          const last = r.last_purchase_cost;
+                          return (
+                            <div className="flex flex-col items-end gap-1.5">
+                              {last != null ? (
+                                <div className="text-right">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-[9px] uppercase tracking-[0.1em] text-muted-foreground/60">Últ. compra</span>
+                                    <span className="font-mono text-[13px] font-bold tabular-nums text-foreground">
+                                      {moneyFmt.format(last)}
+                                    </span>
+                                  </div>
+                                  {withIva(last) != null ? (
+                                    <div className="mt-0.5 font-mono text-[10px] tabular-nums text-muted-foreground/50">
+                                      c/IVA {moneyFmt.format(withIva(last)!)}
+                                    </div>
+                                  ) : null}
+                                </div>
+                              ) : null}
+                              <div className="text-right">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[9px] uppercase tracking-[0.1em] text-muted-foreground/60">CPP</span>
+                                  <span className={`font-mono tabular-nums ${last != null ? "text-[11px] text-muted-foreground/70" : "text-[13px] font-bold text-foreground"}`}>
+                                    {moneyFmt.format(cpp)}
+                                  </span>
+                                </div>
+                                {withIva(cpp) != null ? (
+                                  <div className="mt-0.5 font-mono text-[10px] tabular-nums text-muted-foreground/50">
+                                    c/IVA {moneyFmt.format(withIva(cpp)!)}
+                                  </div>
+                                ) : null}
                               </div>
-                              <div className="flex items-center gap-2">
-                                <span className="text-[10px] uppercase text-muted-foreground/60">CPP</span>
-                                <span className="font-mono text-[11px] tabular-nums text-muted-foreground/70">
-                                  {moneyFmt.format(r.average_cost ?? 0)}
-                                </span>
-                              </div>
-                            </>
-                          ) : (
-                            <>
-                              <div className="flex items-center gap-2">
-                                <span className="text-[10px] uppercase text-muted-foreground/60">CPP</span>
-                                <span className="font-mono text-[13px] font-bold tabular-nums text-foreground">
-                                  {moneyFmt.format(r.average_cost ?? 0)}
-                                </span>
-                              </div>
-                              <span className="font-mono text-[9px] text-muted-foreground/40 mt-0.5">
-                                Sin compra reg.
-                              </span>
-                            </>
-                          )}
-                        </div>
+                              {last == null ? (
+                                <span className="font-mono text-[9px] text-muted-foreground/40">Sin compra reg.</span>
+                              ) : null}
+                            </div>
+                          );
+                        })()}
                       </Td>
                       <Td className="text-right">
                         {priceWithTax != null ? (

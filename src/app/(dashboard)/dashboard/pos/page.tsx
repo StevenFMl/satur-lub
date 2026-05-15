@@ -31,7 +31,7 @@ export default async function PosPage() {
   const { data: rawProducts } = await supabase
     .from("products")
     .select(
-      "id, name, sku, unit, tax_rate, has_tax, track_inventory, product_kind, default_price"
+      "id, name, sku, unit, tax_rate, has_tax, track_inventory, product_kind, default_price, average_cost"
     )
     .eq("is_active", true)
     .neq("product_kind", "supply")
@@ -161,6 +161,7 @@ export default async function PosPage() {
       presentations:   presByProduct.get(pid) ?? [],
       is_kit:          isKit,
       kit_components:  components,
+      average_cost:    Number((p as { average_cost?: number | null }).average_cost ?? 0),
     };
   });
 

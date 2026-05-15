@@ -26,6 +26,10 @@ type CartItem = {
   price_override_type:   string | undefined;
   price_override_reason: string | undefined;
   price_override_note:   string | undefined;
+  // Cost data for below-cost detection
+  average_cost: number;   // CPP o 0 si no aplica
+  has_tax:      boolean;
+  tax_rate:     number;
 };
 
 type Props = {
@@ -69,10 +73,34 @@ export function CheckoutDialog({
   const [dueDate, setDueDate]               = React.useState("");
   const [creditNotes, setCreditNotes]       = React.useState("");
 
-  const [submitting, setSubmitting] = React.useState(false);
-  const [error, setError]           = React.useState<string | null>(null);
-  const [confirmed, setConfirmed]   = React.useState(false);
-  const [saleId, setSaleId]         = React.useState<string | null>(null);
+  const [submitting, setSubmitting]           = React.useState(false);
+  const [error, setError]                     = React.useState<string | null>(null);
+  const [confirmed, setConfirmed]             = React.useState(false);
+  const [saleId, setSaleId]                   = React.useState<string | null>(null);
+  const [belowCostAcknowledged, setBelowCostAcknowledged] = React.useState(false);
+
+  // ── Below-cost detection ─────────────────────────────────────────────────
+  type BelowCostItem = CartItem & { net_price: number; loss_per_unit: number; total_loss: number };
+  const belowCostItems = React.useMemo<BelowCostItem[]>(() =>
+    cart.flatMap((item) => {
+      if (item.average_cost <= 0) return [];
+      const gross    = item.override_unit_price ?? item.unit_price;
+      const netPrice = item.has_tax && item.tax_rate > 0
+        ? gross / (1 + item.tax_rate / 100)
+        : gross;
+      const lossPerUnit = item.average_cost - netPrice;
+      if (lossPerUnit <= 0.001) return [];
+      return [{ ...item, net_price: netPrice, loss_per_unit: lossPerUnit, total_loss: lossPerUnit * item.quantity }];
+    }),
+    [cart]
+  );
+
+  const belowCostTotalLoss = React.useMemo(
+    () => belowCostItems.reduce((s, i) => s + i.total_loss, 0),
+    [belowCostItems]
+  );
+
+  const hasBelowCost = belowCostItems.length > 0;
 
   React.useEffect(() => {
     if (open) {
@@ -81,6 +109,7 @@ export function CheckoutDialog({
       setConfirmed(false); setSaleId(null); setSubmitting(false);
       setInitialPayment(""); setCreditMethod("cash"); setCreditRef("");
       setDueDate(""); setCreditNotes("");
+      setBelowCostAcknowledged(false);
     }
   }, [open, initialMode]);
 
@@ -143,7 +172,9 @@ export function CheckoutDialog({
     if (isZeroTotal) {
       const result = await createSaleAction(
         { ...basePayload, payments: [], is_credit: false },
-        cashSessionId
+        cashSessionId,
+        hasBelowCost && belowCostAcknowledged,
+        belowCostTotalLoss
       );
       setSubmitting(false);
       if (result?.error) { setError(result.error); return; }
@@ -161,6 +192,7 @@ export function CheckoutDialog({
       setError("El pago inicial no puede superar el total de la venta."); return;
     }
 
+    const isBelowCost = hasBelowCost && belowCostAcknowledged;
     const result = mode === "credit"
       ? await createSaleAction({
           ...basePayload,
@@ -171,12 +203,12 @@ export function CheckoutDialog({
           initial_payment_ref:    creditRef || null,
           due_date:               dueDate || null,
           credit_notes:           creditNotes || null,
-        }, cashSessionId)
+        }, cashSessionId, isBelowCost, belowCostTotalLoss)
       : await createSaleAction({
           ...basePayload,
           payments: [{ method, amount: method === "cash" ? Math.max(cashReceivedNum, gross) : gross, reference: reference || undefined }],
           is_credit: false,
-        }, cashSessionId);
+        }, cashSessionId, isBelowCost, belowCostTotalLoss);
 
     setSubmitting(false);
     if (result?.error) { setError(result.error); return; }
@@ -301,6 +333,100 @@ export function CheckoutDialog({
           <Button size="md" className="flex-1" onClick={handleClose}>
             Nueva venta
           </Button>
+        </div>
+      </Dialog>
+    );
+  }
+
+  // ── Below-cost confirmation step ─────────────────────────────────────────
+  if (hasBelowCost && !belowCostAcknowledged) {
+    return (
+      <Dialog
+        open={open}
+        onClose={onClose}
+        title="Precio bajo costo"
+        description=""
+      >
+        <div className="max-h-[65vh] space-y-4 overflow-y-auto px-6 py-5">
+          {/* Warning header */}
+          <div className="flex items-start gap-3 rounded-sm border border-signal-600/40 bg-signal-700/10 px-4 py-3">
+            <WarningIcon className="mt-0.5 h-5 w-5 shrink-0 text-signal-400" />
+            <div>
+              <p className="font-mono text-[11px] font-bold uppercase tracking-[0.1em] text-signal-400">
+                {belowCostItems.length === 1 ? "1 ítem" : `${belowCostItems.length} ítems`} por debajo del costo estimado
+              </p>
+              <p className="mt-0.5 font-mono text-[10.5px] leading-5 text-signal-400/70">
+                El precio de venta neto (s/IVA) es inferior al costo promedio del producto.
+                Confirma sólo si es intencional.
+              </p>
+            </div>
+          </div>
+
+          {/* Affected items table */}
+          <div className="overflow-x-auto rounded-sm border border-steel-700">
+            <table className="w-full min-w-[380px] text-left">
+              <thead className="border-b border-steel-700 bg-steel-950/50">
+                <tr>
+                  <th className="px-3 py-2 font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-muted-foreground/70">Producto</th>
+                  <th className="px-3 py-2 text-right font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-muted-foreground/70">Precio neto</th>
+                  <th className="px-3 py-2 text-right font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-muted-foreground/70">CPP</th>
+                  <th className="px-3 py-2 text-right font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-red-400/70">Pérdida est.</th>
+                </tr>
+              </thead>
+              <tbody>
+                {belowCostItems.map((item, idx) => (
+                  <tr key={idx} className="border-b border-steel-800/40 last:border-0">
+                    <td className="px-3 py-2.5">
+                      <div className="font-semibold text-[12px] text-foreground">{item.name}</div>
+                      <div className="font-mono text-[9.5px] text-muted-foreground/60">
+                        {item.quantity} {item.unit_label}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2.5 text-right font-mono text-[12px] tabular-nums text-muted-foreground">
+                      {moneyFmt.format(item.net_price)}
+                    </td>
+                    <td className="px-3 py-2.5 text-right font-mono text-[12px] tabular-nums text-muted-foreground/70">
+                      {moneyFmt.format(item.average_cost)}
+                    </td>
+                    <td className="px-3 py-2.5 text-right font-mono text-[13px] font-bold tabular-nums text-red-400">
+                      −{moneyFmt.format(item.total_loss)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Total loss summary */}
+          <div className="flex items-baseline justify-between rounded-sm border border-red-500/30 bg-red-500/5 px-4 py-2.5">
+            <span className="font-mono text-[10.5px] uppercase tracking-[0.1em] text-red-400/80">
+              Pérdida total estimada
+            </span>
+            <span className="font-mono text-[16px] font-bold tabular-nums text-red-400">
+              −{moneyFmt.format(belowCostTotalLoss)}
+            </span>
+          </div>
+
+          {/* Disclaimer */}
+          <p className="font-mono text-[9.5px] leading-4 text-muted-foreground/45">
+            Estimación basada en el CPP actual del producto. No incluye costos indirectos.
+            Esta confirmación quedará registrada en el historial de la venta.
+          </p>
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center justify-end gap-3 border-t-2 border-steel-700 bg-steel-900/60 px-6 py-4">
+          <Button variant="outline" size="md" onClick={onClose}>
+            Cancelar
+          </Button>
+          <button
+            type="button"
+            onClick={() => setBelowCostAcknowledged(true)}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-sm border-2 border-signal-600/60 bg-signal-700/15 px-4 font-mono text-[11px] font-bold uppercase tracking-[0.1em] text-signal-400 transition-colors hover:bg-signal-700/25"
+          >
+            <WarningIcon className="h-3.5 w-3.5" />
+            Entendido — continuar
+          </button>
         </div>
       </Dialog>
     );
@@ -617,6 +743,16 @@ function PrinterIcon({ className }: { className?: string }) {
       <polyline points="6 9 6 2 18 2 18 9" />
       <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
       <rect x="6" y="14" width="12" height="8" />
+    </svg>
+  );
+}
+
+function WarningIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+      <line x1="12" y1="9" x2="12" y2="13" />
+      <line x1="12" y1="17" x2="12.01" y2="17" />
     </svg>
   );
 }

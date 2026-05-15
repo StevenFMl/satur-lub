@@ -17,7 +17,7 @@ import {
 } from "@/actions/cash";
 import { MOVEMENT_TYPE_LABELS } from "@/lib/validations/cash";
 import type { PosPermissions } from "@/lib/auth/permissions";
-import type { CashSessionData, PosWarehouseForCaja } from "./page";
+import type { CashSessionData, PosWarehouseForCaja, PastSessionRow } from "./page";
 
 // ── Formatters ──────────────────────────────────────────────────────────────
 
@@ -44,10 +44,12 @@ export function CashSessionPanel({
   session,
   warehouses,
   permissions,
+  pastSessions,
 }: {
-  session:     CashSessionData | null;
-  warehouses:  PosWarehouseForCaja[];
-  permissions: PosPermissions;
+  session:      CashSessionData | null;
+  warehouses:   PosWarehouseForCaja[];
+  permissions:  PosPermissions;
+  pastSessions: PastSessionRow[];
 }) {
   const router = useRouter();
   const [manualOpen, setManualOpen]   = React.useState(false);
@@ -154,12 +156,18 @@ export function CashSessionPanel({
                   </span>
                 </p>
                 <p>
-                  <span className="font-mono text-[9px] text-muted-foreground/60 block">Diferencia</span>
+                  <span className="font-mono text-[9px] text-muted-foreground/60 block">
+                    {(session.variance ?? 0) >= 0 ? "Sobrante" : "Faltante"}
+                  </span>
                   <span className={[
                     "font-mono font-bold tabular-nums",
-                    (session.variance ?? 0) >= 0 ? "text-signal-400" : "text-red-400",
+                    (session.variance ?? 0) === 0
+                      ? "text-muted-foreground/50"
+                      : (session.variance ?? 0) > 0
+                        ? "text-signal-400"
+                        : "text-red-400",
                   ].join(" ")}>
-                    {(session.variance ?? 0) >= 0 ? "+" : ""}
+                    {(session.variance ?? 0) > 0 ? "+" : ""}
                     {moneyFmt.format(session.variance ?? 0)}
                   </span>
                 </p>
@@ -294,6 +302,11 @@ export function CashSessionPanel({
             ) : null
           )}
         </>
+      ) : null}
+
+      {/* ── Session history ─────────────────────────────────── */}
+      {pastSessions.length > 0 ? (
+        <SessionHistory sessions={pastSessions} />
       ) : null}
 
       {/* ── Dialogs ─────────────────────────────────────────── */}
@@ -665,6 +678,114 @@ function CloseSessionDialog({
         </button>
       </div>
     </Dialog>
+  );
+}
+
+// ── SessionHistory ─────────────────────────────────────────────────────────
+
+function SessionHistory({ sessions }: { sessions: PastSessionRow[] }) {
+  const [expanded, setExpanded] = React.useState(false);
+  const shown = expanded ? sessions : sessions.slice(0, 5);
+
+  return (
+    <div className="panel rounded-sm border border-steel-700 bg-steel-900/60 overflow-hidden">
+      <div className="flex items-center justify-between border-b border-steel-700 bg-steel-900/70 px-4 py-2.5">
+        <h2 className="font-mono text-[9.5px] uppercase tracking-[0.16em] text-muted-foreground/60">
+          Historial de sesiones ({sessions.length})
+        </h2>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[480px] text-left">
+          <thead className="border-b border-steel-800 bg-steel-950/40">
+            <tr>
+              <th className="px-4 py-2 font-mono text-[9px] font-bold uppercase tracking-[0.16em] text-muted-foreground/60">Apertura</th>
+              <th className="px-4 py-2 font-mono text-[9px] font-bold uppercase tracking-[0.16em] text-muted-foreground/60">Cierre</th>
+              <th className="px-3 py-2 font-mono text-[9px] font-bold uppercase tracking-[0.16em] text-muted-foreground/60 text-right">Inicial</th>
+              <th className="px-3 py-2 font-mono text-[9px] font-bold uppercase tracking-[0.16em] text-muted-foreground/60 text-right">Contado</th>
+              <th className="px-3 py-2 font-mono text-[9px] font-bold uppercase tracking-[0.16em] text-muted-foreground/60 text-right">Diferencia</th>
+            </tr>
+          </thead>
+          <tbody>
+            {shown.map((s) => {
+              const v    = s.variance ?? null;
+              const zero = v === null || v === 0;
+              return (
+                <tr key={s.id} className="border-b border-steel-800/40 hover:bg-steel-900/40 transition-colors">
+                  <td className="px-4 py-2.5">
+                    <div className="flex items-center gap-2">
+                      {s.status === "open" ? (
+                        <span className="rounded-sm border border-signal-600/40 bg-signal-700/10 px-1.5 py-0.5 font-mono text-[8.5px] font-bold uppercase text-signal-400">
+                          Abierta
+                        </span>
+                      ) : null}
+                      <span className="font-mono text-[11px] text-foreground">
+                        {fmtDatetime(s.opened_at)}
+                      </span>
+                    </div>
+                    {s.warehouse_name ? (
+                      <div className="font-mono text-[9px] text-muted-foreground/50 mt-0.5">
+                        {s.warehouse_name}
+                      </div>
+                    ) : null}
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <span className="font-mono text-[11px] text-muted-foreground">
+                      {s.closed_at ? fmtDatetime(s.closed_at) : "—"}
+                    </span>
+                    {s.notes ? (
+                      <div
+                        className="mt-0.5 max-w-[140px] truncate font-mono text-[9px] text-muted-foreground/50"
+                        title={s.notes}
+                      >
+                        {s.notes}
+                      </div>
+                    ) : null}
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-mono text-[11px] tabular-nums text-muted-foreground">
+                    {moneyFmt.format(s.opening_amount)}
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-mono text-[11.5px] tabular-nums text-foreground">
+                    {s.counted_cash != null ? moneyFmt.format(s.counted_cash) : "—"}
+                  </td>
+                  <td className="px-3 py-2.5 text-right">
+                    {v === null ? (
+                      <span className="font-mono text-[10px] text-muted-foreground/40">—</span>
+                    ) : (
+                      <span className={[
+                        "font-mono text-[12px] font-bold tabular-nums",
+                        zero  ? "text-muted-foreground/40" :
+                        v > 0 ? "text-signal-400"          :
+                                "text-red-400",
+                      ].join(" ")}>
+                        {v > 0 ? "+" : ""}{moneyFmt.format(v)}
+                        {!zero ? (
+                          <span className="ml-1 font-mono text-[9px] font-normal">
+                            {v > 0 ? "sobra" : "falta"}
+                          </span>
+                        ) : null}
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {sessions.length > 5 ? (
+        <div className="border-t border-steel-800 px-4 py-2">
+          <button
+            type="button"
+            onClick={() => setExpanded(!expanded)}
+            className="font-mono text-[9.5px] uppercase tracking-[0.12em] text-muted-foreground/60 transition-colors hover:text-foreground"
+          >
+            {expanded ? `▲ Mostrar menos` : `▼ Ver ${sessions.length - 5} sesiones más`}
+          </button>
+        </div>
+      ) : null}
+    </div>
   );
 }
 

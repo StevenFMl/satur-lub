@@ -236,27 +236,6 @@ const NAV: NavEntry[] = [
           ),
         },
         {
-          href: "/dashboard/inventario/valor",
-          label: "Valor",
-          icon: (
-            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="12" y1="1" x2="12" y2="23" />
-              <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
-            </svg>
-          ),
-        },
-        {
-          href: "/dashboard/inventario/reposicion",
-          label: "Reposición",
-          icon: (
-            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M3 9h18M3 15h18" />
-              <path d="M8 3 2 9l6 6" />
-              <path d="M16 21l6-6-6-6" />
-            </svg>
-          ),
-        },
-        {
           href: "/dashboard/inventario/infraestructura",
           label: "Locales y Bodegas",
           icon: (
@@ -287,6 +266,114 @@ const NAV: NavEntry[] = [
             <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 11l3 3L22 4" />
               <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+            </svg>
+          ),
+        },
+      ],
+    },
+  },
+
+  // Reportes: Rentabilidad · Auditoría · Valor inventario · Reposición · IVA
+  {
+    kind: "group",
+    data: {
+      key: "reportes",
+      label: "Reportes",
+      icon: (
+        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M18 20V10M12 20V4M6 20v-6" />
+        </svg>
+      ),
+      items: [
+        {
+          href: "/dashboard/pos/rentabilidad",
+          label: "Rentabilidad",
+          icon: (
+            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="22 7 13.5 15.5 8.5 10.5 2 17" />
+              <polyline points="16 7 22 7 22 13" />
+            </svg>
+          ),
+        },
+        {
+          href: "/dashboard/pos/auditoria",
+          label: "Auditoría",
+          icon: (
+            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+              <path d="M9 13h6M9 17h4" />
+              <circle cx="7.5" cy="9.5" r="1" fill="currentColor" />
+            </svg>
+          ),
+        },
+        {
+          href: "/dashboard/inventario/valor",
+          label: "Valor inventario",
+          icon: (
+            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="12" y1="1" x2="12" y2="23" />
+              <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+            </svg>
+          ),
+        },
+        {
+          href: "/dashboard/inventario/reposicion",
+          label: "Reposición",
+          icon: (
+            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 9h18M3 15h18" />
+              <path d="M8 3 2 9l6 6" />
+              <path d="M16 21l6-6-6-6" />
+            </svg>
+          ),
+        },
+        {
+          href: "/dashboard/compras/iva",
+          label: "IVA compras",
+          icon: (
+            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+              <line x1="9" y1="15" x2="15" y2="9" />
+              <circle cx="9.5" cy="9.5" r="0.5" fill="currentColor" />
+              <circle cx="14.5" cy="14.5" r="0.5" fill="currentColor" />
+            </svg>
+          ),
+        },
+        {
+          href: "/dashboard/compras/iva-ventas",
+          label: "IVA ventas",
+          icon: (
+            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z" />
+              <path d="M3 6h18" />
+              <line x1="9" y1="15" x2="15" y2="9" />
+              <circle cx="9.5" cy="9.5" r="0.5" fill="currentColor" />
+              <circle cx="14.5" cy="14.5" r="0.5" fill="currentColor" />
+            </svg>
+          ),
+        },
+        {
+          href: "/dashboard/compras/resumen-iva",
+          label: "Resumen IVA",
+          icon: (
+            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2" />
+              <path d="M3 9h18" />
+              <path d="M9 21V9" />
+            </svg>
+          ),
+        },
+        {
+          href: "/dashboard/compras/consolidado",
+          label: "Consolidado",
+          icon: (
+            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 3v18h18" />
+              <rect x="7" y="10" width="3" height="8" rx="0.5" />
+              <rect x="12" y="6" width="3" height="12" rx="0.5" />
+              <rect x="17" y="13" width="3" height="5" rx="0.5" />
             </svg>
           ),
         },

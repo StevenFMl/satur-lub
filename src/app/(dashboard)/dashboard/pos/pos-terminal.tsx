@@ -47,6 +47,7 @@ export type PosProduct = {
   presentations:   PosPresentation[];
   is_kit:          boolean;
   kit_components:  PosBundleComponent[];
+  average_cost:    number;      // CPP actual (s/IVA); 0 para servicios
 };
 
 export type PosWarehouse = { id: string; name: string };
@@ -71,6 +72,7 @@ type CartLine = {
   stock_base:      number;
   quantity:        number;
   discount_amount: number;
+  average_cost:    number;      // CPP snapshot from product at add-to-cart time
   // price override
   override_unit_price:   number | null;
   price_override_type:   string | null;
@@ -247,6 +249,7 @@ export function PosTerminal({
           stock_base:      product.stock,
           quantity:        1,
           discount_amount: 0,
+          average_cost:    product.average_cost,
           override_unit_price:   null,
           price_override_type:   null,
           price_override_reason: null,
@@ -355,6 +358,19 @@ export function PosTerminal({
     warehouseId != null &&
     cart.some((l) => (l.track_inventory || (l.is_kit && l.kit_components.length > 0)) && l.quantity * l.base_qty > l.stock_base),
     [cart, warehouseId]
+  );
+
+  // Líneas vendidas por debajo del CPP (solo productos con costo > 0)
+  const hasBelowCostItems = React.useMemo(() =>
+    cart.some((l) => {
+      if (l.average_cost <= 0 || l.is_kit) return false;
+      const gross   = effectivePrice(l);
+      const netLine = l.has_tax && l.tax_rate > 0
+        ? gross / (1 + l.tax_rate / 100)
+        : gross;
+      return netLine < l.average_cost;
+    }),
+    [cart]
   );
 
   const canCheckout = cart.length > 0 && customer != null && !hasStockIssue;
@@ -597,6 +613,7 @@ export function PosTerminal({
             customer={customer}
             permissions={permissions}
             hasStockIssue={hasStockIssue}
+            hasBelowCostItems={hasBelowCostItems}
             canCheckout={canCheckout}
             onSetQty={setQty}
             onRemove={removeFromCart}
@@ -641,6 +658,7 @@ export function PosTerminal({
             customer={customer}
             permissions={permissions}
             hasStockIssue={hasStockIssue}
+            hasBelowCostItems={hasBelowCostItems}
             canCheckout={canCheckout}
             onSetQty={setQty}
             onRemove={removeFromCart}
@@ -675,6 +693,10 @@ export function PosTerminal({
             price_override_type:   l.price_override_type   ?? undefined,
             price_override_reason: l.price_override_reason ?? undefined,
             price_override_note:   l.price_override_note   ?? undefined,
+            // Cost data for below-cost detection in checkout
+            average_cost: l.average_cost,
+            has_tax:      l.has_tax,
+            tax_rate:     l.tax_rate,
             // Kit: pass components so create_sale can decrement them atomically
             components: l.is_kit && l.kit_components.length > 0
               ? l.kit_components
@@ -700,6 +722,7 @@ function CartPanel({
   customer,
   permissions,
   hasStockIssue,
+  hasBelowCostItems,
   canCheckout,
   onSetQty,
   onRemove,
@@ -711,12 +734,13 @@ function CartPanel({
   onFiado,
   productNameById,
 }: {
-  cart:             CartLine[];
-  totals:           ReturnType<typeof calcTotals>;
-  customer:         PickedCustomer | null;
-  permissions:      PosPermissions;
-  hasStockIssue:    boolean;
-  canCheckout:      boolean;
+  cart:               CartLine[];
+  totals:             ReturnType<typeof calcTotals>;
+  customer:           PickedCustomer | null;
+  permissions:        PosPermissions;
+  hasStockIssue:      boolean;
+  hasBelowCostItems:  boolean;
+  canCheckout:        boolean;
   onSetQty:         (key: string, qty: number) => void;
   onRemove:         (key: string) => void;
   onOverride:       (key: string, payload: OverridePayload | null) => void;
@@ -1105,6 +1129,12 @@ function CartPanel({
           {hasStockIssue ? (
             <p className="rounded-sm border border-hazard-500/40 bg-hazard-700/10 px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-red-400">
               Stock insuficiente en un ítem
+            </p>
+          ) : null}
+
+          {hasBelowCostItems ? (
+            <p className="rounded-sm border border-signal-600/40 bg-signal-700/10 px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-signal-400">
+              ⚠ Precio por debajo del costo estimado
             </p>
           ) : null}
 

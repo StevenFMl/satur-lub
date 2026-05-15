@@ -40,6 +40,19 @@ export type CashSessionData = {
 
 export type PosWarehouseForCaja = { id: string; name: string };
 
+export type PastSessionRow = {
+  id:             string;
+  warehouse_name: string | null;
+  status:         "open" | "closed";
+  opened_at:      string;
+  closed_at:      string | null;
+  opening_amount: number;
+  expected_cash:  number | null;
+  counted_cash:   number | null;
+  variance:       number | null;
+  notes:          string | null;
+};
+
 export default async function CajaPage() {
   const { user, membership } = await getActiveMembership();
   if (!user) redirect("/login");
@@ -121,11 +134,41 @@ export default async function CajaPage() {
     };
   }
 
+  // ── Past sessions (excluding the most recent) ────────────────
+  let pastSessions: PastSessionRow[] = [];
+  if (rawSession) {
+    const { data: pastData } = await supabase
+      .from("cash_sessions")
+      .select(`
+        id, status, opened_at, closed_at,
+        opening_amount, expected_cash, counted_cash, variance, notes,
+        warehouses!warehouse_id(name)
+      `)
+      .eq("tenant_id", tenantId)
+      .neq("id", rawSession.id as string)
+      .order("opened_at", { ascending: false })
+      .limit(30);
+
+    pastSessions = (pastData ?? []).map((s: any) => ({
+      id:             s.id as string,
+      warehouse_name: s.warehouses?.name ?? null,
+      status:         s.status as "open" | "closed",
+      opened_at:      s.opened_at as string,
+      closed_at:      s.closed_at as string | null,
+      opening_amount: Number(s.opening_amount ?? 0),
+      expected_cash:  s.expected_cash  != null ? Number(s.expected_cash)  : null,
+      counted_cash:   s.counted_cash   != null ? Number(s.counted_cash)   : null,
+      variance:       s.variance       != null ? Number(s.variance)       : null,
+      notes:          s.notes as string | null,
+    }));
+  }
+
   return (
     <CashSessionPanel
       session={session}
       warehouses={warehouses}
       permissions={permissions}
+      pastSessions={pastSessions}
     />
   );
 }

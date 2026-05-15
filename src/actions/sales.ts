@@ -31,7 +31,9 @@ export type CreateSaleReturnResult = {
 
 export async function createSaleAction(
   input: SaleInput,
-  cashSessionId?: string | null
+  cashSessionId?: string | null,
+  belowCostOverride?: boolean,
+  belowCostLossEstimated?: number
 ): Promise<CreateSaleResult> {
   const { user, membership } = await getActiveMembership();
   if (!user || !membership) return { error: "Sesión expirada." };
@@ -85,10 +87,25 @@ export async function createSaleAction(
     return { error: "No se pudo registrar la venta. Intenta de nuevo." };
   }
 
+  // ── Below-cost audit flag ────────────────────────────────────────────────
+  // Post-RPC UPDATE: no modifica el RPC ni requiere parámetros nuevos en él.
+  if (belowCostOverride && saleId && typeof saleId === "string") {
+    await supabase
+      .from("sales")
+      .update({
+        below_cost_override:       true,
+        below_cost_loss_estimated: Number((belowCostLossEstimated ?? 0).toFixed(2)),
+      })
+      .eq("id", saleId)
+      .eq("tenant_id", membership.tenant_id);
+    // Non-fatal: if this UPDATE fails we still have the sale. Log but don't surface to user.
+  }
+
   revalidateTag("products");
   revalidatePath("/dashboard/pos");
   revalidatePath("/dashboard/pos/ventas");
   revalidatePath("/dashboard/pos/caja");
+  revalidatePath("/dashboard/pos/auditoria");
   revalidatePath("/dashboard/inventario/stock");
   revalidatePath("/dashboard/inventario/movimientos");
 

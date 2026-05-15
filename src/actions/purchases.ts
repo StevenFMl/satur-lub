@@ -89,13 +89,19 @@ export async function receivePurchaseAction(
   let serverTaxBig = Big(0);
 
   const p_items = data.items.map((item) => {
-    const isTaxable = dbProductMap.get(item.product_id as string) ?? true;
+    const dbHasTax = dbProductMap.get(item.product_id as string) ?? true;
+    // item_tax_rate por línea toma precedencia sobre la tasa global de la factura.
+    // Si el cliente envía 0 → tratamos como exento.
+    // Si el cliente envía >0 pero DB dice has_tax=false → DB gana (producto exento siempre).
+    const itemRate = item.item_tax_rate ?? invoiceTaxRate;
+    const isTaxable = dbHasTax && itemRate > 0;
+    const itemRateBig = Big(itemRate).div(100);
 
     // item.unit_cost received from client is GROSS if isTaxInclusive is true
     let unitCostBig = Big(item.unit_cost);
 
-    if (isTaxInclusive && isTaxable && invoiceTaxRate > 0) {
-      unitCostBig = unitCostBig.div(Big(1).plus(taxRateBig));
+    if (isTaxInclusive && isTaxable && itemRate > 0) {
+      unitCostBig = unitCostBig.div(Big(1).plus(itemRateBig));
     }
 
     // Preserve sufficient precision for inventory (4 decimals)
@@ -107,8 +113,8 @@ export async function receivePurchaseAction(
     const lineTotalBig = toMoney(netUnitCostBig.times(qtyBig));
     serverSubtotalBig = serverSubtotalBig.plus(lineTotalBig);
 
-    if (isTaxable && invoiceTaxRate > 0) {
-      serverTaxBig = serverTaxBig.plus(taxAmount(lineTotalBig, invoiceTaxRate));
+    if (isTaxable && itemRate > 0) {
+      serverTaxBig = serverTaxBig.plus(taxAmount(lineTotalBig, itemRate));
     }
 
     return {

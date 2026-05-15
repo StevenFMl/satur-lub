@@ -42,12 +42,11 @@ export type LookupProduct = {
   name: string;
   unit: string;
   cost_price: number | null;
-  // Caché del precio público (mantenido por trigger desde product_prices).
   default_price?: number | null;
-  // Costo promedio ponderado y último costo de compra.
   average_cost?: number | null;
   last_purchase_cost?: number | null;
   has_tax: boolean;
+  tax_rate?: number | null;  // tasa IVA nativa del producto (0-100)
   best_cost?: number;
   best_supplier?: string;
 };
@@ -58,11 +57,12 @@ type PaymentMethod = "cash" | "transfer" | "credit";
 type Row = {
   uid: string;
   product_id: string;
-  quantity: string;       // unidades pagadas (con costo)
-  quantity_bonus: string; // unidades recibidas gratis (bonificación)
+  quantity: string;        // unidades pagadas (con costo)
+  quantity_bonus: string;  // unidades recibidas gratis (bonificación)
   total_cost: string;
   unit: string;
-  base_qty: string;       // unidades base por unidad de compra (factor de conversión)
+  base_qty: string;        // unidades base por unidad de compra (factor de conversión)
+  item_tax_rate: string;   // tasa IVA efectiva por línea ("0"=exento, "12", "15", …)
 };
 
 const newRow = (): Row => ({
@@ -76,6 +76,7 @@ const newRow = (): Row => ({
   total_cost: "0",
   unit: "galón",
   base_qty: "1",
+  item_tax_rate: "15",
 });
 
 // Totales (subtotal, IVA, total factura): 2 decimales fijos.
@@ -171,17 +172,17 @@ export function PurchaseForm({
     [isTaxInclusive, invoiceTaxRate]
   );
 
-  // Al cambiar el toggle convierte los totales de todas las filas para que
-  // el valor efectivo guardado no cambie (solo cambia la representación).
-  // OFF→ON: × (1+rate)  — el mismo neto ahora se muestra como bruto.
-  // ON→OFF: ÷ (1+rate)  — el mismo bruto ahora se muestra como neto.
+  // Al cambiar el toggle convierte los totales usando la tasa por línea.
+  // Filas exentas (item_tax_rate=0) no se convierten.
   const handleToggleIvaInclusive = useCallback(
     (next: boolean) => {
-      const factor = next
-        ? Big(1).plus(Big(invoiceTaxRate).div(100))
-        : Big(1).div(Big(1).plus(Big(invoiceTaxRate).div(100)));
       setRows((prev) =>
         prev.map((r) => {
+          const rate = Number(r.item_tax_rate) || 0;
+          if (rate === 0) return r; // exento: no cambia
+          const factor = next
+            ? Big(1).plus(Big(rate).div(100))
+            : Big(1).div(Big(1).plus(Big(rate).div(100)));
           const n = parseFloat(r.total_cost);
           if (!isFinite(n) || n === 0) return r;
           return { ...r, total_cost: toFixedStr(Big(n).times(factor), 2) };
@@ -189,7 +190,7 @@ export function PurchaseForm({
       );
       setIsTaxInclusive(next);
     },
-    [invoiceTaxRate]
+    []
   );
 
   useEffect(() => {
@@ -246,11 +247,19 @@ export function PurchaseForm({
   }, [searchTerm, localProducts]);
 
   const addToCart = useCallback((product: LookupProduct) => {
+    // Tasa IVA inicial para esta línea:
+    //  - Producto exento en DB → 0
+    //  - Producto tiene su propia tasa → usarla
+    //  - Fallback → tasa global de la factura
+    const resolvedItemRate = product.has_tax === false
+      ? "0"
+      : product.tax_rate != null
+        ? String(product.tax_rate)
+        : String(invoiceTaxRate);
+
     setRows((prev) => {
       const existingIndex = prev.findIndex(r => r.product_id === product.id);
       const suggestedNet = suggestedUnitCost(product);
-      // Convierte el costo sugerido (siempre NET en DB) al valor de display
-      // según el toggle actual (bruto si isTaxInclusive=true, neto si false).
       const displayCost = suggestedNet != null ? netToDisplay(suggestedNet) : null;
 
       if (existingIndex >= 0) {
@@ -279,6 +288,7 @@ export function PurchaseForm({
             total_cost: totalCostStr,
             unit: product.unit,
             base_qty: "1",
+            item_tax_rate: resolvedItemRate,
           },
         ];
       }
@@ -287,7 +297,7 @@ export function PurchaseForm({
     setSearchTerm("");
     setIsDropdownOpen(false);
     setTimeout(() => { searchInputRef.current?.focus(); }, 0);
-  }, [netToDisplay]);
+  }, [netToDisplay, invoiceTaxRate]);
 
   // Re-derivación reactiva del costo de filas NO-manuales cuando cambia el
   // catálogo (precio nuevo desde otra ventana, edición inline, etc.).
@@ -325,42 +335,39 @@ export function PurchaseForm({
     }
   };
 
-  // Subtotal y Tax: total_cost siempre refleja solo las unidades pagadas
+  // Subtotal y Tax: cada línea usa su propia tasa (item_tax_rate).
+  // Filas con item_tax_rate=0 son exentas: su total_cost va directo al subtotal sin extraer IVA.
   const subtotalBig = useMemo(() => {
     let subtotal = Big(0);
-    const taxRateBig = Big(invoiceTaxRate).div(100);
     for (const r of rows) {
-      const product = productById.get(r.product_id);
-      const isTaxable = product?.has_tax ?? true;
+      const rate = Number(r.item_tax_rate) || 0;
       const totalRow = Big(r.total_cost || 0);
-      if (isTaxInclusive && isTaxable && invoiceTaxRate > 0) {
-        subtotal = subtotal.plus(totalRow.div(Big(1).plus(taxRateBig)));
+      if (isTaxInclusive && rate > 0) {
+        subtotal = subtotal.plus(totalRow.div(Big(1).plus(Big(rate).div(100))));
       } else {
         subtotal = subtotal.plus(totalRow);
       }
     }
     return toMoney(subtotal);
-  }, [rows, productById, isTaxInclusive, invoiceTaxRate]);
+  }, [rows, isTaxInclusive]);
 
   const taxBig = useMemo(() => {
     let totalTax = Big(0);
-    const taxRateBig = Big(invoiceTaxRate).div(100);
     for (const r of rows) {
-      const product = productById.get(r.product_id);
-      if (!product) continue;
-      const isTaxable = product.has_tax ?? true;
-      if (isTaxable && invoiceTaxRate > 0) {
+      const rate = Number(r.item_tax_rate) || 0;
+      if (rate > 0) {
         const totalRow = Big(r.total_cost || 0);
+        const rBig = Big(rate).div(100);
         if (isTaxInclusive) {
-          const base = totalRow.div(Big(1).plus(taxRateBig));
+          const base = totalRow.div(Big(1).plus(rBig));
           totalTax = totalTax.plus(totalRow.minus(base));
         } else {
-          totalTax = totalTax.plus(totalRow.times(taxRateBig));
+          totalTax = totalTax.plus(totalRow.times(rBig));
         }
       }
     }
     return toMoney(totalTax);
-  }, [rows, productById, invoiceTaxRate, isTaxInclusive]);
+  }, [rows, isTaxInclusive]);
 
   const otherBig = useMemo(() => toMoney(otherCharges || "0"), [otherCharges]);
   const grandBig = useMemo(() => add(grandTotal(subtotalBig, taxBig), otherBig), [subtotalBig, taxBig, otherBig]);
@@ -383,6 +390,7 @@ export function PurchaseForm({
             quantity_bonus: bonusNum,
             unit_cost: Number(toFixedStr(rawUnitCostBig, 4)),
             base_qty: Math.max(1, Number(r.base_qty) || 1),
+            item_tax_rate: Number(r.item_tax_rate) || 0,
           };
         })
     );
@@ -726,9 +734,26 @@ export function PurchaseForm({
                               <Pencil className="h-3.5 w-3.5" />
                             </button>
                           </div>
-                          <Badge tone="neutral" className="text-[10px] mt-0.5">
-                            {productById.get(r.product_id)?.sku || "-"}
-                          </Badge>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <Badge tone="neutral" className="text-[10px]">
+                              {productById.get(r.product_id)?.sku || "-"}
+                            </Badge>
+                            {/* Selector IVA por línea — editable */}
+                            <select
+                              value={r.item_tax_rate}
+                              onChange={(e) => updateRow(r.uid, { item_tax_rate: e.target.value })}
+                              title="Tasa IVA de esta línea (cambia solo esta fila)"
+                              className={`h-5 rounded-sm border px-1.5 font-mono text-[9px] font-bold uppercase tracking-[0.08em] outline-none transition-colors focus:border-safety-500/60 cursor-pointer ${
+                                Number(r.item_tax_rate) === 0
+                                  ? "border-amber-700/60 bg-amber-900/20 text-amber-400"
+                                  : "border-steel-700 bg-steel-800 text-muted-foreground/70 hover:text-muted-foreground"
+                              }`}
+                            >
+                              <option value="0">Exento</option>
+                              <option value="12">IVA 12%</option>
+                              <option value="15">IVA 15%</option>
+                            </select>
+                          </div>
                           {(() => {
                             const product = productById.get(r.product_id);
                             if (!product || product.best_cost == null) return null;
@@ -827,23 +852,21 @@ export function PurchaseForm({
                       </td>
                       <td className="px-4 py-3 align-top text-right">
                         {(() => {
-                          const product = productById.get(r.product_id);
-                          const isTaxable = product?.has_tax ?? true;
-                          const taxRateBig = Big(invoiceTaxRate).div(100);
+                          // Usa la tasa por línea (item_tax_rate), no la global de factura
+                          const itemRate = Number(r.item_tax_rate) || 0;
+                          const isTaxable = itemRate > 0;
+                          const taxRateBig = Big(itemRate).div(100);
                           const baseQtyNum = Math.max(1, Number(r.base_qty) || 1);
-                          // Costo por unidad comprada (en el modo que el usuario ingresó)
                           const displayedUnitCost = unitCostBig;
-                          // Costo derivado en el otro modo (para mostrar el desglose)
-                          const netUnitCost = isTaxInclusive && isTaxable && invoiceTaxRate > 0
+                          const netUnitCost = isTaxInclusive && isTaxable
                             ? displayedUnitCost.div(Big(1).plus(taxRateBig))
                             : displayedUnitCost;
-                          const grossUnitCost = !isTaxInclusive && isTaxable && invoiceTaxRate > 0
+                          const grossUnitCost = !isTaxInclusive && isTaxable
                             ? displayedUnitCost.times(Big(1).plus(taxRateBig))
                             : displayedUnitCost;
-                          const ivaUnitCost = isTaxable && invoiceTaxRate > 0
+                          const ivaUnitCost = isTaxable
                             ? grossUnitCost.minus(netUnitCost)
                             : Big(0);
-                          // Costo neto por unidad base (cuando base_qty > 1)
                           const netCostPerBase = netUnitCost.div(baseQtyNum);
 
                           return (
@@ -858,8 +881,8 @@ export function PurchaseForm({
                                 </span>
                               </div>
 
-                              {/* Desglose IVA por línea */}
-                              {isTaxable && invoiceTaxRate > 0 ? (
+                              {/* Desglose IVA por línea — usa item_tax_rate */}
+                              {isTaxable ? (
                                 <div className="mt-0.5 space-y-0.5 border-t border-steel-700/40 pt-0.5 text-right">
                                   {isTaxInclusive ? (
                                     <>
@@ -868,14 +891,14 @@ export function PurchaseForm({
                                         <span className="font-mono text-[11px] tabular-nums text-muted-foreground">{unitCostFmt.format(toNum(toUnitPrice(netUnitCost)))}</span>
                                       </div>
                                       <div className="flex items-center justify-end gap-2">
-                                        <span className="font-mono text-[9px] text-muted-foreground/50">IVA {invoiceTaxRate}%</span>
+                                        <span className="font-mono text-[9px] text-muted-foreground/50">IVA {itemRate}%</span>
                                         <span className="font-mono text-[11px] tabular-nums text-signal-400/80">{unitCostFmt.format(toNum(toUnitPrice(ivaUnitCost)))}</span>
                                       </div>
                                     </>
                                   ) : (
                                     <>
                                       <div className="flex items-center justify-end gap-2">
-                                        <span className="font-mono text-[9px] text-muted-foreground/50">IVA {invoiceTaxRate}%</span>
+                                        <span className="font-mono text-[9px] text-muted-foreground/50">IVA {itemRate}%</span>
                                         <span className="font-mono text-[11px] tabular-nums text-signal-400/80">+{unitCostFmt.format(toNum(toUnitPrice(ivaUnitCost)))}</span>
                                       </div>
                                       <div className="flex items-center justify-end gap-2">
@@ -979,16 +1002,17 @@ export function PurchaseForm({
                 const product = productById.get(r.product_id);
                 const isOverHistoric =
                   product?.best_cost != null && unitCostBig.gt(product.best_cost);
-                // IVA breakdown for mobile (mirrors desktop table logic)
-                const isTaxable   = product?.has_tax ?? true;
-                const taxRateBig  = Big(invoiceTaxRate).div(100);
-                const netUnitCostM = isTaxInclusive && isTaxable && invoiceTaxRate > 0
-                  ? unitCostBig.div(Big(1).plus(taxRateBig))
+                // IVA breakdown for mobile — usa tasa por línea (item_tax_rate)
+                const itemRateM     = Number(r.item_tax_rate) || 0;
+                const isTaxable     = itemRateM > 0;
+                const taxRateBigM   = Big(itemRateM).div(100);
+                const netUnitCostM  = isTaxInclusive && isTaxable
+                  ? unitCostBig.div(Big(1).plus(taxRateBigM))
                   : unitCostBig;
-                const grossUnitCostM = !isTaxInclusive && isTaxable && invoiceTaxRate > 0
-                  ? unitCostBig.times(Big(1).plus(taxRateBig))
+                const grossUnitCostM = !isTaxInclusive && isTaxable
+                  ? unitCostBig.times(Big(1).plus(taxRateBigM))
                   : unitCostBig;
-                const ivaUnitCostM = isTaxable && invoiceTaxRate > 0
+                const ivaUnitCostM   = isTaxable
                   ? grossUnitCostM.minus(netUnitCostM)
                   : Big(0);
                 return (
@@ -1004,6 +1028,21 @@ export function PurchaseForm({
                         </div>
                         <div className="mt-0.5 flex flex-wrap items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
                           <span>{product?.sku ?? "—"}</span>
+                          {/* Selector IVA por línea — mobile */}
+                          <select
+                            value={r.item_tax_rate}
+                            onChange={(e) => updateRow(r.uid, { item_tax_rate: e.target.value })}
+                            title="Tasa IVA de esta línea"
+                            className={`rounded-sm border px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.08em] outline-none cursor-pointer ${
+                              Number(r.item_tax_rate) === 0
+                                ? "border-amber-700/60 bg-amber-900/20 text-amber-400"
+                                : "border-steel-700 bg-steel-800 text-muted-foreground/70"
+                            }`}
+                          >
+                            <option value="0">Exento</option>
+                            <option value="12">IVA 12%</option>
+                            <option value="15">IVA 15%</option>
+                          </select>
                           {isOverHistoric ? (
                             <span className="rounded-sm border border-hazard-500/40 bg-hazard-700/10 px-1.5 py-0.5 text-[9px] text-red-400">
                               sobre histórico ${product.best_cost?.toFixed(2)}
@@ -1140,8 +1179,8 @@ export function PurchaseForm({
                         </span>
                       </div>
 
-                      {/* Desglose IVA — solo si el producto es gravado */}
-                      {isTaxable && invoiceTaxRate > 0 ? (
+                      {/* Desglose IVA — solo si la línea es gravada */}
+                      {isTaxable ? (
                         <div className="mt-1.5 space-y-0.5 rounded-sm border border-steel-700/40 bg-steel-950/30 px-2.5 py-1.5">
                           {isTaxInclusive ? (
                             <>
@@ -1152,7 +1191,7 @@ export function PurchaseForm({
                                 </span>
                               </div>
                               <div className="flex items-center justify-between gap-2">
-                                <span className="font-mono text-[9px] text-muted-foreground/55">IVA {invoiceTaxRate}%</span>
+                                <span className="font-mono text-[9px] text-muted-foreground/55">IVA {itemRateM}%</span>
                                 <span className="font-mono text-[11px] tabular-nums text-signal-400/80">
                                   {unitCostFmt.format(toNum(toUnitPrice(ivaUnitCostM)))}
                                 </span>
@@ -1161,7 +1200,7 @@ export function PurchaseForm({
                           ) : (
                             <>
                               <div className="flex items-center justify-between gap-2">
-                                <span className="font-mono text-[9px] text-muted-foreground/55">IVA {invoiceTaxRate}%</span>
+                                <span className="font-mono text-[9px] text-muted-foreground/55">IVA {itemRateM}%</span>
                                 <span className="font-mono text-[11px] tabular-nums text-signal-400/80">
                                   +{unitCostFmt.format(toNum(toUnitPrice(ivaUnitCostM)))}
                                 </span>
@@ -1217,22 +1256,27 @@ export function PurchaseForm({
               />
 
               <div className="flex items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <span className="font-mono text-[12px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                    IVA
-                  </span>
-                  <div className="flex items-center">
-                    <Input
-                      type="number"
-                      min="0"
-                      max="100"
-                      value={invoiceTaxRate}
-                      onChange={(e) => setInvoiceTaxRate(Number(e.target.value) || 0)}
-                      className="h-8 w-16 text-right text-[13px] px-2 font-mono"
-                      mono
-                    />
-                    <span className="ml-1 text-[13px] text-muted-foreground font-mono">%</span>
+                <div className="flex flex-col gap-0.5">
+                  <div className="flex items-center gap-3">
+                    <span className="font-mono text-[12px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                      IVA
+                    </span>
+                    <div className="flex items-center">
+                      <Input
+                        type="number"
+                        min="0"
+                        max="100"
+                        value={invoiceTaxRate}
+                        onChange={(e) => setInvoiceTaxRate(Number(e.target.value) || 0)}
+                        className="h-8 w-16 text-right text-[13px] px-2 font-mono"
+                        mono
+                      />
+                      <span className="ml-1 text-[13px] text-muted-foreground font-mono">%</span>
+                    </div>
                   </div>
+                  <span className="font-mono text-[9px] uppercase tracking-[0.08em] text-muted-foreground/40">
+                    Tasa por defecto · cada línea puede tener la suya
+                  </span>
                 </div>
                 <span className="font-mono text-[15px] tabular-nums text-foreground">
                   {moneyFmt.format(toNum(toMoney(taxBig)))}

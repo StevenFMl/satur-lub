@@ -176,48 +176,118 @@ export function QuickCreateProductDialog({ open, onClose, onCreated, editProduct
             </div>
           </div>
 
-          {/* ── Modo de entrada IVA ─────────────────────────────── */}
+          {/* ── Costo proveedor — siempre neto ──────────────────── */}
           <div className="space-y-1.5">
-            <div className="flex items-center gap-3 rounded-sm border border-steel-700/50 bg-steel-900/30 px-3 py-2.5">
+            <div className="flex items-baseline justify-between">
+              <div className="flex items-center gap-2">
+                <Label htmlFor="qc-cost">
+                  Costo proveedor{" "}
+                  <span className="font-normal normal-case tracking-normal text-muted-foreground/70">
+                    (opcional)
+                  </span>
+                </Label>
+                <span className="rounded-sm border border-steel-700 bg-steel-800 px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground/70">
+                  s/IVA
+                </span>
+              </div>
+              {costPreview ? (
+                <span className="font-mono text-[12px] tabular-nums text-muted-foreground/60">
+                  {costPreview}
+                </span>
+              ) : null}
+            </div>
+            <div className="relative">
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-mono text-[12px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+                USD
+              </span>
+              <Input
+                id="qc-cost"
+                type="number"
+                min="0"
+                step="any"
+                value={costPrice}
+                onChange={(e) => setCostPrice(e.target.value)}
+                placeholder="—"
+                mono
+                className="pl-14 text-right"
+                invalid={Boolean(fieldErrors.cost_price)}
+                onFocus={(e) => e.target.select()}
+              />
+            </div>
+            <p className="field-hint">
+              El costo del proveedor se guarda sin IVA (neto). El valor con IVA se muestra como referencia de cuánto pagás en total.
+            </p>
+            {fieldErrors.cost_price ? (
+              <p className="text-[12px] text-red-400">{fieldErrors.cost_price}</p>
+            ) : null}
+          </div>
+
+          {/* ── Precio de venta público ───────────────────────── */}
+          <div className="space-y-1.5">
+            {/* Toggle: aplica solo al campo de precio de venta */}
+            <div className="flex items-center gap-3 rounded-sm border border-steel-700/50 bg-steel-900/30 px-3 py-2">
               <Switch
                 id="qc-iva-mode"
                 checked={priceIncludesIva}
                 onCheckedChange={(val) => setPriceIncludesIva(val)}
               />
-              <Label
-                htmlFor="qc-iva-mode"
-                className="cursor-pointer normal-case tracking-normal text-[13px] font-medium text-muted-foreground"
-              >
-                Los montos ingresados ya incluyen IVA ({IVA_RATE}%)
-              </Label>
+              <div>
+                <Label
+                  htmlFor="qc-iva-mode"
+                  className="cursor-pointer normal-case tracking-normal text-[13px] font-medium text-muted-foreground"
+                >
+                  El precio de venta ya incluye IVA ({IVA_RATE}%)
+                </Label>
+                <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.08em] text-muted-foreground/50">
+                  {priceIncludesIva
+                    ? "Ingresa el precio final al cliente · se guarda tal cual"
+                    : "Ingresa precio sin IVA · el sistema suma +15% al guardar"}
+                </p>
+              </div>
             </div>
-            <p className="field-hint px-1">
-              El costo se ingresa siempre sin IVA (neto), independiente del toggle.
-              {priceIncludesIva
-                ? " Precio público: ingresando bruto (c/IVA), se guarda tal cual."
-                : " Precio público: ingresando neto (sin IVA), se añade IVA al guardar (×1.15)."}
-            </p>
-          </div>
 
-          {/* ── Costo y precio público ─────────────────────────── */}
-          <div className="space-y-3">
-            <PriceField
-              id="qc-cost"
-              label="Costo unitario (sin IVA)"
-              value={costPrice}
-              onChange={setCostPrice}
-              preview={costPreview}
-              error={fieldErrors.cost_price}
-            />
-            <PriceField
-              id="qc-price"
-              label="Precio público"
-              value={pricePublico}
-              onChange={setPricePublico}
-              preview={publicoPreview}
-              error={fieldErrors.price_publico}
-              hint="Mayorista y Distribuidor se configuran desde el catálogo."
-            />
+            <div className="flex items-baseline justify-between">
+              <div className="flex items-center gap-2">
+                <Label htmlFor="qc-price">
+                  Precio de venta al público{" "}
+                  <span className="font-normal normal-case tracking-normal text-muted-foreground/70">
+                    (opcional)
+                  </span>
+                </Label>
+                <span className="rounded-sm border border-steel-700 bg-steel-800 px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground/70">
+                  {priceIncludesIva ? "c/IVA" : "s/IVA"}
+                </span>
+              </div>
+              {publicoPreview ? (
+                <span className="font-mono text-[12px] tabular-nums text-muted-foreground/60">
+                  {publicoPreview}
+                </span>
+              ) : null}
+            </div>
+            <div className="relative">
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-mono text-[12px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+                USD
+              </span>
+              <Input
+                id="qc-price"
+                type="number"
+                min="0"
+                step="any"
+                value={pricePublico}
+                onChange={(e) => setPricePublico(e.target.value)}
+                placeholder="—"
+                mono
+                className="pl-14 text-right"
+                invalid={Boolean(fieldErrors.price_publico)}
+                onFocus={(e) => e.target.select()}
+              />
+            </div>
+            <p className="field-hint">
+              Precio principal del catálogo. Tiers Mayorista y Distribuidor se configuran desde el catálogo completo.
+            </p>
+            {fieldErrors.price_publico ? (
+              <p className="text-[12px] text-red-400">{fieldErrors.price_publico}</p>
+            ) : null}
           </div>
 
           {error && !Object.keys(fieldErrors).length ? (
@@ -238,60 +308,3 @@ export function QuickCreateProductDialog({ open, onClose, onCreated, editProduct
   );
 }
 
-// ── Sub-componentes ────────────────────────────────────────────────────────
-
-function PriceField({
-  id,
-  label,
-  value,
-  onChange,
-  preview,
-  error,
-  hint,
-}: {
-  id: string;
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  preview: string | null;
-  error?: string;
-  hint?: string;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <div className="flex items-baseline justify-between">
-        <Label htmlFor={id}>
-          {label}{" "}
-          <span className="font-normal normal-case tracking-normal text-muted-foreground/70">
-            (opcional)
-          </span>
-        </Label>
-        {preview ? (
-          <span className="font-mono text-[12px] tabular-nums text-muted-foreground/60">
-            {preview}
-          </span>
-        ) : null}
-      </div>
-      <div className="relative">
-        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-mono text-[12px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
-          USD
-        </span>
-        <Input
-          id={id}
-          type="number"
-          min="0"
-          step="any"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder="—"
-          mono
-          className="pl-14 text-right"
-          invalid={Boolean(error)}
-          onFocus={(e) => e.target.select()}
-        />
-      </div>
-      {hint ? <p className="field-hint">{hint}</p> : null}
-      {error ? <p className="text-[12px] text-red-400">{error}</p> : null}
-    </div>
-  );
-}
