@@ -19,6 +19,7 @@ function defaultRange(): { from: string; to: string } {
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type RawItem = {
+  id:         string;               // sale_items.id — needed to link to return_items
   product_id: string | null;       // NULL for manual items (v21+)
   item_name:  string | null;       // snapshot name — always set for v21+ sales
   quantity:   number | string;
@@ -37,6 +38,17 @@ type RawSale = {
   total:          number | string;
   business_partners: { full_name: string; document_number: string | null } | null;
   sale_items:     RawItem[];
+};
+
+// Return data — fetched after sales so we can filter by original_sale_id
+type RawReturnItem = {
+  sale_item_id:      string;
+  quantity_returned: number | string;
+  line_refund:       number | string;   // gross with IVA (proportional from line_total)
+};
+type RawReturn = {
+  original_sale_id:  string;
+  sale_return_items: RawReturnItem[];
 };
 
 type RawProduct = {
@@ -98,7 +110,7 @@ export default async function RentabilidadPage({
 
   const supabase = await createClient();
 
-  // ── Parallel queries ────────────────────────────────────────────────────
+  // ── Parallel queries: sales + products ─────────────────────────────────
   const [{ data: salesData, error: saleErr }, { data: productsData, error: prodErr }] =
     await Promise.all([
       supabase
@@ -106,7 +118,7 @@ export default async function RentabilidadPage({
         .select(`
           id, created_at, sale_date, document_kind, total,
           business_partners ( full_name, document_number ),
-          sale_items ( product_id, item_name, quantity, base_qty, line_total, tax_rate, is_taxable, unit_cost )
+          sale_items ( id, product_id, item_name, quantity, base_qty, line_total, tax_rate, is_taxable, unit_cost )
         `)
         .eq("status", "confirmed")
         .gte("created_at", `${from}T00:00:00`)
@@ -129,51 +141,96 @@ export default async function RentabilidadPage({
 
   const productById = new Map<string, RawProduct>(products.map((p) => [p.id, p]));
 
+  // ── Returns query — sequential (needs sale IDs) ─────────────────────────
+  // Returns are attributed to the sale's period (where revenue was originally
+  // recognised), regardless of when the return was processed.
+  const saleIds = sales.map((s) => s.id);
+  const returnedByItemId = new Map<string, { qty: number; lineRefund: number }>();
+
+  if (saleIds.length > 0) {
+    const { data: returnsData, error: retErr } = await supabase
+      .from("sale_returns")
+      .select("original_sale_id, sale_return_items ( sale_item_id, quantity_returned, line_refund )")
+      .in("original_sale_id", saleIds);
+
+    if (retErr) console.error("RentabilidadPage [returns]:", retErr);
+
+    for (const ret of (returnsData ?? []) as unknown as RawReturn[]) {
+      for (const ri of ret.sale_return_items ?? []) {
+        const cur = returnedByItemId.get(ri.sale_item_id) ?? { qty: 0, lineRefund: 0 };
+        cur.qty       += Number(ri.quantity_returned ?? 0);
+        cur.lineRefund += Number(ri.line_refund       ?? 0);
+        returnedByItemId.set(ri.sale_item_id, cur);
+      }
+    }
+  }
+
   // ── Per-product aggregation ──────────────────────────────────────────────
   type ProdAcc = {
-    product_id:    string;
-    name:          string;
-    sku:           string;
-    unit:          string;
-    qty_sold:      number;
-    revenue_net:   number;
-    revenue_gross: number;
-    cost_total:    number;
-    cost_source:   CostSource;
+    product_id:     string;
+    name:           string;
+    sku:            string;
+    unit:           string;
+    qty_sold:       number;   // net: sold − returned
+    revenue_net:    number;   // net of returns, s/IVA
+    revenue_gross:  number;   // net of returns, c/IVA
+    cost_total:     number;   // net: original cost − returned cost
+    cost_source:    CostSource;
+    returned_qty:   number;   // total presentation units returned in this period
+    returned_gross: number;   // total gross amount refunded (sum of line_refund)
   };
   const prodMap = new Map<string, ProdAcc>();
   const saleRows: SaleProfitRow[] = [];
 
+  const rank = (src: CostSource) =>
+    src === "snapshot" ? 4 : src === "cpp" ? 3 : src === "last" ? 2 : 1;
+
   for (const s of sales) {
-    let saleRevenueNet   = 0;
-    let saleRevenueGross = 0;
-    let saleCostTotal    = 0;
+    let saleRevenueNet    = 0;
+    let saleRevenueGross  = 0;
+    let saleCostTotal     = 0;
+    let saleReturnedGross = 0;  // total gross refunded across all items in this sale
     let saleCostSource: CostSource = "zero";
 
     for (const item of s.sale_items ?? []) {
-      const pid      = item.product_id;  // null for manual items
-      const qty      = Number(item.quantity   ?? 0);
+      const pid     = item.product_id;  // null for manual items
+      const qty     = Number(item.quantity  ?? 0);
       // base_qty: how many base-unit (caneca) each presentation unit represents.
-      // For a galón with base_qty=0.2 of a caneca, 2 gallons → 0.4 canecas consumed.
-      // unit_cost is always per BASE unit (caneca), so we must scale by base_qty here.
-      const baseQty  = Number(item.base_qty   ?? 1);
-      const gross    = Number(item.line_total  ?? 0);
-      const rate     = Number(item.tax_rate    ?? 0);
-      const taxable  = item.is_taxable !== false;
-      const lineNet  = taxable && rate > 0 ? gross / (1 + rate / 100) : gross;
+      // unit_cost is per BASE unit, so lineCost = qty × baseQty × unitCost.
+      const baseQty = Number(item.base_qty  ?? 1);
+      const gross   = Number(item.line_total ?? 0);
+      const rate    = Number(item.tax_rate   ?? 0);
+      const taxable = item.is_taxable !== false;
+      const lineNet = taxable && rate > 0 ? gross / (1 + rate / 100) : gross;
 
       const { unitCost, source } = resolveItemCost(item.unit_cost, pid ? productById.get(pid) : undefined);
       const lineCost = qty * baseQty * unitCost;
 
-      saleRevenueNet   += lineNet;
-      saleRevenueGross += gross;
-      saleCostTotal    += lineCost;
+      // ── Returns netting ──────────────────────────────────────────────────
+      // line_refund is gross (c/IVA), proportional from line_total.
+      // We apply the same IVA ratio to derive the net refund.
+      const returned = returnedByItemId.get(item.id) ?? { qty: 0, lineRefund: 0 };
+      const retNetRefund = taxable && rate > 0
+        ? returned.lineRefund / (1 + rate / 100)
+        : returned.lineRefund;
+      // Proportional cost reversal: (returnedQty / qty) × lineCost
+      const retCost = qty > 0 ? lineCost * (returned.qty / qty) : 0;
+
+      // Net figures (positive = revenue still in; negative impossible since returned ≤ sold)
+      const netGross = gross   - returned.lineRefund;
+      const netNet   = lineNet - retNetRefund;
+      const netCost  = lineCost - retCost;
+
+      saleRevenueNet    += netNet;
+      saleRevenueGross  += netGross;
+      saleCostTotal     += netCost;
+      saleReturnedGross += returned.lineRefund;
+
       if (source === "snapshot") saleCostSource = "snapshot";
       else if (source === "cpp"  && saleCostSource === "zero") saleCostSource = "cpp";
       else if (source === "last" && saleCostSource === "zero") saleCostSource = "last";
 
-      // For manual items (null product_id), use item_name as name and a composite key
-      // to avoid collapsing different manual items under a single null key.
+      // ── Per-product accumulation ─────────────────────────────────────────
       const p        = pid ? productById.get(pid) : undefined;
       const itemName = pid
         ? (p?.name ?? "Producto eliminado")
@@ -181,21 +238,24 @@ export default async function RentabilidadPage({
       const mapKey   = pid ?? `manual::${itemName}`;
 
       const existing = prodMap.get(mapKey) ?? {
-        product_id:    pid ?? "manual",
-        name:          itemName,
-        sku:           pid ? (p?.sku ?? "—") : "MANUAL",
-        unit:          pid ? (p?.unit ?? "unidad") : "unidad",
-        qty_sold:      0,
-        revenue_net:   0,
-        revenue_gross: 0,
-        cost_total:    0,
-        cost_source:   source,
+        product_id:     pid ?? "manual",
+        name:           itemName,
+        sku:            pid ? (p?.sku ?? "—") : "MANUAL",
+        unit:           pid ? (p?.unit ?? "unidad") : "unidad",
+        qty_sold:       0,
+        revenue_net:    0,
+        revenue_gross:  0,
+        cost_total:     0,
+        cost_source:    source,
+        returned_qty:   0,
+        returned_gross: 0,
       };
-      existing.qty_sold      += qty;
-      existing.revenue_net   += lineNet;
-      existing.revenue_gross += gross;
-      existing.cost_total    += lineCost;
-      const rank = (src: CostSource) => src === "snapshot" ? 4 : src === "cpp" ? 3 : src === "last" ? 2 : 1;
+      existing.qty_sold      += qty - returned.qty;    // net units
+      existing.revenue_net   += netNet;
+      existing.revenue_gross += netGross;
+      existing.cost_total    += netCost;
+      existing.returned_qty   += returned.qty;
+      existing.returned_gross += returned.lineRefund;
       if (rank(source) > rank(existing.cost_source)) existing.cost_source = source;
       prodMap.set(mapKey, existing);
     }
@@ -204,23 +264,30 @@ export default async function RentabilidadPage({
     const saleMargin = saleRevenueNet > 0 ? (saleProfit / saleRevenueNet) * 100 : 0;
 
     saleRows.push({
-      id:            s.id,
-      display_date:  s.sale_date ?? s.created_at.slice(0, 10),
-      document_kind: s.document_kind,
-      customer_name: s.business_partners?.full_name ?? "—",
-      revenue_net:   saleRevenueNet,
-      revenue_gross: Number(s.total ?? 0),
-      cost_total:    saleCostTotal,
-      profit:        saleProfit,
-      margin:        saleMargin,
-      cost_source:   saleCostSource,
+      id:             s.id,
+      display_date:   s.sale_date ?? s.created_at.slice(0, 10),
+      document_kind:  s.document_kind,
+      customer_name:  s.business_partners?.full_name ?? "—",
+      revenue_net:    saleRevenueNet,
+      revenue_gross:  saleRevenueGross,
+      cost_total:     saleCostTotal,
+      profit:         saleProfit,
+      margin:         saleMargin,
+      cost_source:    saleCostSource,
+      returned_gross: saleReturnedGross,
+      has_returns:    saleReturnedGross > 0,
     });
   }
 
   const productRows: ProductProfitRow[] = Array.from(prodMap.values()).map((acc) => {
     const profit = acc.revenue_net - acc.cost_total;
     const margin = acc.revenue_net > 0 ? (profit / acc.revenue_net) * 100 : 0;
-    return { ...acc, profit, margin };
+    return {
+      ...acc,
+      profit,
+      margin,
+      has_returns: acc.returned_gross > 0,
+    };
   });
 
   // ── Global KPIs ──────────────────────────────────────────────────────────
@@ -246,7 +313,7 @@ export default async function RentabilidadPage({
             RENTABILIDAD
           </h1>
           <p className="mt-1 text-[13px] leading-5 text-muted-foreground">
-            Utilidad bruta por producto y por venta. Costo s/IVA · Ventas s/IVA.
+            Utilidad bruta neta de devoluciones. Costo s/IVA · Ventas s/IVA.
           </p>
         </div>
       </header>

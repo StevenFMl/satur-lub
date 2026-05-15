@@ -11,30 +11,35 @@ import { todayEC } from "@/lib/date-ec";
 type CostSource = "snapshot" | "cpp" | "last" | "zero";
 
 export type ProductProfitRow = {
-  product_id:    string;
-  name:          string;
-  sku:           string;
-  unit:          string;
-  qty_sold:      number;
-  revenue_net:   number;  // s/IVA
-  revenue_gross: number;  // c/IVA
-  cost_total:    number;
-  profit:        number;  // revenue_net - cost_total
-  margin:        number;  // profit / revenue_net × 100
-  cost_source:   CostSource;
+  product_id:     string;
+  name:           string;
+  sku:            string;
+  unit:           string;
+  qty_sold:       number;   // net: sold − returned in period
+  revenue_net:    number;   // s/IVA, net of returns
+  revenue_gross:  number;   // c/IVA, net of returns
+  cost_total:     number;   // net of returned cost
+  profit:         number;   // revenue_net - cost_total
+  margin:         number;   // profit / revenue_net × 100
+  cost_source:    CostSource;
+  returned_qty:   number;   // total presentation units returned
+  returned_gross: number;   // total gross amount refunded
+  has_returns:    boolean;
 };
 
 export type SaleProfitRow = {
-  id:            string;
-  display_date:  string;
-  document_kind: string;
-  customer_name: string;
-  revenue_net:   number;
-  revenue_gross: number;
-  cost_total:    number;
-  profit:        number;
-  margin:        number;
-  cost_source:   CostSource;
+  id:             string;
+  display_date:   string;
+  document_kind:  string;
+  customer_name:  string;
+  revenue_net:    number;   // net of returns, s/IVA
+  revenue_gross:  number;   // net of returns, c/IVA
+  cost_total:     number;   // net of returned cost
+  profit:         number;
+  margin:         number;
+  cost_source:    CostSource;
+  returned_gross: number;   // gross amount refunded on this sale
+  has_returns:    boolean;
 };
 
 type Tab  = "product" | "sale";
@@ -438,9 +443,16 @@ export function RentabilidadTable({
                         <tr key={r.product_id} className="border-b border-steel-800/50 transition-colors hover:bg-steel-900/40">
                           <Td>
                             <div className="font-semibold text-[13px] text-foreground">{r.name}</div>
-                            <div className="mt-0.5 flex items-center gap-2">
+                            <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
                               <span className="font-mono text-[10px] text-muted-foreground/60">{r.sku}</span>
                               <CostSourceBadge source={r.cost_source} />
+                              {r.has_returns ? (
+                                <span className="rounded-sm border border-signal-600/40 bg-signal-700/10 px-1 py-0.5 font-mono text-[8px] font-bold uppercase text-signal-400/80"
+                                  title={`Devuelto: ${moneyFmt.format(r.returned_gross)} bruto · ${numFmt.format(r.returned_qty)} ${r.unit}`}
+                                >
+                                  ↩ devol.
+                                </span>
+                              ) : null}
                               {r.profit < 0 && !noCost ? (
                                 <span className="rounded-sm border border-red-500/40 bg-red-500/10 px-1 py-0.5 font-mono text-[8px] font-bold uppercase text-red-400">
                                   pérdida
@@ -558,7 +570,14 @@ export function RentabilidadTable({
                             {dateFmt.format(new Date(r.display_date + "T00:00:00"))}
                           </span>
                         </Td>
-                        <Td className="font-semibold text-[13px] text-foreground">{r.customer_name}</Td>
+                        <Td>
+                          <div className="font-semibold text-[13px] text-foreground">{r.customer_name}</div>
+                          {r.has_returns ? (
+                            <div className="mt-0.5 font-mono text-[9px] text-signal-400/70">
+                              ↩ devol. {moneyFmt.format(r.returned_gross)}
+                            </div>
+                          ) : null}
+                        </Td>
                         <Td>
                           <span className="rounded-sm border border-steel-600 px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.08em] text-muted-foreground/70">
                             {docKindLabel(r.document_kind)}
