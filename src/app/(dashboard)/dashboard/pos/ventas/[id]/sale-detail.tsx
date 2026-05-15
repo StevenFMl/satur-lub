@@ -21,13 +21,17 @@ const METHOD_LABELS: Record<string, string> = {
 
 function fmtDatetime(iso: string) {
   return new Date(iso).toLocaleString("es-EC", {
+    timeZone: "America/Guayaquil",
     year: "numeric", month: "2-digit", day: "2-digit",
     hour: "2-digit", minute: "2-digit", hour12: false,
   });
 }
 
 function fmtDate(iso: string) {
-  return new Date(iso + "T00:00:00").toLocaleDateString("es-EC", {
+  // Append T12:00:00Z (noon UTC) to avoid UTC-midnight crossing back to
+  // the previous day in Ecuador (UTC-5) when formatting as a local date.
+  return new Date(iso + "T12:00:00Z").toLocaleDateString("es-EC", {
+    timeZone: "America/Guayaquil",
     weekday: "long", year: "numeric", month: "long", day: "numeric",
   });
 }
@@ -39,11 +43,13 @@ export function SaleDetail({
   canVoidSale,
   canProcessReturn,
   canSetNoRestock,
+  cashSessionId,
 }: {
   sale:             SaleDetailData;
   canVoidSale:      boolean;
   canProcessReturn: boolean;
   canSetNoRestock:  boolean;
+  cashSessionId:    string | null;
 }) {
   const router                    = useRouter();
   const [voidOpen,   setVoidOpen]   = React.useState(false);
@@ -427,6 +433,7 @@ export function SaleDetail({
         onClose={() => setReturnOpen(false)}
         onSuccess={() => { setReturnOpen(false); router.refresh(); }}
         canSetNoRestock={canSetNoRestock}
+        cashSessionId={cashSessionId}
       />
     </div>
   );

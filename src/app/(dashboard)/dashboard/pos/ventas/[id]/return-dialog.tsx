@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Big from "big.js";
-import { Sheet } from "@/components/ui/sheet";
+import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert } from "@/components/ui/alert";
@@ -38,12 +38,13 @@ function lineRefundBig(lineTotal: number, quantity: number, qtyReturned: number)
 // ── Types ──────────────────────────────────────────────────────────────────
 
 type Props = {
-  saleId:        string;
-  items:         SaleDetailItem[];
-  open:          boolean;
-  onClose:       () => void;
-  onSuccess:     () => void;
+  saleId:          string;
+  items:           SaleDetailItem[];
+  open:            boolean;
+  onClose:         () => void;
+  onSuccess:       () => void;
   canSetNoRestock: boolean;
+  cashSessionId:   string | null;
 };
 
 const moneyFmt = new Intl.NumberFormat("es-EC", {
@@ -59,6 +60,7 @@ export function ReturnDialog({
   onClose,
   onSuccess,
   canSetNoRestock,
+  cashSessionId,
 }: Props) {
   // Only items that still have quantity available to return
   const returnableItems = React.useMemo(
@@ -147,19 +149,22 @@ export function ReturnDialog({
     setLoading(true);
     setError(null);
 
-    const result = await createSaleReturnAction({
-      sale_id: saleId,
-      items: selectedItems.map(({ item, qty, restock }) => ({
-        sale_item_id:      item.id,
-        quantity_returned: qty,
-        restock,
-      })),
-      reason:           reason.trim(),
-      notes:            null,
-      refund_amount:    Number(totalRefund.toFixed(2)),
-      refund_method:    refundMethod || null,
-      refund_reference: refundRef.trim() || null,
-    });
+    const result = await createSaleReturnAction(
+      {
+        sale_id: saleId,
+        items: selectedItems.map(({ item, qty, restock }) => ({
+          sale_item_id:      item.id,
+          quantity_returned: qty,
+          restock,
+        })),
+        reason:           reason.trim(),
+        notes:            null,
+        refund_amount:    Number(totalRefund.toFixed(2)),
+        refund_method:    refundMethod || null,
+        refund_reference: refundRef.trim() || null,
+      },
+      cashSessionId     // propagates to RPC → cash_out movement when method = 'cash'
+    );
 
     setLoading(false);
 
@@ -173,17 +178,15 @@ export function ReturnDialog({
 
   // ── Render ────────────────────────────────────────────────────
   return (
-    <Sheet
+    <Dialog
       open={open}
       onClose={!loading ? onClose : () => {}}
       title="Registrar devolución"
       description="Selecciona los ítems y cantidades a devolver."
-      side="right"
-      className="max-w-lg"
+      className="max-w-xl"
     >
-      <div className="flex h-full flex-col">
-        {/* ── Scrollable body ──────────────────────────────── */}
-        <div className="flex-1 space-y-6 overflow-y-auto px-6 py-5">
+        {/* Body — Dialog wraps children in max-h-[70vh] overflow-y-auto */}
+        <div className="space-y-6 px-6 py-5">
 
           {/* ── Items ───────────────────────────────────────── */}
           <div className="space-y-2">
@@ -387,6 +390,26 @@ export function ReturnDialog({
                 />
               </div>
             )}
+
+            {/* Cash session status — only relevant when refund method is cash */}
+            {refundMethod === "cash" && (
+              cashSessionId ? (
+                <div className="flex items-center gap-2 rounded-sm border border-signal-600/30 bg-signal-900/20 px-3 py-2">
+                  <CashRegisterIcon className="h-3.5 w-3.5 shrink-0 text-signal-400/70" />
+                  <p className="font-mono text-[10px] text-signal-400/80">
+                    Sesión de caja abierta — el reembolso se registrará como salida en caja automáticamente.
+                  </p>
+                </div>
+              ) : (
+                <div className="flex items-start gap-2 rounded-sm border border-amber-600/30 bg-amber-900/10 px-3 py-2">
+                  <WarningIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-400/70" />
+                  <p className="font-mono text-[10px] text-amber-400/80">
+                    Sin sesión de caja abierta — el reembolso no se registrará en caja automáticamente.
+                    Registra el egreso manualmente si corresponde.
+                  </p>
+                </div>
+              )
+            )}
           </div>
 
           {/* ── Summary ─────────────────────────────────────── */}
@@ -427,8 +450,8 @@ export function ReturnDialog({
           {error && <Alert tone="error">{error}</Alert>}
         </div>
 
-        {/* ── Footer ───────────────────────────────────────── */}
-        <div className="flex items-center justify-end gap-3 border-t-2 border-steel-700 bg-steel-900/80 px-6 py-4">
+        {/* Footer — sticky inside Dialog's overflow-y-auto scroll container */}
+        <div className="sticky bottom-0 z-10 flex items-center justify-end gap-3 border-t-2 border-steel-700 bg-steel-900 px-6 py-4">
           <button
             type="button"
             onClick={!loading ? onClose : undefined}
@@ -461,8 +484,7 @@ export function ReturnDialog({
             )}
           </button>
         </div>
-      </div>
-    </Sheet>
+    </Dialog>
   );
 }
 
@@ -481,6 +503,27 @@ function ArrowReturnIcon({ className }: { className?: string }) {
     <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <path d="M9 14 4 9l5-5" />
       <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
+    </svg>
+  );
+}
+
+function CashRegisterIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M2 7l1-4h14l1 4" />
+      <rect x="2" y="7" width="20" height="13" rx="1" />
+      <path d="M16 12h.01M12 12h.01M8 12h.01M16 16h.01M12 16h.01M8 16h.01" />
+      <path d="M6 7v13" />
+    </svg>
+  );
+}
+
+function WarningIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+      <line x1="12" y1="9" x2="12" y2="13" />
+      <line x1="12" y1="17" x2="12.01" y2="17" />
     </svg>
   );
 }

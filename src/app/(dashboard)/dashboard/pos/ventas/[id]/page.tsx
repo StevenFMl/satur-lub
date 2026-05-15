@@ -103,12 +103,12 @@ export default async function SaleDetailPage({
   const { id } = await params;
   const supabase = await createClient();
 
-  // Fetch sale + relations
+  // Fetch sale + relations (warehouse_id used locally for cash session lookup)
   const { data: raw, error } = await supabase
     .from("sales")
     .select(
       `id, sale_date, created_at, status, total, subtotal, tax_total,
-       discount_total, document_kind, notes,
+       discount_total, document_kind, notes, warehouse_id,
        cancelled_at, cancelled_by, cancellation_reason, cancellation_note,
        business_partners!customer_id(full_name, document_type, document_number, phone),
        warehouses!warehouse_id(name),
@@ -126,6 +126,27 @@ export default async function SaleDetailPage({
     .single();
 
   if (error || !raw) notFound();
+
+  // Find the open cash session that matches this sale's warehouse.
+  // Used by ReturnDialog so cash refunds are recorded in caja automatically.
+  const saleWarehouseId = raw.warehouse_id as string | null;
+  let cashSessionId: string | null = null;
+  {
+    let sessionQ = supabase
+      .from("cash_sessions")
+      .select("id")
+      .eq("tenant_id", membership.tenant_id)
+      .eq("status", "open");
+
+    if (saleWarehouseId) {
+      sessionQ = sessionQ.eq("warehouse_id", saleWarehouseId);
+    } else {
+      sessionQ = sessionQ.is("warehouse_id", null);
+    }
+
+    const { data: sessData } = await sessionQ.maybeSingle();
+    cashSessionId = (sessData?.id as string | null) ?? null;
+  }
 
   // Fetch returns for this sale
   const { data: returnsRaw } = await supabase
@@ -235,6 +256,7 @@ export default async function SaleDetailPage({
       canVoidSale={permissions.canVoidSale}
       canProcessReturn={permissions.canProcessReturn}
       canSetNoRestock={permissions.canSetNoRestock}
+      cashSessionId={cashSessionId}
     />
   );
 }
