@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getActiveMembership } from "@/lib/supabase/membership";
 import { getPosPermissions } from "@/lib/auth/permissions";
 import { SaleDetail } from "./sale-detail";
+import type { ElectronicInvoiceRecord } from "@/lib/sri/types";
 
 export const metadata: Metadata = { title: "Detalle de Venta · SaturLub" };
 export const dynamic = "force-dynamic";
@@ -257,6 +258,21 @@ export default async function SaleDetailPage({
     returnStatus,
   };
 
+  // ── Electronic invoice for this sale ──────────────────────────────────
+  let invoice: ElectronicInvoiceRecord | null = null;
+  {
+    const { data: invData } = await supabase
+      .from("electronic_invoices")
+      .select("*")
+      .eq("sale_id", id)
+      .eq("doc_type", "01")
+      .eq("tenant_id", membership.tenant_id)
+      .maybeSingle();
+    invoice = (invData as ElectronicInvoiceRecord | null) ?? null;
+  }
+
+  const canEmitInvoice = membership.role === "owner" || membership.role === "admin";
+
   return (
     <SaleDetail
       sale={sale}
@@ -264,6 +280,8 @@ export default async function SaleDetailPage({
       canProcessReturn={permissions.canProcessReturn}
       canSetNoRestock={permissions.canSetNoRestock}
       cashSessionId={cashSessionId}
+      invoice={invoice}
+      canEmitInvoice={canEmitInvoice}
     />
   );
 }

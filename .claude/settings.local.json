@@ -44,7 +44,8 @@
       "Bash(grep -E \"\\\\.\\(ts|d\\\\.ts\\)$\")",
       "Bash(grep -E \"\\\\.\\(ts|sql\\)$\")",
       "Bash(xargs head *)",
-      "Bash(xargs -I {} basename {})"
+      "Bash(xargs -I {} basename {})",
+      "Bash(grep -E \"error|Error|\\\\\\\\.tsx|\\\\\\\\.ts\")"
     ]
   }
 }

@@ -20,11 +20,13 @@ import { createClient } from "@/lib/supabase/server";
 import { getActiveMembership } from "@/lib/supabase/membership";
 import { mapSaleToSriInvoice }  from "@/lib/sri/invoice-mapper";
 import { invoiceToXml, validateInvoiceData } from "@/lib/sri/invoice-xml";
+import { runInvoicePipeline }   from "@/lib/sri/pipeline";
 import { SRI_DOC_TYPES } from "@/lib/sri/constants";
 import type {
   TenantFiscalConfig,
   InvoiceSaleData,
   ElectronicInvoiceRecord,
+  ElectronicInvoiceStatus,
 } from "@/lib/sri/types";
 
 // ── Result types ───────────────────────────────────────────────────────────
@@ -335,50 +337,202 @@ export async function getTenantFiscalConfig(): Promise<GetFiscalConfigResult> {
   return { config };
 }
 
-// ── Phase 2 stubs (interfaces defined, not yet implemented) ───────────────
+// ── processInvoiceAction ───────────────────────────────────────────────────
+
+export type ProcessInvoiceResult = {
+  ok?:                 boolean;
+  finalStatus?:        ElectronicInvoiceStatus;
+  authorizationNumber?: string;
+  authorizationDate?:  string;
+  error?:              string;
+  sriErrors?:          { identificador: string; mensaje: string; tipo: string }[];
+  phase?:              string;
+} | null;
 
 /**
- * PHASE 2: Signs the XML with the tenant's digital certificate (.p12).
+ * Full pipeline: sign → send → authorize, with DB persistence at each step.
  *
- * Implementation notes:
- * - Load cert from environment variable (e.g. process.env.SRI_CERT_P12_BASE64)
- * - Decrypt with password from process.env.SRI_CERT_PASSWORD
- * - Apply XAdES-BES signature using node-signpdf or xadesjs library
- * - Update electronic_invoices.xml_signed
- * - Update status to 'signed' (add that status to constraint when implementing)
+ * Requires:
+ *   - electronic_invoices row in status 'draft' for this invoiceId
+ *   - SRI_CERT_P12_BASE64 and SRI_CERT_PASSWORD env vars
  *
- * NOT IMPLEMENTED YET — returns error to indicate Phase 2 required.
+ * The invoice status is updated in the DB after each phase so partial
+ * progress is preserved if a later phase fails.
  */
-export async function signInvoiceAction(
-  _invoiceId: string
-): Promise<{ ok?: boolean; error?: string } | null> {
+export async function processInvoiceAction(
+  invoiceId: string
+): Promise<ProcessInvoiceResult> {
+  const { user, membership } = await getActiveMembership();
+  if (!user || !membership) return { error: "Sesión expirada." };
+
+  if (membership.role !== "owner" && membership.role !== "admin") {
+    return { error: "Sin permisos para procesar facturas electrónicas." };
+  }
+
+  const supabase  = await createClient();
+  const tenantId  = membership.tenant_id;
+
+  // ── Load the draft invoice ─────────────────────────────────────────────
+  const { data: inv, error: invErr } = await supabase
+    .from("electronic_invoices")
+    .select("id, status, access_key, xml_unsigned, xml_signed, sri_environment, sale_id")
+    .eq("id", invoiceId)
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+
+  if (invErr || !inv) return { error: "Factura no encontrada." };
+
+  const invoiceRaw = inv as Record<string, unknown>;
+
+  // Allow re-processing from: draft or signed (retry send), or sent (retry auth)
+  const currentStatus = invoiceRaw.status as ElectronicInvoiceStatus;
+  if (currentStatus === "authorized") {
+    return { error: "La factura ya está autorizada por el SRI." };
+  }
+  if (currentStatus === "cancelled") {
+    return { error: "La factura fue cancelada y no puede reemitirse." };
+  }
+
+  const xmlUnsigned   = invoiceRaw.xml_unsigned  as string | null;
+  const xmlSigned     = invoiceRaw.xml_signed     as string | null;
+  const accessKey     = invoiceRaw.access_key     as string;
+  const environment   = (invoiceRaw.sri_environment ?? "pruebas") as "pruebas" | "produccion";
+  const saleId        = invoiceRaw.sale_id        as string;
+
+  if (!xmlUnsigned) return { error: "La factura no tiene XML generado. Regenera el borrador." };
+
+  // ── Run the pipeline ───────────────────────────────────────────────────
+  const result = await runInvoicePipeline({
+    invoiceId,
+    accessKey,
+    xmlUnsigned,
+    environment,
+  });
+
+  // ── Persist result to DB ──────────────────────────────────────────────
+  const updatePayload: Record<string, unknown> = {
+    status:     result.finalStatus,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (result.xmlSigned)            updatePayload.xml_signed           = result.xmlSigned;
+  if (result.authorizationNumber)  updatePayload.authorization_number = result.authorizationNumber;
+  if (result.authorizationDate)    updatePayload.authorization_date   = result.authorizationDate ? new Date(result.authorizationDate.replace(/(\d{2})\/(\d{2})\/(\d{4}) (\d{2}:\d{2}:\d{2})/, "$3-$2-$1T$4-05:00")).toISOString() : null;
+  if (result.errors.length > 0)    updatePayload.sri_errors           = result.errors;
+
+  await supabase
+    .from("electronic_invoices")
+    .update(updatePayload)
+    .eq("id", invoiceId)
+    .eq("tenant_id", tenantId);
+
+  // Revalidate the sale detail page
+  if (saleId) revalidatePath(`/dashboard/pos/ventas/${saleId}`);
+  revalidatePath("/dashboard/pos/ventas");
+
+  if (!result.ok) {
+    return {
+      error:      result.message ?? `Error en fase ${result.phase}.`,
+      finalStatus: result.finalStatus,
+      sriErrors:  result.errors,
+      phase:      result.phase,
+    };
+  }
+
   return {
-    error:
-      "La firma digital aún no está implementada (Fase 2). " +
-      "Se requiere integrar biblioteca XAdES-BES y configurar el certificado .p12 en variables de entorno.",
+    ok:                  true,
+    finalStatus:         result.finalStatus,
+    authorizationNumber: result.authorizationNumber,
+    authorizationDate:   result.authorizationDate ?? undefined,
   };
 }
 
-/**
- * PHASE 2: Submits the signed XML to the SRI SOAP reception endpoint.
- * Requires xml_signed to be populated first (call signInvoiceAction).
- */
-export async function sendToSriAction(
-  _invoiceId: string
-): Promise<{ ok?: boolean; error?: string } | null> {
-  return {
-    error: "El envío al SRI aún no está implementado (Fase 2).",
-  };
-}
+// ── recheckAuthorizationAction ────────────────────────────────────────────
+
+export type RecheckResult = {
+  ok?:                 boolean;
+  finalStatus?:        ElectronicInvoiceStatus;
+  authorizationNumber?: string;
+  authorizationDate?:  string;
+  error?:              string;
+  sriErrors?:          { identificador: string; mensaje: string; tipo: string }[];
+} | null;
 
 /**
- * PHASE 2: Polls the SRI authorization endpoint for a response.
- * On success, stores authorization_number + authorization_date.
+ * Manually re-checks the SRI authorization for a comprobante in 'sent' status.
+ * Used when the initial authorization poll returned EN PROCESO.
  */
-export async function authorizeInvoiceAction(
-  _invoiceId: string
-): Promise<{ ok?: boolean; authorizationNumber?: string; error?: string } | null> {
+export async function recheckAuthorizationAction(
+  invoiceId: string
+): Promise<RecheckResult> {
+  const { user, membership } = await getActiveMembership();
+  if (!user || !membership) return { error: "Sesión expirada." };
+
+  const supabase = await createClient();
+  const tenantId = membership.tenant_id;
+
+  const { data: inv } = await supabase
+    .from("electronic_invoices")
+    .select("id, status, access_key, sri_environment, sale_id")
+    .eq("id", invoiceId)
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+
+  if (!inv) return { error: "Factura no encontrada." };
+
+  const invoiceRaw = inv as Record<string, unknown>;
+  if (invoiceRaw.status === "authorized") {
+    return { ok: true, finalStatus: "authorized" };
+  }
+  if (invoiceRaw.status !== "sent") {
+    return { error: `Solo se puede reverificar una factura en estado 'sent'. Estado actual: ${invoiceRaw.status}.` };
+  }
+
+  const { queryAuthorization } = await import("@/lib/sri/soap-client");
+  const accessKey   = invoiceRaw.access_key   as string;
+  const environment = (invoiceRaw.sri_environment ?? "pruebas") as "pruebas" | "produccion";
+  const saleId      = invoiceRaw.sale_id       as string;
+
+  const authResult  = await queryAuthorization(accessKey, environment);
+
+  if (authResult.estado === "AUTORIZADO") {
+    await supabase
+      .from("electronic_invoices")
+      .update({
+        status:               "authorized",
+        authorization_number: authResult.numeroAutorizacion,
+        authorization_date:   authResult.fechaAutorizacion,
+        sri_errors:           authResult.errors.length > 0 ? authResult.errors : null,
+        updated_at:           new Date().toISOString(),
+      })
+      .eq("id", invoiceId)
+      .eq("tenant_id", tenantId);
+
+    if (saleId) revalidatePath(`/dashboard/pos/ventas/${saleId}`);
+
+    return {
+      ok: true, finalStatus: "authorized",
+      authorizationNumber: authResult.numeroAutorizacion ?? undefined,
+      authorizationDate:   authResult.fechaAutorizacion  ?? undefined,
+    };
+  }
+
+  if (authResult.estado === "EN PROCESO") {
+    return { error: "El SRI aún está procesando el comprobante. Espera unos segundos e intenta de nuevo." };
+  }
+
+  // NO AUTORIZADO
+  await supabase
+    .from("electronic_invoices")
+    .update({ status: "rejected", sri_errors: authResult.errors, updated_at: new Date().toISOString() })
+    .eq("id", invoiceId)
+    .eq("tenant_id", tenantId);
+
+  if (saleId) revalidatePath(`/dashboard/pos/ventas/${saleId}`);
+
   return {
-    error: "La consulta de autorización SRI aún no está implementada (Fase 2).",
+    error: "El SRI rechazó el comprobante.",
+    finalStatus: "rejected",
+    sriErrors:   authResult.errors,
   };
 }

@@ -6,8 +6,10 @@ import { useRouter } from "next/navigation";
 import type { SaleDetailData } from "./page";
 import { PRICE_OVERRIDE_LABELS, type PriceOverrideType } from "@/lib/validations/sale";
 import { REFUND_METHOD_LABELS, type RefundMethod } from "@/lib/validations/sale-return";
-import { VoidDialog } from "../void-dialog";
-import { ReturnDialog } from "./return-dialog";
+import { VoidDialog }    from "../void-dialog";
+import { ReturnDialog }  from "./return-dialog";
+import { InvoicePanel }  from "./invoice-panel";
+import type { ElectronicInvoiceRecord } from "@/lib/sri/types";
 
 // ── Formatters ──────────────────────────────────────────────────────────────
 
@@ -44,12 +46,16 @@ export function SaleDetail({
   canProcessReturn,
   canSetNoRestock,
   cashSessionId,
+  invoice,
+  canEmitInvoice,
 }: {
   sale:             SaleDetailData;
   canVoidSale:      boolean;
   canProcessReturn: boolean;
   canSetNoRestock:  boolean;
   cashSessionId:    string | null;
+  invoice:          ElectronicInvoiceRecord | null;
+  canEmitInvoice:   boolean;
 }) {
   const router                    = useRouter();
   const [voidOpen,   setVoidOpen]   = React.useState(false);
@@ -497,6 +503,15 @@ export function SaleDetail({
           </div>
         </div>
       </div>
+
+      {/* ── Factura electrónica ─────────────────────────────────── */}
+      {!isCancelled && (
+        <InvoicePanel
+          saleId={sale.id}
+          invoice={invoice}
+          canEmit={canEmitInvoice}
+        />
+      )}
 
       {/* ── Dialogs ─────────────────────────────────────────────── */}
       <VoidDialog
