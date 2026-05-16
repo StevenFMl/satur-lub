@@ -633,7 +633,7 @@ export function RentabilidadTable({
               </div>
               <div className="border-t border-steel-800 px-5 py-2.5">
                 <p className="font-mono text-[10px] text-muted-foreground/45">
-                  Costo estimado: CPP actual × unidades vendidas. Ventas sin costo muestran "—" (servicios o productos sin compras previas).
+                  Costo estimado: CPP actual × unidades vendidas. Ventas sin costo muestran &quot;—&quot; (servicios o productos sin compras previas).
                 </p>
               </div>
             </section>

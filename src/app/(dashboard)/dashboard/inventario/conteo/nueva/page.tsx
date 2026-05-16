@@ -146,7 +146,7 @@ export default function NuevaConteoPage() {
           <li>• Se cargan todos los productos con stock en la bodega elegida</li>
           <li>• Ingresa la cantidad física que encontraste para cada producto</li>
           <li>• Al cerrar la sesión, los ajustes se aplican automáticamente</li>
-          <li>• Cada ajuste queda registrado en el kárdex con motivo "Conteo físico"</li>
+          <li>• Cada ajuste queda registrado en el kárdex con motivo &quot;Conteo físico&quot;</li>
           <li>• Los productos no contados no se modifican</li>
         </ul>
       </div>

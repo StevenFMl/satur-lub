@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert } from "@/components/ui/alert";
 import { createSaleAction } from "@/actions/sales";
+import { linkExchangeSaleAction } from "@/actions/exchange";
 import { type PriceOverrideType } from "@/lib/validations/sale";
 import { todayEC, formatDateEC } from "@/lib/date-ec";
 
@@ -34,15 +35,17 @@ type CartItem = {
 };
 
 type Props = {
-  open:           boolean;
-  onClose:        () => void;
-  cart:           CartItem[];
-  totals:         { gross: number; net: number; iva: number };
-  customerId:     string;
-  warehouseId:    string | null;
-  cashSessionId:  string | null;
-  onSuccess:      () => void;
-  initialMode?:   CheckoutMode;
+  open:             boolean;
+  onClose:          () => void;
+  cart:             CartItem[];
+  totals:           { gross: number; net: number; iva: number };
+  customerId:       string;
+  warehouseId:      string | null;
+  cashSessionId:    string | null;
+  onSuccess:        () => void;
+  initialMode?:     CheckoutMode;
+  exchangeReturnId?: string;
+  exchangeCredit?:  number;
 };
 
 const moneyFmt = new Intl.NumberFormat("es-EC", {
@@ -59,7 +62,7 @@ const METHODS: { method: PaymentMethod; label: string }[] = [
 
 export function CheckoutDialog({
   open, onClose, cart, totals, customerId, warehouseId, cashSessionId, onSuccess,
-  initialMode,
+  initialMode, exchangeReturnId, exchangeCredit = 0,
 }: Props) {
   const [mode, setMode]                   = React.useState<CheckoutMode>(initialMode ?? "normal");
   const [method, setMethod]               = React.useState<PaymentMethod>("cash");
@@ -79,6 +82,8 @@ export function CheckoutDialog({
   const [confirmed, setConfirmed]             = React.useState(false);
   const [saleId, setSaleId]                   = React.useState<string | null>(null);
   const [belowCostAcknowledged, setBelowCostAcknowledged] = React.useState(false);
+  // Exchange: how to handle remaining credit when credit > new sale total
+  const [exchangeRefundInCash, setExchangeRefundInCash] = React.useState(!!cashSessionId);
 
   // ── Below-cost detection ─────────────────────────────────────────────────
   // average_cost is per BASE UNIT (caneca). For presentation-based items
@@ -120,12 +125,23 @@ export function CheckoutDialog({
       setInitialPayment(""); setCreditMethod("cash"); setCreditRef("");
       setDueDate(""); setCreditNotes("");
       setBelowCostAcknowledged(false);
+      setExchangeRefundInCash(!!cashSessionId);
     }
-  }, [open, initialMode]);
+  }, [open, initialMode, cashSessionId]);
 
   const gross = totals.gross;
 
-  const isZeroTotal = gross < 0.01;
+  // When in exchange mode, the credit from the return offsets the amount due.
+  // The DB records the full gross sale amount; credit is tracked via the return link.
+  const creditApplied  = Math.min(exchangeCredit, gross);
+  const amountDue      = Math.max(0, Number(Big(gross).minus(creditApplied).round(2).toString()));
+  const creditRemainder = Math.max(0, Number(Big(exchangeCredit).minus(creditApplied).round(2).toString()));
+  const hasExchange          = !!exchangeReturnId && exchangeCredit > 0;
+  const hasCreditRemainder   = hasExchange && creditRemainder > 0.005;
+  // Cashier must decide what to do with remaining credit before confirming
+  const creditDecisionNeeded = hasCreditRemainder;
+
+  const isZeroTotal = amountDue < 0.01;
 
   const cashReceivedNum = React.useMemo(() => {
     const n = parseFloat(cashReceived.replace(",", "."));
@@ -134,11 +150,11 @@ export function CheckoutDialog({
 
   const change = React.useMemo(() => {
     if (mode !== "normal" || method !== "cash") return null;
-    const c = Big(cashReceivedNum).minus(Big(gross));
+    const c = Big(cashReceivedNum).minus(Big(amountDue));
     return c.gte(0) ? Number(c.round(2).toString()) : null;
-  }, [cashReceivedNum, gross, method, mode]);
+  }, [cashReceivedNum, amountDue, method, mode]);
 
-  const cashValid = mode === "credit" || method !== "cash" || cashReceivedNum >= gross - 0.001;
+  const cashValid = mode === "credit" || method !== "cash" || cashReceivedNum >= amountDue - 0.001;
 
   // Fiado calcs
   const initialPaymentNum = React.useMemo(() => {
@@ -147,15 +163,15 @@ export function CheckoutDialog({
   }, [initialPayment]);
 
   const creditBalance = React.useMemo(
-    () => Number(Big(gross).minus(initialPaymentNum).round(2).toString()),
-    [gross, initialPaymentNum]
+    () => Number(Big(amountDue).minus(initialPaymentNum).round(2).toString()),
+    [amountDue, initialPaymentNum]
   );
 
   const creditValid = React.useMemo(() => {
-    if (initialPaymentNum > gross + 0.001) return false;
+    if (initialPaymentNum > amountDue + 0.001) return false;
     if (initialPaymentNum > 0 && !creditMethod) return false;
     return true;
-  }, [initialPaymentNum, gross, creditMethod]);
+  }, [initialPaymentNum, amountDue, creditMethod]);
 
   const handleConfirm = async () => {
     setSubmitting(true); setError(null);
@@ -183,7 +199,7 @@ export function CheckoutDialog({
       sale_date:     isHistorical ? saleDate : null,
     };
 
-    // Zero-total (courtesy): RPC accepts payments:[] when total=0
+    // Zero-total (courtesy or exchange credit covers full amount)
     if (isZeroTotal) {
       const result = await createSaleAction(
         { ...basePayload, payments: [], is_credit: false },
@@ -193,7 +209,16 @@ export function CheckoutDialog({
       );
       setSubmitting(false);
       if (result?.error) { setError(result.error); return; }
-      setSaleId(result?.saleId ?? null);
+      const newSaleId = result?.saleId ?? null;
+      if (exchangeReturnId && newSaleId) {
+        await linkExchangeSaleAction(
+          exchangeReturnId, newSaleId,
+          creditApplied, creditRemainder,
+          hasCreditRemainder && exchangeRefundInCash,
+          cashSessionId
+        );
+      }
+      setSaleId(newSaleId);
       setConfirmed(true);
       return;
     }
@@ -221,13 +246,21 @@ export function CheckoutDialog({
         }, cashSessionId, isBelowCost, belowCostTotalLoss)
       : await createSaleAction({
           ...basePayload,
-          payments: [{ method, amount: method === "cash" ? Math.max(cashReceivedNum, gross) : gross, reference: reference || undefined }],
+          payments: [{ method, amount: method === "cash" ? Math.max(cashReceivedNum, amountDue) : amountDue, reference: reference || undefined }],
           is_credit: false,
         }, cashSessionId, isBelowCost, belowCostTotalLoss);
 
     setSubmitting(false);
     if (result?.error) { setError(result.error); return; }
-    setSaleId(result?.saleId ?? null);
+    const newSaleId = result?.saleId ?? null;
+    if (exchangeReturnId && newSaleId) {
+      await linkExchangeSaleAction(
+        exchangeReturnId, newSaleId,
+        creditApplied, 0,  // amountDue > 0 means creditRemainder = 0
+        false, cashSessionId
+      );
+    }
+    setSaleId(newSaleId);
     setConfirmed(true);
   };
 
@@ -327,8 +360,14 @@ export function CheckoutDialog({
               </>
             ) : (
               <>
+                {hasExchange && creditApplied > 0 ? (
+                  <SummaryRow label="Crédito por cambio" value={`−${moneyFmt.format(creditApplied)}`} />
+                ) : null}
                 {method === "cash" && change !== null && change > 0 ? (
                   <SummaryRow label="Cambio entregado" value={moneyFmt.format(change)} />
+                ) : null}
+                {creditRemainder > 0 ? (
+                  <SummaryRow label="Crédito restante (reembolsar)" value={moneyFmt.format(creditRemainder)} bold />
                 ) : null}
               </>
             )}
@@ -337,14 +376,37 @@ export function CheckoutDialog({
 
         {/* Footer actions */}
         <div className="flex gap-2.5 border-t-2 border-steel-700 bg-steel-900/60 px-6 py-4">
-          <button
-            type="button"
-            onClick={() => window.print()}
-            className="flex items-center gap-1.5 rounded-sm border border-steel-700 bg-steel-900 px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground transition-colors hover:border-steel-600 hover:text-foreground"
-          >
-            <PrinterIcon className="h-3.5 w-3.5" />
-            Imprimir
-          </button>
+          {saleId ? (
+            <>
+              <a
+                href={`/print/pos/ventas/${saleId}?format=ticket`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 rounded-sm border border-steel-700 bg-steel-900 px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground transition-colors hover:border-steel-600 hover:text-foreground"
+              >
+                <PrinterIcon className="h-3.5 w-3.5" />
+                Ticket
+              </a>
+              <a
+                href={`/print/pos/ventas/${saleId}?format=a4`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 rounded-sm border border-steel-700 bg-steel-900 px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground transition-colors hover:border-steel-600 hover:text-foreground"
+              >
+                <PrinterIcon className="h-3.5 w-3.5" />
+                A4
+              </a>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="flex items-center gap-1.5 rounded-sm border border-steel-700 bg-steel-900 px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground transition-colors hover:border-steel-600 hover:text-foreground"
+            >
+              <PrinterIcon className="h-3.5 w-3.5" />
+              Imprimir
+            </button>
+          )}
           <Button size="md" className="flex-1" onClick={handleClose}>
             Nueva venta
           </Button>
@@ -456,13 +518,97 @@ export function CheckoutDialog({
       description={`Total: ${moneyFmt.format(gross)}`}
     >
       <div className="space-y-4 px-6 py-5">
+        {/* Exchange credit banner */}
+        {hasExchange ? (
+          <div className="rounded-sm border border-safety-500/30 bg-safety-500/5 px-3 py-2.5 space-y-1">
+            <p className="font-mono text-[9.5px] font-bold uppercase tracking-[0.14em] text-safety-500/80">
+              Cambio — Crédito por devolución
+            </p>
+            <div className="flex items-baseline justify-between">
+              <span className="font-mono text-[11px] text-muted-foreground/70">Total de productos</span>
+              <span className="font-mono text-[12px] tabular-nums text-muted-foreground">{moneyFmt.format(gross)}</span>
+            </div>
+            <div className="flex items-baseline justify-between">
+              <span className="font-mono text-[11px] text-safety-500/80">Crédito aplicado</span>
+              <span className="font-mono text-[12px] tabular-nums text-safety-500">−{moneyFmt.format(creditApplied)}</span>
+            </div>
+            {creditRemainder > 0 ? (
+              <div className="flex items-baseline justify-between border-t border-safety-500/20 pt-1">
+                <span className="font-mono text-[10.5px] text-muted-foreground/60">Crédito restante</span>
+                <span className="font-mono text-[11px] font-semibold tabular-nums text-safety-500">{moneyFmt.format(creditRemainder)}</span>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {/* ── Credit remainder disposition ─────────────────────────────── */}
+        {hasCreditRemainder ? (
+          <div className="rounded-sm border-2 border-safety-500/30 bg-steel-900/80 px-4 py-3 space-y-3">
+            <div className="flex items-center gap-2">
+              <ExchangeDecisionIcon className="h-4 w-4 shrink-0 text-safety-500" />
+              <p className="font-mono text-[11px] font-bold uppercase tracking-[0.12em] text-safety-500">
+                ¿Qué hacemos con el crédito restante?
+              </p>
+            </div>
+            <p className="font-mono text-[10px] text-muted-foreground/70">
+              La nueva venta cuesta {moneyFmt.format(gross)} pero el crédito es{" "}
+              {moneyFmt.format(exchangeCredit)}. Quedan{" "}
+              <strong className="text-safety-400">{moneyFmt.format(creditRemainder)}</strong> sin usar.
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setExchangeRefundInCash(true)}
+                disabled={!cashSessionId}
+                className={[
+                  "flex flex-col items-center gap-1 rounded-sm border-2 px-3 py-2.5 transition-all",
+                  exchangeRefundInCash && cashSessionId
+                    ? "border-safety-500 bg-safety-500/10 text-safety-500"
+                    : !cashSessionId
+                      ? "cursor-not-allowed border-steel-800 text-muted-foreground/30 opacity-50"
+                      : "border-steel-700 bg-steel-900 text-muted-foreground hover:border-steel-600",
+                ].join(" ")}
+              >
+                <span className="font-mono text-[10px] font-bold uppercase tracking-[0.1em]">
+                  Reembolsar en efectivo
+                </span>
+                <span className="font-mono text-[9px] text-inherit opacity-70">
+                  {cashSessionId ? moneyFmt.format(creditRemainder) : "Sin caja abierta"}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setExchangeRefundInCash(false)}
+                className={[
+                  "flex flex-col items-center gap-1 rounded-sm border-2 px-3 py-2.5 transition-all",
+                  !exchangeRefundInCash
+                    ? "border-steel-500 bg-steel-700/30 text-foreground"
+                    : "border-steel-700 bg-steel-900 text-muted-foreground hover:border-steel-600",
+                ].join(" ")}
+              >
+                <span className="font-mono text-[10px] font-bold uppercase tracking-[0.1em]">
+                  Sin reembolso
+                </span>
+                <span className="font-mono text-[9px] text-inherit opacity-70">
+                  Cliente cede el crédito
+                </span>
+              </button>
+            </div>
+            {!cashSessionId && (
+              <p className="font-mono text-[9.5px] text-amber-400/70">
+                Sin caja abierta — si reembolsas en efectivo, regístralo manualmente en caja.
+              </p>
+            )}
+          </div>
+        ) : null}
+
         {/* Total highlight */}
         <div className="flex items-baseline justify-between rounded-sm border-2 border-safety-500/40 bg-safety-500/5 px-4 py-2.5">
           <span className="font-mono text-[11.5px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
-            Total
+            {hasExchange ? "A cobrar" : "Total"}
           </span>
           <span className="font-display text-[26px] leading-none text-safety-500">
-            {moneyFmt.format(gross)}
+            {moneyFmt.format(hasExchange ? amountDue : gross)}
           </span>
         </div>
 
@@ -472,15 +618,34 @@ export function CheckoutDialog({
           <SummaryRow label="IVA"             value={moneyFmt.format(totals.iva)} />
         </div>
 
-        {/* ── Cortesía / venta gratis ─────────────────────────────────── */}
+        {/* ── Zero total: cortesía or exchange covers full amount ───────── */}
         {isZeroTotal ? (
-          <div className="rounded-sm border border-signal-600/40 bg-signal-700/10 px-4 py-3 space-y-1">
-            <p className="font-mono text-[11px] font-bold uppercase tracking-[0.12em] text-signal-400">
-              ★ Venta cortesía — $0.00
-            </p>
-            <p className="font-mono text-[10.5px] text-signal-400/70">
-              Sin método de pago. La venta queda registrada con trazabilidad completa.
-            </p>
+          <div className={[
+            "rounded-sm border px-4 py-3 space-y-1",
+            hasExchange
+              ? "border-safety-500/30 bg-safety-500/5"
+              : "border-signal-600/40 bg-signal-700/10",
+          ].join(" ")}>
+            {hasExchange ? (
+              <>
+                <p className="font-mono text-[11px] font-bold uppercase tracking-[0.12em] text-safety-500">
+                  Crédito cubre el total — sin cobro adicional
+                </p>
+                <p className="font-mono text-[10.5px] text-safety-500/70">
+                  El crédito por cambio ({moneyFmt.format(exchangeCredit)}) cubre el total de esta venta.
+                  {hasCreditRemainder ? ` Quedan ${moneyFmt.format(creditRemainder)} de crédito.` : ""}
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="font-mono text-[11px] font-bold uppercase tracking-[0.12em] text-signal-400">
+                  ★ Venta cortesía — $0.00
+                </p>
+                <p className="font-mono text-[10.5px] text-signal-400/70">
+                  Sin método de pago. La venta queda registrada con trazabilidad completa.
+                </p>
+              </>
+            )}
           </div>
         ) : (
           <>
@@ -530,7 +695,7 @@ export function CheckoutDialog({
                         id="cash-received" type="number" min={0} step="0.01"
                         value={cashReceived}
                         onChange={(e) => { setCashReceived(e.target.value); setError(null); }}
-                        placeholder={String(gross.toFixed(2))}
+                        placeholder={String(amountDue.toFixed(2))}
                         mono className="h-11 pl-14 text-right text-[15px]"
                         onFocus={(e) => e.target.select()} autoFocus
                       />
@@ -541,7 +706,7 @@ export function CheckoutDialog({
                         <span className="font-mono text-[15px] font-bold tabular-nums text-signal-400">{moneyFmt.format(change)}</span>
                       </div>
                     ) : cashReceived && !cashValid ? (
-                      <p className="font-mono text-[11px] text-red-400">Faltan {moneyFmt.format(gross - cashReceivedNum)}</p>
+                      <p className="font-mono text-[11px] text-red-400">Faltan {moneyFmt.format(amountDue - cashReceivedNum)}</p>
                     ) : null}
                   </div>
                 ) : (
@@ -577,7 +742,7 @@ export function CheckoutDialog({
                     </span>
                     <Input
                       id="initial-payment" type="number" min={0} step="0.01"
-                      max={gross}
+                      max={amountDue}
                       value={initialPayment}
                       onChange={(e) => { setInitialPayment(e.target.value); setError(null); }}
                       placeholder="0.00"
@@ -671,11 +836,20 @@ export function CheckoutDialog({
         </Button>
         <Button
           size="md" loading={submitting}
-          disabled={submitting || (!isZeroTotal && (mode === "normal" ? !cashValid : !creditValid))}
+          disabled={
+            submitting ||
+            (!isZeroTotal && (mode === "normal" ? !cashValid : !creditValid))
+          }
           onClick={handleConfirm}
           className="min-w-[130px]"
         >
-          {isZeroTotal ? "Confirmar cortesía" : mode === "credit" ? "Registrar fiado" : "Confirmar cobro"}
+          {isZeroTotal && hasExchange
+            ? "Confirmar cambio"
+            : isZeroTotal
+            ? "Confirmar cortesía"
+            : mode === "credit"
+            ? "Registrar fiado"
+            : "Confirmar cobro"}
         </Button>
       </div>
     </Dialog>
@@ -768,6 +942,16 @@ function WarningIcon({ className }: { className?: string }) {
       <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
       <line x1="12" y1="9" x2="12" y2="13" />
       <line x1="12" y1="17" x2="12.01" y2="17" />
+    </svg>
+  );
+}
+
+function ExchangeDecisionIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 8v4" />
+      <path d="M12 16h.01" />
     </svg>
   );
 }

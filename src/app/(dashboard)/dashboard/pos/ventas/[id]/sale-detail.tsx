@@ -88,6 +88,26 @@ export function SaleDetail({
             ← Historial
           </Link>
 
+          {/* Print buttons */}
+          <Link
+            href={`/print/pos/ventas/${sale.id}?format=ticket`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex h-8 items-center gap-1.5 rounded-sm border border-steel-600/60 bg-steel-800/40 px-3 font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground/70 transition-colors hover:border-steel-500 hover:text-foreground"
+          >
+            <PrinterIcon className="h-3 w-3" />
+            Ticket
+          </Link>
+          <Link
+            href={`/print/pos/ventas/${sale.id}?format=a4`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex h-8 items-center gap-1.5 rounded-sm border border-steel-600/60 bg-steel-800/40 px-3 font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground/70 transition-colors hover:border-steel-500 hover:text-foreground"
+          >
+            <PrinterIcon className="h-3 w-3" />
+            A4
+          </Link>
+
           {/* Return button */}
           {canProcessReturn && !isCancelled && hasReturnableItems ? (
             <button
@@ -289,14 +309,28 @@ export function SaleDetail({
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-signal-400/70">
-                        {ret.return_type === "full"
-                          ? "Devolución total"
-                          : ret.return_type === "exchange"
-                          ? "Cambio"
-                          : "Devolución parcial"}{" "}
-                        · {fmtDatetime(ret.processed_at)}
-                      </span>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-signal-400/70">
+                          {ret.return_type === "full"
+                            ? "Devolución total"
+                            : ret.return_type === "exchange"
+                            ? "Cambio"
+                            : "Devolución parcial"}{" "}
+                          · {fmtDatetime(ret.processed_at)}
+                        </span>
+                        {ret.return_type === "exchange" && ret.exchange_sale_id ? (
+                          <Link
+                            href={`/dashboard/pos/ventas/${ret.exchange_sale_id}`}
+                            className="rounded-sm border border-safety-500/30 bg-safety-500/5 px-1.5 py-0.5 font-mono text-[8.5px] font-bold uppercase tracking-[0.08em] text-safety-500 transition-colors hover:bg-safety-500/10"
+                          >
+                            Ver nueva venta →
+                          </Link>
+                        ) : ret.return_type === "exchange" ? (
+                          <span className="rounded-sm border border-amber-600/30 bg-amber-900/10 px-1.5 py-0.5 font-mono text-[8.5px] uppercase tracking-[0.08em] text-amber-400/70">
+                            Venta de cambio pendiente
+                          </span>
+                        ) : null}
+                      </div>
                       <p className="mt-0.5 text-[12.5px] text-foreground">{ret.reason}</p>
                       {ret.notes ? (
                         <p className="text-[11.5px] text-muted-foreground">{ret.notes}</p>
@@ -338,6 +372,51 @@ export function SaleDetail({
                       );
                     })}
                   </div>
+
+                  {/* Exchange credit audit — only for exchange returns */}
+                  {ret.return_type === "exchange" && (() => {
+                    const cedido = Math.max(0, Number(
+                      (ret.refund_amount - ret.exchange_credit_applied - ret.exchange_credit_refunded)
+                        .toFixed(2)
+                    ));
+                    return (
+                      <div className="mt-2 space-y-1 rounded-sm border border-safety-500/15 bg-safety-500/5 px-3 py-2">
+                        <p className="font-mono text-[9px] uppercase tracking-[0.12em] text-safety-500/70">
+                          Crédito del cambio
+                        </p>
+                        <div className="space-y-0.5">
+                          <ExchangeCreditRow
+                            label="Crédito original"
+                            value={moneyFmt.format(ret.refund_amount)}
+                          />
+                          {ret.exchange_credit_applied > 0 && (
+                            <ExchangeCreditRow
+                              label="Aplicado a nueva venta"
+                              value={`−${moneyFmt.format(ret.exchange_credit_applied)}`}
+                              accent
+                            />
+                          )}
+                          {ret.exchange_credit_refunded > 0 && (
+                            <ExchangeCreditRow
+                              label="Reembolsado en caja"
+                              value={`−${moneyFmt.format(ret.exchange_credit_refunded)}`}
+                            />
+                          )}
+                          {cedido > 0.005 && ret.exchange_sale_id && (
+                            <ExchangeCreditRow
+                              label="Crédito cedido (sin reembolso)"
+                              value={`−${moneyFmt.format(cedido)}`}
+                            />
+                          )}
+                          {!ret.exchange_sale_id && (
+                            <p className="font-mono text-[9.5px] text-amber-400/60">
+                              Venta de reemplazo pendiente
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               ))}
             </div>
@@ -431,7 +510,18 @@ export function SaleDetail({
         items={sale.items}
         open={returnOpen}
         onClose={() => setReturnOpen(false)}
-        onSuccess={() => { setReturnOpen(false); router.refresh(); }}
+        onSuccess={(returnId, refundAmount, isExchange) => {
+          setReturnOpen(false);
+          if (isExchange && returnId) {
+            const params = new URLSearchParams({
+              exchange_return_id: returnId,
+              exchange_credit:    refundAmount.toFixed(2),
+            });
+            router.push(`/dashboard/pos?${params.toString()}`);
+          } else {
+            router.refresh();
+          }
+        }}
         canSetNoRestock={canSetNoRestock}
         cashSessionId={cashSessionId}
       />
@@ -454,6 +544,28 @@ function MetaRow({ label, value }: { label: string; value: string }) {
     <div className="flex items-start justify-between gap-3">
       <span className="shrink-0 font-mono text-[10.5px] text-muted-foreground/70">{label}</span>
       <span className="text-right text-[12px] text-foreground">{value}</span>
+    </div>
+  );
+}
+
+function PrinterIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <polyline points="6 9 6 2 18 2 18 9" />
+      <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+      <rect x="6" y="14" width="12" height="8" />
+    </svg>
+  );
+}
+
+function ExchangeCreditRow({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+  return (
+    <div className="flex items-baseline justify-between gap-2">
+      <span className="font-mono text-[10px] text-muted-foreground/60">{label}</span>
+      <span className={[
+        "font-mono text-[10.5px] tabular-nums",
+        accent ? "font-bold text-safety-400" : "text-muted-foreground/70",
+      ].join(" ")}>{value}</span>
     </div>
   );
 }

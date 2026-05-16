@@ -446,7 +446,7 @@ export function ProductForm({ initial, onSuccess }: Props) {
                 </span>
               </div>
               <p className="field-hint">
-                El sistema marcará "Reponer" en Existencias cuando el stock sea
+                El sistema marcará &quot;Reponer&quot; en Existencias cuando el stock sea
                 ≤ a este valor. Ingresa 0 para no definir un mínimo.
               </p>
               <FieldError fieldId="reorder_point" message={errors.reorder_point} />

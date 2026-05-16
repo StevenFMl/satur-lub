@@ -224,76 +224,12 @@ export function CashSessionPanel({
             </div>
           ) : null}
 
-          {/* Movements */}
+          {/* Conciliación — category breakdown of all movements */}
+          <ConciliacionPanel session={session} />
+
+          {/* Movements — extracted to MovementsList for filter support */}
           {session.movements.length > 0 ? (
-            <div className="panel rounded-sm border border-steel-700 bg-steel-900/60 overflow-hidden">
-              <div className="border-b border-steel-700 bg-steel-900/70 px-4 py-2.5">
-                <h2 className="font-mono text-[9.5px] uppercase tracking-[0.16em] text-muted-foreground/60">
-                  Movimientos ({session.movements.length})
-                </h2>
-              </div>
-              <ul className="divide-y divide-steel-800/40 max-h-[360px] overflow-y-auto">
-                {session.movements.map((m) => {
-                  const isIn = m.direction === 1;
-                  return (
-                    <li key={m.id} className="flex items-center gap-3 px-4 py-2.5">
-                      <span className={[
-                        "shrink-0 font-mono text-[10px] font-bold uppercase tracking-[0.08em]",
-                        isIn ? "text-signal-400" : "text-hazard-500",
-                      ].join(" ")}>
-                        {isIn ? "+" : "−"}
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-baseline gap-2">
-                          <span className="font-mono text-[9.5px] uppercase tracking-[0.1em] text-muted-foreground/60">
-                            {MOVEMENT_TYPE_LABELS[m.movement_type] ?? m.movement_type}
-                          </span>
-                          <span className="font-mono text-[10px] text-muted-foreground/50">
-                            {fmtTime(m.created_at)}
-                          </span>
-                        </div>
-                        <div className="truncate text-[11.5px] text-foreground">{m.reason}</div>
-                      </div>
-                      <span className={[
-                        "shrink-0 font-mono text-[12.5px] font-bold tabular-nums",
-                        isIn ? "text-signal-400" : "text-muted-foreground",
-                      ].join(" ")}>
-                        {isIn ? "+" : "−"}{moneyFmt.format(m.amount)}
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
-              {/* Running summary */}
-              <div className="border-t border-steel-700 bg-steel-950/50 px-4 py-2.5 space-y-1.5">
-                <div className="flex justify-between text-[11px]">
-                  <span className="font-mono uppercase tracking-[0.1em] text-muted-foreground/60">Apertura</span>
-                  <span className="font-mono tabular-nums text-muted-foreground">{moneyFmt.format(session.opening_amount)}</span>
-                </div>
-                {(() => {
-                  const cashIn  = session.movements.filter(m => m.direction ===  1 && m.movement_type === "cash_in").reduce((a,m)=>a+m.amount,0);
-                  const cashOut = session.movements.filter(m => m.direction === -1 && m.movement_type === "cash_out").reduce((a,m)=>a+m.amount,0);
-                  const paidIn  = session.movements.filter(m => m.movement_type === "paid_in").reduce((a,m)=>a+m.amount,0);
-                  const paidOut = session.movements.filter(m => m.movement_type === "paid_out").reduce((a,m)=>a+m.amount,0);
-                  return (
-                    <>
-                      {cashIn > 0  && <div className="flex justify-between text-[11px]"><span className="font-mono text-muted-foreground/60">Ventas efectivo</span><span className="font-mono tabular-nums text-signal-400">+{moneyFmt.format(cashIn)}</span></div>}
-                      {cashOut > 0 && <div className="flex justify-between text-[11px]"><span className="font-mono text-muted-foreground/60">Reembolsos efectivo</span><span className="font-mono tabular-nums text-hazard-500">−{moneyFmt.format(cashOut)}</span></div>}
-                      {paidIn > 0  && <div className="flex justify-between text-[11px]"><span className="font-mono text-muted-foreground/60">Ingresos manuales</span><span className="font-mono tabular-nums text-signal-400">+{moneyFmt.format(paidIn)}</span></div>}
-                      {paidOut > 0 && <div className="flex justify-between text-[11px]"><span className="font-mono text-muted-foreground/60">Egresos manuales</span><span className="font-mono tabular-nums text-hazard-500">−{moneyFmt.format(paidOut)}</span></div>}
-                    </>
-                  );
-                })()}
-                <div className="flex items-baseline justify-between border-t border-steel-800/60 pt-1.5">
-                  <span className="font-mono text-[11px] font-bold uppercase tracking-[0.1em] text-foreground">
-                    {isOpen ? "Efectivo esperado" : "Total calculado"}
-                  </span>
-                  <span className="font-display text-[20px] leading-none text-safety-500">
-                    {moneyFmt.format(session.running_expected)}
-                  </span>
-                </div>
-              </div>
-            </div>
+            <MovementsList session={session} />
           ) : (
             isOpen ? (
               <p className="font-mono text-[11px] text-muted-foreground/50 text-center py-4">
@@ -678,6 +614,322 @@ function CloseSessionDialog({
         </button>
       </div>
     </Dialog>
+  );
+}
+
+// ── ConciliacionPanel ─────────────────────────────────────────────────────
+// Expandable breakdown of cash movements by category.
+// Distinguishes: ventas | abonos fiado | devoluciones | reembolso crédito cambio | manuales.
+
+const EXCHANGE_CREDIT_REASON = "Devolución de crédito restante por cambio de producto";
+
+function ConciliacionPanel({ session }: { session: CashSessionData }) {
+  const [open, setOpen] = React.useState(false);
+
+  const mvs = session.movements;
+  if (mvs.length === 0) return null;
+
+  // Categorize movements
+  const ventas      = mvs.filter(m => m.movement_type === "cash_in"  && m.reference_type === "sale");
+  const abonosFiado = mvs.filter(m => m.movement_type === "cash_in"  && m.reference_type !== "sale");
+  const paidIn      = mvs.filter(m => m.movement_type === "paid_in");
+  const devNormal   = mvs.filter(m => m.movement_type === "cash_out" && m.reference_type === "sale_return" && m.reason !== EXCHANGE_CREDIT_REASON);
+  const devCambio   = mvs.filter(m => m.movement_type === "cash_out" && m.reference_type === "sale_return" && m.reason === EXCHANGE_CREDIT_REASON);
+  const devOtro     = mvs.filter(m => m.movement_type === "cash_out" && m.reference_type !== "sale_return");
+  const paidOut     = mvs.filter(m => m.movement_type === "paid_out");
+
+  const sum = (arr: typeof mvs) => arr.reduce((s, m) => s + m.amount, 0);
+
+  const totalIn  = sum(ventas) + sum(abonosFiado) + sum(paidIn);
+  const totalOut = sum(devNormal) + sum(devCambio) + sum(devOtro) + sum(paidOut);
+
+  const isOpen   = session.status === "open";
+  const isClosed = session.status === "closed";
+
+  return (
+    <div className="rounded-sm border border-steel-700 bg-steel-900/60 overflow-hidden">
+      {/* Toggle header */}
+      <button
+        type="button"
+        onClick={() => setOpen(p => !p)}
+        className="flex w-full items-center justify-between px-4 py-2.5 text-left hover:bg-steel-800/30 transition-colors"
+      >
+        <span className="font-mono text-[9.5px] uppercase tracking-[0.16em] text-muted-foreground/60">
+          Conciliación de caja
+        </span>
+        <div className="flex items-center gap-3">
+          <span className="font-mono text-[11px] font-bold tabular-nums text-safety-500">
+            {moneyFmt.format(session.running_expected)}
+          </span>
+          <ChevronDownIcon className={[
+            "h-3.5 w-3.5 text-muted-foreground/40 transition-transform",
+            open ? "rotate-180" : "",
+          ].join(" ")} />
+        </div>
+      </button>
+
+      {/* Expanded content */}
+      {open && (
+        <div className="border-t border-steel-700 px-4 py-3 space-y-0">
+          {/* ── Entradas ─────────────────────────────── */}
+          <ConcilRow label="Apertura" value={session.opening_amount} sign="neutral" />
+
+          {sum(ventas) > 0 && (
+            <ConcilRow label="Ventas en efectivo" value={sum(ventas)} sign="in"
+              detail={`${ventas.length} venta${ventas.length !== 1 ? "s" : ""}`} />
+          )}
+          {sum(abonosFiado) > 0 && (
+            <ConcilRow label="Abonos fiado" value={sum(abonosFiado)} sign="in"
+              detail={`${abonosFiado.length} abono${abonosFiado.length !== 1 ? "s" : ""}`} />
+          )}
+          {sum(paidIn) > 0 && (
+            <ConcilRow label="Ingresos manuales" value={sum(paidIn)} sign="in"
+              detail={`${paidIn.length} mov.`} />
+          )}
+
+          {totalIn > 0 && (
+            <div className="flex items-baseline justify-between py-1.5 border-b border-steel-800/50 mb-1">
+              <span className="font-mono text-[9.5px] uppercase tracking-[0.1em] text-muted-foreground/40">
+                Total entradas
+              </span>
+              <span className="font-mono text-[10.5px] tabular-nums text-signal-400/70">
+                +{moneyFmt.format(totalIn)}
+              </span>
+            </div>
+          )}
+
+          {/* ── Salidas ──────────────────────────────── */}
+          {sum(devNormal) > 0 && (
+            <ConcilRow label="Devoluciones en efectivo" value={sum(devNormal)} sign="out"
+              detail={`${devNormal.length} devol.`} />
+          )}
+          {sum(devCambio) > 0 && (
+            <ConcilRow label="Reembolso crédito cambio" value={sum(devCambio)} sign="out"
+              detail={`${devCambio.length} cambio${devCambio.length !== 1 ? "s" : ""}`} />
+          )}
+          {sum(devOtro) > 0 && (
+            <ConcilRow label="Otros egresos (cash_out)" value={sum(devOtro)} sign="out"
+              detail={`${devOtro.length} mov.`} />
+          )}
+          {sum(paidOut) > 0 && (
+            <ConcilRow label="Egresos manuales" value={sum(paidOut)} sign="out"
+              detail={`${paidOut.length} mov.`} />
+          )}
+
+          {totalOut > 0 && (
+            <div className="flex items-baseline justify-between py-1.5 border-b border-steel-800/50 mb-1">
+              <span className="font-mono text-[9.5px] uppercase tracking-[0.1em] text-muted-foreground/40">
+                Total salidas
+              </span>
+              <span className="font-mono text-[10.5px] tabular-nums text-hazard-500/70">
+                −{moneyFmt.format(totalOut)}
+              </span>
+            </div>
+          )}
+
+          {/* ── Saldo esperado ───────────────────────── */}
+          <div className="flex items-baseline justify-between pt-1.5">
+            <span className="font-mono text-[11px] font-bold uppercase tracking-[0.12em] text-foreground">
+              {isOpen ? "Saldo esperado" : "Total calculado"}
+            </span>
+            <span className="font-display text-[22px] leading-none text-safety-500">
+              {moneyFmt.format(session.running_expected)}
+            </span>
+          </div>
+
+          {/* ── Real vs calculado (closed sessions) ───── */}
+          {isClosed && session.counted_cash != null && (
+            <>
+              <div className="flex items-baseline justify-between pt-1">
+                <span className="font-mono text-[10.5px] text-muted-foreground/60">Efectivo contado</span>
+                <span className="font-mono font-bold tabular-nums text-foreground">
+                  {moneyFmt.format(session.counted_cash)}
+                </span>
+              </div>
+              <div className={[
+                "flex items-baseline justify-between rounded-sm border px-3 py-1.5 mt-2",
+                (session.variance ?? 0) >= 0
+                  ? "border-signal-600/30 bg-signal-700/10"
+                  : "border-red-500/30 bg-red-500/5",
+              ].join(" ")}>
+                <span className="font-mono text-[10.5px] uppercase tracking-[0.1em] text-muted-foreground/60">
+                  {(session.variance ?? 0) >= 0 ? "Sobrante" : "Faltante"}
+                </span>
+                <span className={[
+                  "font-mono text-[14px] font-bold tabular-nums",
+                  (session.variance ?? 0) >= 0 ? "text-signal-400" : "text-red-400",
+                ].join(" ")}>
+                  {(session.variance ?? 0) > 0 ? "+" : ""}
+                  {moneyFmt.format(session.variance ?? 0)}
+                </span>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ConcilRow({
+  label, value, sign, detail,
+}: {
+  label:   string;
+  value:   number;
+  sign:    "in" | "out" | "neutral";
+  detail?: string;
+}) {
+  return (
+    <div className="flex items-baseline justify-between py-1">
+      <div className="flex items-baseline gap-2">
+        <span className="font-mono text-[10.5px] text-muted-foreground/70">{label}</span>
+        {detail && (
+          <span className="font-mono text-[9px] text-muted-foreground/40">{detail}</span>
+        )}
+      </div>
+      <span className={[
+        "font-mono text-[11px] font-semibold tabular-nums",
+        sign === "in"      ? "text-signal-400"
+        : sign === "out"   ? "text-hazard-500"
+        :                    "text-muted-foreground",
+      ].join(" ")}>
+        {sign === "in" ? "+" : sign === "out" ? "−" : " "}
+        {moneyFmt.format(value)}
+      </span>
+    </div>
+  );
+}
+
+function ChevronDownIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="m6 9 6 6 6-6" />
+    </svg>
+  );
+}
+
+// ── MovementsList ──────────────────────────────────────────────────────────
+// Extracted from CashSessionPanel to support the "solo reembolsos" filter.
+
+function MovementsList({ session }: { session: CashSessionData }) {
+  const [onlyReturns, setOnlyReturns] = React.useState(false);
+
+  const isOpen = session.status === "open";
+
+  const displayed = onlyReturns
+    ? session.movements.filter((m) => m.reference_type === "sale_return")
+    : session.movements;
+
+  const cashIn  = session.movements.filter(m => m.direction ===  1 && m.movement_type === "cash_in").reduce((a,m)=>a+m.amount,0);
+  const cashOut = session.movements.filter(m => m.direction === -1 && m.movement_type === "cash_out").reduce((a,m)=>a+m.amount,0);
+  const paidIn  = session.movements.filter(m => m.movement_type === "paid_in").reduce((a,m)=>a+m.amount,0);
+  const paidOut = session.movements.filter(m => m.movement_type === "paid_out").reduce((a,m)=>a+m.amount,0);
+
+  const returnMovements = session.movements.filter(m => m.reference_type === "sale_return");
+
+  return (
+    <div className="panel rounded-sm border border-steel-700 bg-steel-900/60 overflow-hidden">
+      {/* Header + filter toggle */}
+      <div className="flex items-center justify-between border-b border-steel-700 bg-steel-900/70 px-4 py-2.5">
+        <h2 className="font-mono text-[9.5px] uppercase tracking-[0.16em] text-muted-foreground/60">
+          Movimientos ({session.movements.length})
+        </h2>
+        {returnMovements.length > 0 ? (
+          <button
+            type="button"
+            onClick={() => setOnlyReturns((p) => !p)}
+            className={[
+              "flex items-center gap-1 rounded-sm border px-2 py-0.5 font-mono text-[8.5px] font-bold uppercase tracking-[0.1em] transition-colors",
+              onlyReturns
+                ? "border-signal-500/60 bg-signal-700/20 text-signal-400"
+                : "border-steel-600/60 text-muted-foreground/60 hover:border-steel-500 hover:text-muted-foreground",
+            ].join(" ")}
+          >
+            <ReturnIcon className="h-2.5 w-2.5" />
+            Reembolsos ({returnMovements.length})
+          </button>
+        ) : null}
+      </div>
+
+      {/* Movement rows */}
+      <ul className="divide-y divide-steel-800/40 max-h-[360px] overflow-y-auto">
+        {displayed.length === 0 ? (
+          <li className="px-4 py-3 font-mono text-[10.5px] text-muted-foreground/40 text-center">
+            Sin reembolsos en esta sesión
+          </li>
+        ) : (
+          displayed.map((m) => {
+            const isIn      = m.direction === 1;
+            const isReturn  = m.reference_type === "sale_return";
+            return (
+              <li key={m.id} className={[
+                "flex items-center gap-3 px-4 py-2.5",
+                isReturn ? "bg-signal-950/20" : "",
+              ].join(" ")}>
+                <span className={[
+                  "shrink-0 font-mono text-[10px] font-bold uppercase tracking-[0.08em]",
+                  isIn ? "text-signal-400" : "text-hazard-500",
+                ].join(" ")}>
+                  {isIn ? "+" : "−"}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-baseline gap-2">
+                    <span className="font-mono text-[9.5px] uppercase tracking-[0.1em] text-muted-foreground/60">
+                      {MOVEMENT_TYPE_LABELS[m.movement_type] ?? m.movement_type}
+                    </span>
+                    {isReturn ? (
+                      <span className="rounded-sm border border-signal-600/30 bg-signal-700/10 px-1 py-px font-mono text-[7.5px] font-bold uppercase text-signal-400/70">
+                        Devolución
+                      </span>
+                    ) : null}
+                    <span className="font-mono text-[10px] text-muted-foreground/50">
+                      {fmtTime(m.created_at)}
+                    </span>
+                  </div>
+                  <div className="truncate text-[11.5px] text-foreground">{m.reason}</div>
+                </div>
+                <span className={[
+                  "shrink-0 font-mono text-[12.5px] font-bold tabular-nums",
+                  isIn ? "text-signal-400" : "text-muted-foreground",
+                ].join(" ")}>
+                  {isIn ? "+" : "−"}{moneyFmt.format(m.amount)}
+                </span>
+              </li>
+            );
+          })
+        )}
+      </ul>
+
+      {/* Running summary */}
+      <div className="border-t border-steel-700 bg-steel-950/50 px-4 py-2.5 space-y-1.5">
+        <div className="flex justify-between text-[11px]">
+          <span className="font-mono uppercase tracking-[0.1em] text-muted-foreground/60">Apertura</span>
+          <span className="font-mono tabular-nums text-muted-foreground">{moneyFmt.format(session.opening_amount)}</span>
+        </div>
+        {cashIn  > 0 && <div className="flex justify-between text-[11px]"><span className="font-mono text-muted-foreground/60">Ventas efectivo</span><span className="font-mono tabular-nums text-signal-400">+{moneyFmt.format(cashIn)}</span></div>}
+        {cashOut > 0 && <div className="flex justify-between text-[11px]"><span className="font-mono text-muted-foreground/60">Reembolsos efectivo</span><span className="font-mono tabular-nums text-hazard-500">−{moneyFmt.format(cashOut)}</span></div>}
+        {paidIn  > 0 && <div className="flex justify-between text-[11px]"><span className="font-mono text-muted-foreground/60">Ingresos manuales</span><span className="font-mono tabular-nums text-signal-400">+{moneyFmt.format(paidIn)}</span></div>}
+        {paidOut > 0 && <div className="flex justify-between text-[11px]"><span className="font-mono text-muted-foreground/60">Egresos manuales</span><span className="font-mono tabular-nums text-hazard-500">−{moneyFmt.format(paidOut)}</span></div>}
+        <div className="flex items-baseline justify-between border-t border-steel-800/60 pt-1.5">
+          <span className="font-mono text-[11px] font-bold uppercase tracking-[0.1em] text-foreground">
+            {isOpen ? "Efectivo esperado" : "Total calculado"}
+          </span>
+          <span className="font-display text-[20px] leading-none text-safety-500">
+            {moneyFmt.format(session.running_expected)}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ReturnIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor"
+      strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M9 14 4 9l5-5" />
+      <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
+    </svg>
   );
 }
 

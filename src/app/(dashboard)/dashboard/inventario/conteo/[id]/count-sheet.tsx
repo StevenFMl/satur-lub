@@ -181,7 +181,7 @@ export function CountSheet({
           <ResultCard label="Ajustes"   value={closeResult.adjustmentsApplied} tone={closeResult.adjustmentsApplied > 0 ? "warn" : "ok"} />
         </div>
         <p className="font-mono text-[11px] text-muted-foreground/60">
-          Cada ajuste quedó registrado en el kárdex con motivo "Conteo físico".
+          Cada ajuste quedó registrado en el kárdex con motivo &quot;Conteo físico&quot;.
         </p>
         <div className="flex justify-center gap-3">
           <Link

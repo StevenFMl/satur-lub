@@ -19,15 +19,18 @@ export type SaleReturnItemData = {
 };
 
 export type SaleReturnData = {
-  id:               string;
-  return_type:      string;
-  reason:           string;
-  notes:            string | null;
-  refund_amount:    number;
-  refund_method:    string | null;
-  refund_reference: string | null;
-  processed_at:     string;
-  items:            SaleReturnItemData[];
+  id:                      string;
+  return_type:             string;
+  reason:                  string;
+  notes:                   string | null;
+  refund_amount:           number;
+  refund_method:           string | null;
+  refund_reference:        string | null;
+  processed_at:            string;
+  exchange_sale_id:        string | null;
+  exchange_credit_applied:  number;
+  exchange_credit_refunded: number;
+  items:                   SaleReturnItemData[];
 };
 
 export type SaleDetailItem = {
@@ -153,7 +156,8 @@ export default async function SaleDetailPage({
     .from("sale_returns")
     .select(
       `id, return_type, reason, notes, refund_amount, refund_method,
-       refund_reference, processed_at,
+       refund_reference, processed_at, exchange_sale_id,
+       exchange_credit_applied, exchange_credit_refunded,
        sale_return_items(sale_item_id, quantity_returned, unit_price, line_refund, restock)`
     )
     .eq("original_sale_id", id)
@@ -204,7 +208,10 @@ export default async function SaleDetailPage({
     refund_amount:    Number(r.refund_amount ?? 0),
     refund_method:    r.refund_method as string | null,
     refund_reference: r.refund_reference as string | null,
-    processed_at:     r.processed_at as string,
+    processed_at:             r.processed_at as string,
+    exchange_sale_id:         r.exchange_sale_id as string | null,
+    exchange_credit_applied:  Number(r.exchange_credit_applied  ?? 0),
+    exchange_credit_refunded: Number(r.exchange_credit_refunded ?? 0),
     items: ((r.sale_return_items as any[]) ?? []).map((ri) => ({
       sale_item_id:      ri.sale_item_id as string,
       quantity_returned: Number(ri.quantity_returned ?? 0),

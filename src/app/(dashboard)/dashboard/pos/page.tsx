@@ -16,7 +16,11 @@ import type { PickedCustomer } from "@/components/dashboard/customer-picker";
 export const metadata: Metadata = { title: "POS · SaturLub" };
 export const dynamic = "force-dynamic";
 
-export default async function PosPage() {
+export default async function PosPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ exchange_return_id?: string; exchange_credit?: string }>;
+}) {
   const { user, membership } = await getActiveMembership();
   if (!user) redirect("/login");
   if (!membership) redirect("/onboarding");
@@ -26,6 +30,31 @@ export default async function PosPage() {
 
   const supabase = await createClient();
   const tenantId = membership.tenant_id;
+
+  // ── Exchange params — validated from DB (trust DB, not URL) ──
+  // 1. Return must exist for this tenant.
+  // 2. exchange_sale_id must be NULL (not already consumed).
+  // 3. Credit amount comes from DB refund_amount, not from the URL.
+  const sp = await searchParams;
+  let exchangeReturnId: string | null = null;
+  let exchangeCredit:   number        = 0;
+  if (sp.exchange_return_id) {
+    const { data: retRow } = await supabase
+      .from("sale_returns")
+      .select("id, refund_amount, exchange_sale_id, exchange_credit_applied")
+      .eq("id", sp.exchange_return_id)
+      .eq("tenant_id", tenantId)
+      .maybeSingle();
+
+    if (retRow && !retRow.exchange_sale_id) {
+      // Not yet consumed — extract credit from DB (ignore URL param value)
+      const alreadyApplied = Number(retRow.exchange_credit_applied ?? 0);
+      const fullCredit     = Number(retRow.refund_amount ?? 0);
+      exchangeReturnId = retRow.id as string;
+      exchangeCredit   = Math.max(0, fullCredit - alreadyApplied);
+    }
+    // If retRow is null or exchange_sale_id is set → silently ignore (no banner)
+  }
 
   // ── Products (base data) ────────────────────────────────────
   const { data: rawProducts } = await supabase
@@ -232,6 +261,8 @@ export default async function PosPage() {
         (user.user_metadata?.full_name as string | undefined) ?? user.email ?? ""
       }
       activeCashSession={activeCashSession}
+      exchangeReturnId={exchangeReturnId}
+      exchangeCredit={exchangeCredit > 0 ? exchangeCredit : undefined}
     />
   );
 }

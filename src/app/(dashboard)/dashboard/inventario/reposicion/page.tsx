@@ -237,7 +237,7 @@ export default async function ReposicionPage() {
             Fase 2 pendiente
           </p>
           <p className="mt-0.5 text-[12px] text-muted-foreground/70">
-            El botón "Nueva compra" abrirá la OC pre-llenada con el proveedor y los ítems sugeridos.
+            El botón &quot;Nueva compra&quot; abrirá la OC pre-llenada con el proveedor y los ítems sugeridos.
             Por ahora redirige al formulario vacío.
           </p>
         </aside>

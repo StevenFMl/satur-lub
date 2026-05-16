@@ -42,7 +42,7 @@ type Props = {
   items:           SaleDetailItem[];
   open:            boolean;
   onClose:         () => void;
-  onSuccess:       () => void;
+  onSuccess:       (returnId: string, refundAmount: number, isExchange: boolean) => void;
   canSetNoRestock: boolean;
   cashSessionId:   string | null;
 };
@@ -75,6 +75,7 @@ export function ReturnDialog({
   const [reason,        setReason]        = React.useState("");
   const [refundMethod,  setRefundMethod]  = React.useState<RefundMethod | "">("");
   const [refundRef,     setRefundRef]     = React.useState("");
+  const [isExchange,    setIsExchange]    = React.useState(false);
   const [loading,       setLoading]       = React.useState(false);
   const [error,         setError]         = React.useState<string | null>(null);
 
@@ -86,6 +87,7 @@ export function ReturnDialog({
       setReason("");
       setRefundMethod("");
       setRefundRef("");
+      setIsExchange(false);
       setLoading(false);
       setError(null);
     }
@@ -173,7 +175,7 @@ export function ReturnDialog({
       return;
     }
 
-    onSuccess();
+    onSuccess(result?.returnId ?? "", Number(totalRefund.toFixed(2)), isExchange);
   }
 
   // ── Render ────────────────────────────────────────────────────
@@ -412,6 +414,38 @@ export function ReturnDialog({
             )}
           </div>
 
+          {/* ── Exchange toggle ──────────────────────────────── */}
+          <div className="flex items-start gap-3 rounded-sm border border-steel-700 bg-steel-900/40 px-4 py-3">
+            <button
+              type="button"
+              onClick={() => setIsExchange((v) => !v)}
+              className={[
+                "relative mt-0.5 inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 transition-colors",
+                isExchange
+                  ? "border-safety-500 bg-safety-500"
+                  : "border-steel-600 bg-steel-700",
+              ].join(" ")}
+              aria-label="Registrar como cambio"
+            >
+              <span
+                className={[
+                  "inline-block h-3.5 w-3.5 translate-y-[-0.5px] rounded-full bg-white shadow transition-transform",
+                  isExchange ? "translate-x-3.5" : "translate-x-0.5",
+                ].join(" ")}
+              />
+            </button>
+            <div>
+              <p className="text-[12.5px] font-semibold text-foreground">
+                Es un cambio de producto
+              </p>
+              <p className="mt-0.5 font-mono text-[10px] leading-4 text-muted-foreground/60">
+                {isExchange
+                  ? "Se abrirá el POS con el crédito disponible para registrar la nueva venta."
+                  : "Al activar esto, podrás registrar la venta de reemplazo directamente en el POS."}
+              </p>
+            </div>
+          </div>
+
           {/* ── Summary ─────────────────────────────────────── */}
           {selectedItems.length > 0 && (
             <div className="rounded-sm border border-safety-500/20 bg-safety-500/5 px-4 py-3 space-y-1.5">
@@ -476,6 +510,11 @@ export function ReturnDialog({
                 <SpinIcon className="h-3.5 w-3.5 animate-spin" />
                 Registrando...
               </span>
+            ) : isExchange ? (
+              <>
+                <ArrowReturnIcon className="h-3.5 w-3.5" />
+                Registrar y abrir POS
+              </>
             ) : (
               <>
                 <ArrowReturnIcon className="h-3.5 w-3.5" />
