@@ -1,4 +1,5 @@
 "use client";
+import { downloadCsvFile } from "@/lib/export/format";
 
 import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -71,17 +72,7 @@ const SIGN_CLASS: Record<"+" | "−" | "±", string> = {
 // ── CSV export ───────────────────────────────────────────────────────────────
 
 function downloadCsv(filename: string, headers: string[], rows: string[][]): void {
-  const esc = (v: string) => `"${String(v).replace(/"/g, '""')}"`;
-  const content = [headers, ...rows].map((r) => r.map(esc).join(",")).join("\r\n");
-  const blob = new Blob(["﻿" + content], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  downloadCsvFile(filename, headers, rows);
 }
 
 // ── Formatters ──────────────────────────────────────────────────────────────

@@ -45,10 +45,11 @@ const moneyFmt = new Intl.NumberFormat("es-EC", {
   minimumFractionDigits: 2, maximumFractionDigits: 2,
 });
 
+// "compact" notation removed — financial summaries must show full amounts
+// ($1.200,25, not "$1.2k"). Use same formatter as the rest of the app.
 const moneyShort = new Intl.NumberFormat("es-EC", {
   style: "currency", currency: "USD",
   minimumFractionDigits: 2, maximumFractionDigits: 2,
-  notation: "compact",
 });
 
 // ── CSV ───────────────────────────────────────────────────────────────────────

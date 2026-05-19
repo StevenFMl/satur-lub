@@ -4,6 +4,12 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
 
   /**
+   * Prevent webpack from attempting to bundle native/large server-side
+   * packages that must be loaded from node_modules at runtime.
+   */
+  serverExternalPackages: ["puppeteer", "puppeteer-core", "@sparticuz/chromium"],
+
+  /**
    * Server Actions CSRF fix (Next.js 15+).
    *
    * Next.js 15 validates the `Origin` header against `Host` for every

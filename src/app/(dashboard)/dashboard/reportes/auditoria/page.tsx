@@ -125,7 +125,7 @@ export default async function AuditoriaPage({
   return (
     <div className="mx-auto w-full max-w-7xl space-y-8">
       <header className="space-y-2">
-        <span className="hud-readout">Reportes · Auditoría</span>
+        <span className="hud-readout">Documentos · Cambios</span>
         <div>
           <h1 className="font-display text-[36px] leading-none tracking-[0.02em] text-foreground sm:text-[42px]">
             AUDITORÍA

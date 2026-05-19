@@ -8,7 +8,7 @@ import { PRICE_OVERRIDE_LABELS, type PriceOverrideType } from "@/lib/validations
 import { REFUND_METHOD_LABELS, type RefundMethod } from "@/lib/validations/sale-return";
 import { VoidDialog }    from "../void-dialog";
 import { ReturnDialog }  from "./return-dialog";
-import { InvoicePanel }  from "./invoice-panel";
+import { InvoiceCard }   from "@/components/invoice/invoice-card";
 import type { ElectronicInvoiceRecord } from "@/lib/sri/types";
 
 // ── Formatters ──────────────────────────────────────────────────────────────
@@ -68,6 +68,14 @@ export function SaleDetail({
 
   // Total already refunded across all returns
   const totalRefunded = sale.returns.reduce((s, r) => s + r.refund_amount, 0);
+
+  // Compute total savings: implied discount from price overrides + explicit discount_amount
+  const totalSavings = sale.items.reduce((sum, item) => {
+    const impliedPerLine = item.original_unit_price != null && item.original_unit_price > item.unit_price
+      ? (Number(item.original_unit_price) - item.unit_price) * item.quantity
+      : 0;
+    return sum + impliedPerLine + item.discount_amount;
+  }, 0);
 
   return (
     <div className="mx-auto max-w-3xl space-y-5">
@@ -239,11 +247,27 @@ export function SaleDetail({
                             {moneyFmt.format(item.unit_price)}
                           </span>
                         )}
-                        {item.discount_amount > 0 ? (
-                          <div className="font-mono text-[9.5px] text-muted-foreground/50">
-                            −{moneyFmt.format(item.discount_amount)}
-                          </div>
-                        ) : null}
+                        {/* Discount annotation — shown for both explicit and implied (override) discounts */}
+                        {(() => {
+                          const impliedPerUnit = hasItemOverride && (item.original_unit_price as number) > item.unit_price
+                            ? (item.original_unit_price as number) - item.unit_price
+                            : 0;
+                          if (impliedPerUnit > 0.001) {
+                            return (
+                              <div className="font-mono text-[9.5px] text-muted-foreground/50">
+                                Desc. −{moneyFmt.format(impliedPerUnit)}/u.
+                              </div>
+                            );
+                          }
+                          if (item.discount_amount > 0.001) {
+                            return (
+                              <div className="font-mono text-[9.5px] text-muted-foreground/50">
+                                −{moneyFmt.format(item.discount_amount)} desc.
+                              </div>
+                            );
+                          }
+                          return null;
+                        })()}
                       </td>
                       <td className="px-3 py-2.5 font-mono font-bold tabular-nums text-foreground">
                         {moneyFmt.format(item.line_total)}
@@ -280,6 +304,16 @@ export function SaleDetail({
                             {" "}<span className="text-signal-400">{moneyFmt.format(item.unit_price)}</span>
                           </>
                         ) : moneyFmt.format(item.unit_price)}
+                        {/* Inline discount hint for mobile */}
+                        {hasItemOverride && (item.original_unit_price as number) > item.unit_price ? (
+                          <span className="ml-1 text-[9px] text-muted-foreground/50">
+                            (−{moneyFmt.format((item.original_unit_price as number) - item.unit_price)}/u.)
+                          </span>
+                        ) : item.discount_amount > 0.001 ? (
+                          <span className="ml-1 text-[9px] text-muted-foreground/50">
+                            (desc. −{moneyFmt.format(item.discount_amount)})
+                          </span>
+                        ) : null}
                       </div>
                       {item.already_returned > 0 && (
                         <span className="mt-0.5 inline-block rounded-sm border border-signal-600/40 bg-signal-700/10 px-1.5 py-0.5 font-mono text-[8.5px] font-bold uppercase tracking-[0.08em] text-signal-400">
@@ -436,8 +470,8 @@ export function SaleDetail({
             <SectionTitle>Totales</SectionTitle>
             <MetaRow label="Subtotal (neto)" value={moneyFmt.format(sale.subtotal)} />
             <MetaRow label="IVA 15%" value={moneyFmt.format(sale.tax_total)} />
-            {sale.discount_total > 0 ? (
-              <MetaRow label="Descuentos" value={`−${moneyFmt.format(sale.discount_total)}`} />
+            {totalSavings > 0.001 ? (
+              <MetaRow label="Ahorros / Desc." value={`−${moneyFmt.format(totalSavings)}`} />
             ) : null}
             <div className="border-t border-steel-800/60 pt-1.5">
               <div className="flex items-baseline justify-between">
@@ -506,7 +540,7 @@ export function SaleDetail({
 
       {/* ── Factura electrónica ─────────────────────────────────── */}
       {!isCancelled && (
-        <InvoicePanel
+        <InvoiceCard
           saleId={sale.id}
           invoice={invoice}
           canEmit={canEmitInvoice}

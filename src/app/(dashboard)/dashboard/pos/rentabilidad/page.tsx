@@ -307,14 +307,22 @@ export default async function RentabilidadPage({
   return (
     <div className="mx-auto w-full max-w-7xl space-y-8">
       <header className="space-y-2">
-        <span className="hud-readout">POS · Análisis</span>
-        <div>
-          <h1 className="font-display text-[36px] leading-none tracking-[0.02em] text-foreground sm:text-[42px]">
-            RENTABILIDAD
-          </h1>
-          <p className="mt-1 text-[13px] leading-5 text-muted-foreground">
-            Utilidad bruta neta de devoluciones. Costo s/IVA · Ventas s/IVA.
-          </p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <span className="hud-readout">Administración · Rentabilidad</span>
+            <h1 className="font-display text-[36px] leading-none tracking-[0.02em] text-foreground sm:text-[42px]">
+              RENTABILIDAD
+            </h1>
+            <p className="mt-1 text-[13px] leading-5 text-muted-foreground">
+              Utilidad bruta neta de devoluciones. Costo s/IVA · Ventas s/IVA.
+            </p>
+          </div>
+          <a
+            href={`/dashboard/pos/ventas/productos?from=${from}&to=${to}`}
+            className="self-start font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground/60 hover:text-foreground transition-colors"
+          >
+            Productos vendidos →
+          </a>
         </div>
       </header>
 

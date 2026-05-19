@@ -24,6 +24,10 @@ export type SaleListItem = {
   customer_name:       string;
   payment_methods:     string[];
   has_override:        boolean;
+  invoice_id:          string | null;
+  invoice_status:      string | null;
+  invoice_doc_number:  string | null;
+  invoice_env:         string | null;
 };
 
 export type DaySummary = {
@@ -86,6 +90,7 @@ export default async function VentasPage({
     { data: customers },
     { data: payments },
     { data: overrideItems },
+    { data: invoiceRows },
   ] = await Promise.all([
     // Customer names
     customerIds.length > 0
@@ -111,6 +116,15 @@ export default async function VentasPage({
           .in("sale_id", saleIds)
           .not("original_unit_price", "is", null)
       : (Promise.resolve({ data: [] }) as any),
+
+    // Electronic invoices (facturas tipo 01) for each sale
+    saleIds.length > 0
+      ? supabase
+          .from("electronic_invoices")
+          .select("id, sale_id, status, doc_number, sri_environment")
+          .in("sale_id", saleIds)
+          .eq("doc_type", "01")
+      : (Promise.resolve({ data: [] }) as any),
   ]);
 
   // ── 3. Index data for fast lookups ───────────────────────────────────────
@@ -134,6 +148,17 @@ export default async function VentasPage({
     (overrideItems ?? []).map((i: any) => i.sale_id as string)
   );
 
+  // invoice data per sale
+  const invoicesBySale = new Map<string, { id: string; status: string; doc_number: string | null; env: string }>();
+  for (const inv of invoiceRows ?? []) {
+    invoicesBySale.set(inv.sale_id as string, {
+      id:         inv.id as string,
+      status:     inv.status as string,
+      doc_number: inv.doc_number as string | null,
+      env:        inv.sri_environment as string,
+    });
+  }
+
   // ── 4. Normalize SaleListItem[] ──────────────────────────────────────────
 
   const saleList: SaleListItem[] = sales.map((s: any) => ({
@@ -149,6 +174,10 @@ export default async function VentasPage({
     customer_name:       customerMap.get(s.customer_id as string) ?? "—",
     payment_methods:     paymentsBySale.get(s.id as string) ?? [],
     has_override:        overrideSet.has(s.id as string),
+    invoice_id:          invoicesBySale.get(s.id as string)?.id           ?? null,
+    invoice_status:      invoicesBySale.get(s.id as string)?.status      ?? null,
+    invoice_doc_number:  invoicesBySale.get(s.id as string)?.doc_number  ?? null,
+    invoice_env:         invoicesBySale.get(s.id as string)?.env         ?? null,
   }));
 
   // ── 5. Day summary ───────────────────────────────────────────────────────
@@ -189,12 +218,15 @@ export default async function VentasPage({
       .sort((a, b) => b.amount - a.amount),
   };
 
+  const canEmit = membership.role === "owner" || membership.role === "admin";
+
   return (
     <SalesHistory
       sales={saleList}
       summary={summary}
       date={date}
       canVoidSale={permissions.canVoidSale}
+      canEmit={canEmit}
     />
   );
 }

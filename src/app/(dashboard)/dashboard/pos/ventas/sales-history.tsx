@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import type { SaleListItem, DaySummary } from "./page";
 import { useVoidDialog } from "./void-dialog";
 import { todayEC } from "@/lib/date-ec";
+import { InvoiceRowActions } from "@/components/invoice/invoice-row-actions";
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
@@ -50,11 +51,13 @@ export function SalesHistory({
   summary,
   date,
   canVoidSale,
+  canEmit,
 }: {
   sales:       SaleListItem[];
   summary:     DaySummary;
   date:        string;
   canVoidSale: boolean;
+  canEmit:     boolean;
 }) {
   const router               = useRouter();
   const today                = todayEC();
@@ -89,12 +92,26 @@ export function SalesHistory({
             {fmtDate(date)}{isToday ? " · Hoy" : ""}
           </p>
         </div>
-        <Link
-          href="/dashboard/pos"
-          className="self-start font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground/60 transition-colors hover:text-foreground"
-        >
-          ← POS
-        </Link>
+        <div className="flex items-center gap-4 self-start">
+          <Link
+            href="/dashboard/pos/ventas/productos"
+            className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground/60 transition-colors hover:text-foreground"
+          >
+            Productos →
+          </Link>
+          <Link
+            href="/dashboard/pos/ventas/documentos"
+            className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground/60 transition-colors hover:text-foreground"
+          >
+            Comprobantes →
+          </Link>
+          <Link
+            href="/dashboard/pos"
+            className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground/60 transition-colors hover:text-foreground"
+          >
+            ← Terminal
+          </Link>
+        </div>
       </div>
 
       {/* ── Date navigation ──────────────────────────────────────── */}
@@ -275,7 +292,7 @@ export function SalesHistory({
             <table className="w-full text-[12px]">
               <thead>
                 <tr className="border-b-2 border-steel-700 bg-steel-900/70">
-                  {["#", "Hora", "Cliente", "Total", "Método", "Estado", ""].map((h) => (
+                  {["#", "Hora", "Cliente", "Total", "Método", "Estado", "Comprobante SRI", ""].map((h) => (
                     <th
                       key={h}
                       className="px-4 py-2.5 text-left font-mono text-[9.5px] uppercase tracking-[0.12em] text-muted-foreground/60"
@@ -321,12 +338,24 @@ export function SalesHistory({
                         <StatusBadge status={sale.status} />
                       </td>
                       <td className="px-4 py-3">
+                        <InvoiceRowActions
+                          saleId={sale.id}
+                          invoice={{
+                            invoiceId:     sale.invoice_id,
+                            invoiceStatus: sale.invoice_status,
+                            docNumber:     sale.invoice_doc_number,
+                            env:           sale.invoice_env,
+                          }}
+                          canEmit={canEmit}
+                        />
+                      </td>
+                      <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
                           <Link
                             href={`/dashboard/pos/ventas/${sale.id}`}
                             className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground/60 transition-colors hover:text-foreground"
                           >
-                            Ver →
+                            Detalle →
                           </Link>
                           {canVoidSale && !isCancelled ? (
                             <button
@@ -372,6 +401,18 @@ export function SalesHistory({
                       <div className="mt-0.5 font-semibold text-foreground">{sale.customer_name}</div>
                       <div className="mt-0.5 font-mono text-[10px] text-muted-foreground/70">
                         {fmtTime(sale.created_at)} · {sale.payment_methods.map((m) => METHOD_LABELS[m] ?? m).join(", ")}
+                      </div>
+                      <div className="mt-1.5">
+                        <InvoiceRowActions
+                          saleId={sale.id}
+                          invoice={{
+                            invoiceId:     sale.invoice_id,
+                            invoiceStatus: sale.invoice_status,
+                            docNumber:     sale.invoice_doc_number,
+                            env:           sale.invoice_env,
+                          }}
+                          canEmit={canEmit}
+                        />
                       </div>
                     </div>
                     <div className="shrink-0">

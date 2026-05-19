@@ -119,12 +119,27 @@ export function DevolucionesTable({
 
   // ── CSV ─────────────────────────────────────────────────────────
   const exportCsv = () => {
+    // Use ISO datetime (YYYY-MM-DD HH:mm) so Excel parses dates correctly.
+    // Locale-formatted datetime contains a comma which, even when quoted, is
+    // less reliable across Excel versions.
+    const isoDatetime = (iso: string) => {
+      const d = new Date(iso);
+      const parts = new Intl.DateTimeFormat("sv-SE", {
+        timeZone: "America/Guayaquil",
+        year: "numeric", month: "2-digit", day: "2-digit",
+        hour: "2-digit", minute: "2-digit", hour12: false,
+      }).formatToParts(d);
+      const m: Record<string, string> = {};
+      for (const { type, value } of parts) m[type] = value;
+      return `${m.year}-${m.month}-${m.day} ${m.hour}:${m.minute}`;
+    };
+
     downloadCsv(
       `devoluciones_${from}_${to}.csv`,
-      ["Fecha", "ID_Devolucion", "Venta_Original", "Cliente", "Tipo",
-       "Metodo_Reembolso", "Monto_Reembolsado", "Motivo"],
+      ["Fecha_Proceso", "ID_Devolucion", "ID_Venta_Original", "Cliente", "Tipo",
+       "Metodo_Reembolso", "Monto_USD", "Motivo"],
       rows.map((r) => [
-        fmtDatetime(r.processed_at),
+        isoDatetime(r.processed_at),
         r.id.slice(0, 8).toUpperCase(),
         r.original_sale_id.slice(0, 8).toUpperCase(),
         r.customer_name,

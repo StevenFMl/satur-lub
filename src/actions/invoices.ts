@@ -22,6 +22,7 @@ import { mapSaleToSriInvoice }  from "@/lib/sri/invoice-mapper";
 import { invoiceToXml, validateInvoiceData } from "@/lib/sri/invoice-xml";
 import { runInvoicePipeline }   from "@/lib/sri/pipeline";
 import { SRI_DOC_TYPES } from "@/lib/sri/constants";
+import { uploadInvoiceXml } from "@/lib/sri/document-storage";
 import type {
   TenantFiscalConfig,
   InvoiceSaleData,
@@ -375,7 +376,7 @@ export async function processInvoiceAction(
   // ── Load the draft invoice ─────────────────────────────────────────────
   const { data: inv, error: invErr } = await supabase
     .from("electronic_invoices")
-    .select("id, status, access_key, xml_unsigned, xml_signed, sri_environment, sale_id")
+    .select("id, status, access_key, xml_unsigned, xml_signed, sri_environment, sale_id, estab, pto_emi, created_at")
     .eq("id", invoiceId)
     .eq("tenant_id", tenantId)
     .maybeSingle();
@@ -393,11 +394,14 @@ export async function processInvoiceAction(
     return { error: "La factura fue cancelada y no puede reemitirse." };
   }
 
-  const xmlUnsigned   = invoiceRaw.xml_unsigned  as string | null;
-  const xmlSigned     = invoiceRaw.xml_signed     as string | null;
-  const accessKey     = invoiceRaw.access_key     as string;
+  const xmlUnsigned   = invoiceRaw.xml_unsigned    as string | null;
+  const xmlSigned     = invoiceRaw.xml_signed      as string | null;
+  const accessKey     = invoiceRaw.access_key      as string;
   const environment   = (invoiceRaw.sri_environment ?? "pruebas") as "pruebas" | "produccion";
-  const saleId        = invoiceRaw.sale_id        as string;
+  const saleId        = invoiceRaw.sale_id         as string;
+  const estab         = (invoiceRaw.estab          as string) ?? "001";
+  const ptoEmi        = (invoiceRaw.pto_emi        as string) ?? "001";
+  const invDate       = ((invoiceRaw.created_at    as string | null) ?? new Date().toISOString()).slice(0, 10);
 
   if (!xmlUnsigned) return { error: "La factura no tiene XML generado. Regenera el borrador." };
 
@@ -419,6 +423,21 @@ export async function processInvoiceAction(
   if (result.authorizationNumber)  updatePayload.authorization_number = result.authorizationNumber;
   if (result.authorizationDate)    updatePayload.authorization_date   = result.authorizationDate ? new Date(result.authorizationDate.replace(/(\d{2})\/(\d{2})\/(\d{4}) (\d{2}:\d{2}:\d{2})/, "$3-$2-$1T$4-05:00")).toISOString() : null;
   if (result.errors.length > 0)    updatePayload.sri_errors           = result.errors;
+
+  // ── Upload signed XML to Storage ─────────────────────────────────────────
+  // Non-blocking: a storage failure doesn't fail the invoice processing.
+  // The xml_signed DB column remains the source of truth; storage is additive.
+  if (result.xmlSigned) {
+    const uploadResult = await uploadInvoiceXml(
+      { tenantId, estab, ptoEmi, accessKey, date: invDate },
+      result.xmlSigned,
+    );
+    if (uploadResult.ok) {
+      updatePayload.xml_storage_path = uploadResult.path;
+    } else {
+      console.warn("[processInvoiceAction] storage upload skipped:", uploadResult.error);
+    }
+  }
 
   await supabase
     .from("electronic_invoices")

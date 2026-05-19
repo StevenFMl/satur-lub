@@ -126,6 +126,7 @@ export type SriInvoice = {
 
 export type ElectronicInvoiceStatus =
   | "draft"
+  | "signed"
   | "sent"
   | "authorized"
   | "rejected"
