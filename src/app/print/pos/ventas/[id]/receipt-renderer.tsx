@@ -106,15 +106,13 @@ const REFUND_LABELS: Record<string, string> = {
 // ── Discount helpers ───────────────────────────────────────────────────────
 
 /**
- * Compute the total visible discount for a line item.
+ * Discount to display for a line item (ticket "Descuento" line, A4 "Desc." column,
+ * totals "Ahorros / Desc." row).
  *
- * Two sources of discount exist:
- *   1. Price override: original_unit_price > unit_price  →  implied discount per unit
- *   2. Explicit discount_amount field (flat reduction on the line)
- *
- * The display price (shown as "P. Unit." on the receipt) is always the
- * original_unit_price when set — i.e., what the item was priced at before
- * any reduction — so customers see "you were charged less than list".
+ * Only real discounts count: when the final charged price (unit_price) is
+ * LOWER than the original list price (original_unit_price). Markups (override
+ * toward a higher price) are internal adjustments and must never appear as a
+ * discount on a customer-facing document.
  */
 function lineDiscount(item: ReceiptItem): number {
   const impliedPerLine =
@@ -124,9 +122,23 @@ function lineDiscount(item: ReceiptItem): number {
   return Math.round((impliedPerLine + item.discount_amount) * 100) / 100;
 }
 
-/** Price to display in "P. Unit." column — original/list when available. */
+/**
+ * Price to display in the A4 "P. Unit." column.
+ *
+ * Accounting rule: when there IS a real discount (list > final), the column
+ * shows the list price and the discount column carries the reduction so the
+ * math holds: list × qty − disc = line_total.
+ *
+ * When there is NO discount (no override, or markup), the column shows the
+ * final charged price so the math also holds: final × qty = line_total.
+ *
+ * Never shows the original price for markups — that would make the A4 show
+ * a lower "P. Unit." than the actual line total, confusing the customer.
+ */
 function displayUnitPrice(item: ReceiptItem): number {
-  return item.original_unit_price ?? item.unit_price;
+  return (item.original_unit_price != null && item.original_unit_price > item.unit_price)
+    ? item.original_unit_price
+    : item.unit_price;
 }
 
 function fmtDatetime(iso: string): string {
@@ -385,10 +397,12 @@ function TicketReceipt({ data }: { data: ReceiptData }) {
       <div style={{ marginBottom: "4px" }}>
         <div style={{ fontWeight: "bold", marginBottom: "2px" }}>ARTÍCULOS</div>
         {data.items.map((item) => {
-          const unitLabel = item.presentation_label ?? (item.product_sku || "u.");
-          const isCourt   = item.price_override_type === "courtesy";
-          const disc      = lineDiscount(item);
-          const listPrice = displayUnitPrice(item);
+          const unitLabel  = item.presentation_label ?? (item.product_sku || "u.");
+          const isCourt    = item.price_override_type === "courtesy";
+          const disc       = lineDiscount(item);
+          // Ticket format: always show final charged price so qty × price = line_total.
+          // The discount line below communicates savings without confusing the math.
+          const finalPrice = item.unit_price;
           return (
             <div key={item.id} style={{ marginBottom: "3px" }}>
               <div className="item-name" style={{ fontWeight: "bold", wordBreak: "break-word", overflowWrap: "break-word" }}>
@@ -397,7 +411,7 @@ function TicketReceipt({ data }: { data: ReceiptData }) {
               </div>
               <div style={{ paddingLeft: "4px" }}>
                 <TicketLineRow
-                  desc={`${item.quantity} ${unitLabel} × ${moneyFmt.format(listPrice)}`}
+                  desc={`${item.quantity} ${unitLabel} × ${moneyFmt.format(finalPrice)}`}
                   amount={moneyFmt.format(item.line_total)}
                 />
                 {disc > 0.001 ? (
@@ -694,11 +708,6 @@ function A4Receipt({ data }: { data: ReceiptData }) {
                 </td>
                 <td style={{ padding: "6px 8px", textAlign: "right", verticalAlign: "top", fontFamily: "monospace" }}>
                   {moneyFmt.format(listPrice)}
-                  {hasOverride ? (
-                    <div style={{ fontSize: "7.5pt", color: "#999", textDecoration: "none" }}>
-                      cobrado: {moneyFmt.format(item.unit_price)}
-                    </div>
-                  ) : null}
                 </td>
                 <td style={{ padding: "6px 8px", textAlign: "right", verticalAlign: "top", fontFamily: "monospace", color: "#888" }}>
                   {disc > 0.001 ? `−${moneyFmt.format(disc)}` : "—"}

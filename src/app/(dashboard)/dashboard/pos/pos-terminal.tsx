@@ -2,54 +2,41 @@
 
 import * as React from "react";
 import Link from "next/link";
-import Big from "big.js";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Alert } from "@/components/ui/alert";
 import { Select } from "@/components/ui/select";
 import { Sheet } from "@/components/ui/sheet";
-import { Dialog } from "@/components/ui/dialog";
 import { CustomerPicker, type PickedCustomer } from "@/components/dashboard/customer-picker";
 import type { PosPermissions } from "@/lib/auth/permissions";
-import { PRICE_OVERRIDE_LABELS, type PriceOverrideType } from "@/lib/validations/sale";
 import { CheckoutDialog } from "./checkout-dialog";
+import { ExchangeBanner } from "./exchange-banner";
+import { PresentationPickerDialog } from "./presentation-picker-dialog";
+import { ManualItemModal } from "./manual-item-modal";
+import { CartLineItem } from "./cart-line-item";
+import { usePosKeyboard } from "./hooks/use-pos-keyboard";
+import { useBarcodeScannerInput } from "./hooks/use-barcode-scanner-input";
+import {
+  calcTotals,
+  resolvePresentation,
+  stockForPresentation,
+  applyPctDiscount,
+  isBelowCost,
+  type CartLine,
+  type OverridePayload,
+  type PosProduct,
+  type PosPresentation,
+  type PosBundleComponent,
+} from "@/lib/domain/pos-math";
+import { usePosStore } from "@/lib/stores/pos-store";
+import { useShallow } from "zustand/react/shallow";
+import { holdCart, getHeldCarts } from "@/actions/holds";
+import { HoldsPanel } from "./holds-panel";
 
-// ── Types ──────────────────────────────────────────────────────────────────
+// ── Local types (UI-only, not domain math) ─────────────────────────────────
 
-export type PosPresentation = {
-  id:         string;
-  name:       string;
-  unit_label: string;
-  base_qty:   number;
-  unit_price: number | null;
-  is_default: boolean;
-  sort_order: number;
-};
-
-export type PosBundleComponent = {
-  product_id:  string;
-  quantity:    number;
-  base_qty:    number;
-  sort_order:  number;
-};
-
-export type PosProduct = {
-  id:              string;
-  name:            string;
-  sku:             string;
-  unit:            string;
-  price:           number;      // GROSS (inc. IVA) — PUBLICO tier
-  tax_rate:        number;
-  has_tax:         boolean;
-  track_inventory: boolean;
-  product_kind:    string;
-  stock:           number;      // in base units (or min-sellable for kits)
-  presentations:   PosPresentation[];
-  is_kit:          boolean;
-  kit_components:  PosBundleComponent[];
-  average_cost:    number;      // CPP actual (s/IVA); 0 para servicios
-};
+export type { PosProduct, PosPresentation, PosBundleComponent };
 
 export type PosWarehouse = { id: string; name: string };
 
@@ -57,38 +44,6 @@ export type ActiveCashSession = {
   id:             string;
   opening_amount: number;
   opened_at:      string;
-};
-
-type CartLine = {
-  key:             string;
-  product_id:      string | null;
-  presentation_id: string | null;
-  name:            string;
-  unit_label:      string;
-  unit_price:      number;      // list GROSS for this presentation
-  base_qty:        number;
-  tax_rate:        number;
-  has_tax:         boolean;
-  track_inventory: boolean;
-  stock_base:      number;
-  quantity:        number;
-  discount_amount: number;
-  average_cost:    number;      // CPP snapshot from product at add-to-cart time
-  // price override
-  override_unit_price:   number | null;
-  price_override_type:   string | null;
-  price_override_reason: string | null;
-  price_override_note:   string | null;
-  // kit/bundle
-  is_kit:          boolean;
-  kit_components:  PosBundleComponent[];
-};
-
-type OverridePayload = {
-  override_unit_price:   number;
-  price_override_type:   string | null;
-  price_override_reason: string;
-  price_override_note:   string | null;
 };
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -101,64 +56,6 @@ const moneyFmt = new Intl.NumberFormat("es-EC", {
   minimumFractionDigits: 2,
 });
 
-const OVERRIDE_OPTIONS = (
-  Object.entries(PRICE_OVERRIDE_LABELS) as [PriceOverrideType, string][]
-).map(([value, label]) => ({ value, label }));
-
-// ── Math (big.js) ──────────────────────────────────────────────────────────
-
-function effectivePrice(line: CartLine): number {
-  return line.override_unit_price ?? line.unit_price;
-}
-
-function lineGross(line: CartLine): Big {
-  return Big(effectivePrice(line)).times(line.quantity).minus(line.discount_amount);
-}
-
-function lineNet(line: CartLine): Big {
-  const g = lineGross(line);
-  if (!line.has_tax || line.tax_rate <= 0) return g;
-  return g.div(Big(1).plus(Big(line.tax_rate).div(100)));
-}
-
-function calcTotals(cart: CartLine[]) {
-  let gross = Big(0);
-  let net   = Big(0);
-  for (const l of cart) {
-    gross = gross.plus(lineGross(l));
-    net   = net.plus(lineNet(l));
-  }
-  const iva   = gross.minus(net);
-  const items = cart.reduce((s, l) => s + l.quantity, 0);
-  return {
-    gross: gross.round(2, Big.roundHalfUp),
-    net:   net.round(2, Big.roundHalfUp),
-    iva:   iva.round(2, Big.roundHalfUp),
-    items,
-  };
-}
-
-// ── Presentation helpers ───────────────────────────────────────────────────
-
-function resolvePresentation(
-  product: PosProduct,
-  pres: PosPresentation | null
-): { unit_label: string; unit_price: number; base_qty: number; presentation_id: string | null } {
-  if (!pres) {
-    return { unit_label: product.unit, unit_price: product.price, base_qty: 1, presentation_id: null };
-  }
-  return {
-    unit_label:      pres.unit_label,
-    unit_price:      pres.unit_price ?? product.price,
-    base_qty:        pres.base_qty,
-    presentation_id: pres.id,
-  };
-}
-
-function stockForPresentation(baseStock: number, baseQty: number): number {
-  if (baseQty <= 0) return baseStock;
-  return Math.floor(baseStock / baseQty);
-}
 
 function useDebounce<T>(value: T, delay: number): T {
   const [d, setD] = React.useState<T>(value);
@@ -190,11 +87,45 @@ export function PosTerminal({
   exchangeReturnId?: string | null;
   exchangeCredit?:   number;
 }) {
-  const [cart, setCart]           = React.useState<CartLine[]>([]);
-  const [customer, setCustomer]   = React.useState<PickedCustomer | null>(defaultCustomer);
+  // ── Persistent store (cart + customer survive same-tab navigation) ────────
+  const cart     = usePosStore((s) => s.cart);
+  const customer = usePosStore((s) => s.customer);
+  const {
+    addToCart:           storeAddLine,
+    removeFromCart:      storeRemoveLine,
+    setQty:              storeSetQty,
+    applyOverride:       storeApplyOverride,
+    applyCourtesy:       storeApplyCourtesy,
+    applyGlobalDiscount: storeApplyDiscount,
+    clearCart:           storeClearCart,
+    replaceCart:         storeReplaceCart,
+    setCustomer:         storeSetCustomer,
+  } = usePosStore(
+    useShallow((s) => ({
+      addToCart:           s.addToCart,
+      removeFromCart:      s.removeFromCart,
+      setQty:              s.setQty,
+      applyOverride:       s.applyOverride,
+      applyCourtesy:       s.applyCourtesy,
+      applyGlobalDiscount: s.applyGlobalDiscount,
+      clearCart:           s.clearCart,
+      replaceCart:         s.replaceCart,
+      setCustomer:         s.setCustomer,
+    }))
+  );
+
   const [warehouseId, setWarehouseId] = React.useState<string | null>(
     warehouses.length === 1 ? (warehouses[0]?.id ?? null) : null
   );
+
+  // Rehydrate from sessionStorage once on mount; seed defaultCustomer if nothing stored
+  React.useEffect(() => {
+    void usePosStore.persist.rehydrate();
+    if (!usePosStore.getState().customer && defaultCustomer) {
+      usePosStore.getState().setCustomer(defaultCustomer);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const [searchQuery, setSearchQuery]       = React.useState("");
   const debouncedQuery                      = useDebounce(searchQuery, 150);
   const [page, setPage]                     = React.useState(0);
@@ -231,163 +162,137 @@ export function PosTerminal({
 
   const addManualToCart = React.useCallback((item: { name: string; unit_price: number; quantity: number; has_tax: boolean; average_cost: number }) => {
     const lineKey = `manual::${crypto.randomUUID()}`;
-    setCart((prev) => [
-      ...prev,
-      {
-        key:             lineKey,
-        product_id:      null,
-        presentation_id: null,
-        name:            item.name,
-        unit_label:      "unidad",
-        unit_price:      item.unit_price,
-        base_qty:        1,
-        tax_rate:        15,
-        has_tax:         item.has_tax,
-        track_inventory: false,
-        stock_base:      0,
-        quantity:        item.quantity,
-        discount_amount: 0,
-        average_cost:    item.average_cost,
-        override_unit_price: null,
-        price_override_type: null,
-        price_override_reason: null,
-        price_override_note: null,
-        is_kit:          false,
-        kit_components:  [],
-      }
-    ]);
-  }, []);
+    storeAddLine({
+      key:             lineKey,
+      product_id:      null,
+      presentation_id: null,
+      name:            item.name,
+      unit_label:      "unidad",
+      unit_price:      item.unit_price,
+      base_qty:        1,
+      tax_rate:        15,
+      has_tax:         item.has_tax,
+      track_inventory: false,
+      stock_base:      0,
+      quantity:        item.quantity,
+      discount_amount: 0,
+      average_cost:    item.average_cost,
+      override_unit_price:   null,
+      price_override_type:   null,
+      price_override_reason: null,
+      price_override_note:   null,
+      is_kit:          false,
+      kit_components:  [],
+    });
+  }, [storeAddLine]);
 
   const addToCart = React.useCallback((product: PosProduct, pres: PosPresentation | null = null) => {
     const resolved = resolvePresentation(product, pres);
     const lineKey  = `${product.id}::${resolved.presentation_id ?? "base"}`;
 
-    setCart((prev) => {
-      const idx = prev.findIndex((l) => l.key === lineKey);
-      if (idx >= 0) {
-        const updated = [...prev];
-        updated[idx] = { ...(updated[idx] as CartLine), quantity: (updated[idx] as CartLine).quantity + 1 };
-        return updated;
-      }
-      return [
-        ...prev,
-        {
-          key:             lineKey,
-          product_id:      product.id,
-          presentation_id: resolved.presentation_id,
-          name:            product.name,
-          unit_label:      resolved.unit_label,
-          unit_price:      resolved.unit_price,
-          base_qty:        resolved.base_qty,
-          tax_rate:        product.tax_rate,
-          has_tax:         product.has_tax,
-          track_inventory: product.track_inventory,
-          stock_base:      product.stock,
-          quantity:        1,
-          discount_amount: 0,
-          average_cost:    product.average_cost,
-          override_unit_price:   null,
-          price_override_type:   null,
-          price_override_reason: null,
-          price_override_note:   null,
-          is_kit:          product.is_kit,
-          kit_components:  product.kit_components,
-        },
-      ];
+    // Build the full CartLine; store handles add-or-increment dedup by key.
+    storeAddLine({
+      key:             lineKey,
+      product_id:      product.id,
+      presentation_id: resolved.presentation_id,
+      name:            product.name,
+      unit_label:      resolved.unit_label,
+      unit_price:      resolved.unit_price,
+      base_qty:        resolved.base_qty,
+      tax_rate:        product.tax_rate,
+      has_tax:         product.has_tax,
+      track_inventory: product.track_inventory,
+      stock_base:      product.stock,
+      quantity:        1,
+      discount_amount: 0,
+      average_cost:    product.average_cost,
+      override_unit_price:   null,
+      price_override_type:   null,
+      price_override_reason: null,
+      price_override_note:   null,
+      is_kit:          product.is_kit,
+      kit_components:  product.kit_components,
     });
 
     setFlashKeys((prev) => { const n = new Set(prev); n.add(lineKey); return n; });
     setTimeout(() => setFlashKeys((prev) => { const n = new Set(prev); n.delete(lineKey); return n; }), 600);
-  }, []);
+  }, [storeAddLine]);
 
-  const setQty = (key: string, qty: number) => {
-    if (qty <= 0) setCart((prev) => prev.filter((l) => l.key !== key));
-    else setCart((prev) => prev.map((l) => l.key === key ? { ...l, quantity: qty } : l));
-  };
-
-  const removeFromCart = React.useCallback((key: string) =>
-    setCart((prev) => prev.filter((l) => l.key !== key)), []);
-
-  const applyOverride = (key: string, payload: OverridePayload | null) => {
-    setCart((prev) =>
-      prev.map((l) =>
-        l.key !== key ? l : {
-          ...l,
-          override_unit_price:   payload?.override_unit_price   ?? null,
-          price_override_type:   payload?.price_override_type   ?? null,
-          price_override_reason: payload?.price_override_reason ?? null,
-          price_override_note:   payload?.price_override_note   ?? null,
-        }
-      )
-    );
-  };
-
+  // clearCart resets both cart and customer to a clean state after sale.
   const clearCart = () => {
-    setCart([]);
-    setCustomer(defaultCustomer);
+    storeClearCart();
+    storeSetCustomer(defaultCustomer);
   };
 
-  // ── Bulk cart actions ────────────────────────────────────
-  const applyCourtesy = React.useCallback((reason: string) => {
-    setCart((prev) => prev.map((l) => ({
-      ...l,
-      override_unit_price:   0,
-      price_override_type:   "courtesy",
-      price_override_reason: reason,
-      price_override_note:   null,
-    })));
-  }, []);
+  // ── Holds (aparcados) ────────────────────────────────────────────────────
+  const [holdsOpen, setHoldsOpen]     = React.useState(false);
+  const [holdsCount, setHoldsCount]   = React.useState(0);
+  const [parkLoading, setParkLoading] = React.useState(false);
+  const [parkError, setParkError]     = React.useState<string | null>(null);
 
-  const applyGlobalDiscount = React.useCallback((pct: number) => {
-    setCart((prev) => prev.map((l) => ({
-      ...l,
-      override_unit_price: Math.max(0,
-        Number(Big(l.unit_price).times(Big(100 - pct).div(100)).round(2, Big.roundHalfUp).toString())
-      ),
-      price_override_type:   "price_set",
-      price_override_reason: `Descuento ${pct}%`,
-      price_override_note:   null,
-    })));
-  }, []);
-
-  // ── Keyboard shortcuts ───────────────────────────────────
-  // Use refs to read current state inside a stable listener
-  const canCheckoutRef = React.useRef(false);
-  const checkoutOpenRef = React.useRef(false);
-  const cartRef = React.useRef<CartLine[]>([]);
-  canCheckoutRef.current = cart.length > 0 && customer != null &&
-    !(warehouseId != null && cart.some((l) => (l.track_inventory || (l.is_kit && l.kit_components.length > 0)) && l.quantity * l.base_qty > l.stock_base));
-  checkoutOpenRef.current = checkoutOpen;
-  cartRef.current = cart;
-
+  // Fetch hold count on mount so the badge is visible immediately
   React.useEffect(() => {
-    function handler(e: KeyboardEvent) {
-      const tag = (e.target as HTMLElement).tagName;
-      const inInput = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" ||
-                      (e.target as HTMLElement).contentEditable === "true";
+    getHeldCarts().then((holds) => setHoldsCount(holds.length));
+  }, []);
 
-      if (e.key === "F4") {
-        e.preventDefault();
-        searchInputRef.current?.focus();
-        searchInputRef.current?.select();
-        return;
-      }
-      if (e.key === "F8" && !inInput && canCheckoutRef.current && !checkoutOpenRef.current) {
-        e.preventDefault();
-        setCheckoutMode("normal");
-        setCheckoutOpen(true);
-        return;
-      }
-      if (e.key === "Delete" && !inInput) {
-        const last = cartRef.current[cartRef.current.length - 1];
-        if (last) setCart((prev) => prev.filter((l) => l.key !== last.key));
-      }
+  const handlePark = React.useCallback(async (note: string) => {
+    setParkLoading(true);
+    setParkError(null);
+    const err = await holdCart({
+      cart:        usePosStore.getState().cart,
+      customer:    usePosStore.getState().customer,
+      userName,
+      grossAmount: Number(calcTotals(usePosStore.getState().cart).gross),
+      note:        note || null,
+    });
+    setParkLoading(false);
+    if (err) {
+      setParkError(err);
+      return;
     }
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, []); // intentionally stable — reads via refs
+    setHoldsCount((n) => n + 1);
+    clearCart();
+  }, [userName]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Totals ───────────────────────────────────────────────
+  const handleResumed = React.useCallback(
+    (resumedCart: import("@/lib/domain/pos-math").CartLine[], resumedCustomer: import("@/actions/customers").PickedCustomer | null) => {
+      storeReplaceCart(resumedCart, resumedCustomer);
+      setHoldsCount((n) => Math.max(0, n - 1));
+    },
+    [storeReplaceCart]
+  );
+
+  // Stable callback for the presentation picker — passed to memoized ProductCard.
+  const handlePickFraction = React.useCallback(
+    (product: PosProduct) => setPickingProduct(product),
+    []
+  );
+
+  // Precompute per-product cart quantities once, avoiding an O(products × cart)
+  // scan inside the render loop.  Re-runs only when cart changes.
+  const cartSummaryByProductId = React.useMemo(() => {
+    const m = new Map<string, { totalInCart: number; baseInCart: number }>();
+    for (const line of cart) {
+      if (!line.product_id) continue;
+      const prev = m.get(line.product_id) ?? { totalInCart: 0, baseInCart: 0 };
+      m.set(line.product_id, {
+        totalInCart: prev.totalInCart + line.quantity,
+        baseInCart:  prev.baseInCart  + line.quantity * line.base_qty,
+      });
+    }
+    return m;
+  }, [cart]);
+
+  // Precompute which product IDs have a flash animation in progress.
+  const flashProductIds = React.useMemo(() => {
+    const ids = new Set<string>();
+    for (const line of cart) {
+      if (line.product_id && flashKeys.has(line.key)) ids.add(line.product_id);
+    }
+    return ids;
+  }, [cart, flashKeys]);
+
+  // ── Totals (computed before hooks so canCheckout is available) ─────────────
   const totals = React.useMemo(() => calcTotals(cart), [cart]);
 
   const hasStockIssue = React.useMemo(() =>
@@ -396,22 +301,37 @@ export function PosTerminal({
     [cart, warehouseId]
   );
 
-  // Líneas vendidas por debajo del CPP (solo productos con costo > 0)
-  const hasBelowCostItems = React.useMemo(() =>
-    cart.some((l) => {
-      if (l.average_cost <= 0 || l.is_kit) return false;
-      const gross   = effectivePrice(l);
-      const netLine = l.has_tax && l.tax_rate > 0
-        ? gross / (1 + l.tax_rate / 100)
-        : gross;
-      // Scale by base_qty: a galón (base_qty=0.2) of a $15/caneca product
-      // costs $3/galón — compare net price per presentation, not per base unit.
-      return netLine < l.average_cost * l.base_qty;
-    }),
-    [cart]
-  );
+  const hasBelowCostItems = React.useMemo(() => cart.some(isBelowCost), [cart]);
 
   const canCheckout = cart.length > 0 && customer != null && !hasStockIssue;
+
+  // ── Keyboard shortcuts ───────────────────────────────────
+  usePosKeyboard({
+    searchInputRef,
+    canCheckout,
+    checkoutOpen,
+    onOpenCheckout: React.useCallback(() => {
+      setCheckoutMode("normal");
+      setCheckoutOpen(true);
+    }, []),
+    onDeleteLast: React.useCallback(() => {
+      const { cart: cartNow, removeFromCart } = usePosStore.getState();
+      const last = cartNow[cartNow.length - 1];
+      if (last) removeFromCart(last.key);
+    }, []),
+  });
+
+  // ── Barcode scanner ──────────────────────────────────────
+  // Fires when the scanner is used while no input element has focus.
+  // When the search input IS focused, the input's own onKeyDown handles it.
+  useBarcodeScannerInput({
+    isActive: !mobileCartOpen && !checkoutOpen && !manualItemOpen && !pickingProduct,
+    onScan: React.useCallback((code: string) => {
+      const product = products.find((p) => p.sku === code);
+      if (!product) return;
+      addToCart(product, product.presentations.find((p) => p.is_default) ?? null);
+    }, [products, addToCart]),
+  });
 
   const openCheckout = (mode: "normal" | "credit") => {
     setCheckoutMode(mode);
@@ -424,7 +344,7 @@ export function PosTerminal({
       {/* ── Header ────────────────────────────────────────── */}
       <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:gap-3">
         <div className="flex-1 min-w-0">
-          <CustomerPicker selected={customer} onSelect={setCustomer} />
+          <CustomerPicker selected={customer} onSelect={storeSetCustomer} />
         </div>
 
         {warehouses.length > 1 ? (
@@ -465,6 +385,20 @@ export function PosTerminal({
           </span>
         </Link>
 
+        {holdsCount > 0 ? (
+          <button
+            type="button"
+            onClick={() => setHoldsOpen(true)}
+            className="hidden shrink-0 items-center gap-1.5 rounded-sm border border-signal-600/40 bg-signal-700/10 px-2.5 py-1.5 transition-colors hover:bg-signal-700/20 sm:flex"
+            title="Ver ventas aparcadas"
+          >
+            <PauseCircleIcon className="h-3.5 w-3.5 text-signal-400" />
+            <span className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-signal-400">
+              Aparcados ({holdsCount})
+            </span>
+          </button>
+        ) : null}
+
         <div className="hidden shrink-0 items-center gap-1.5 rounded-sm border border-steel-700 bg-steel-900/50 px-2.5 py-1.5 sm:flex">
           <UserIcon className="h-3.5 w-3.5 text-muted-foreground/70" />
           <span className="max-w-[100px] truncate font-mono text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
@@ -494,7 +428,36 @@ export function PosTerminal({
                 ref={searchInputRef}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Buscar producto (F4)..."
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter") return;
+                  // Read the live DOM value — React state may lag behind a fast
+                  // scanner that fills the input before React processes events.
+                  const q = (e.currentTarget as HTMLInputElement).value.trim();
+                  if (!q) return;
+
+                  // Priority 1: exact case-insensitive SKU match
+                  const bySku = products.find(
+                    (p) => p.sku.toLowerCase() === q.toLowerCase()
+                  );
+                  if (bySku) {
+                    e.preventDefault();
+                    addToCart(bySku, bySku.presentations.find((p) => p.is_default) ?? null);
+                    setSearchQuery("");
+                    return;
+                  }
+
+                  // Priority 2: single unambiguous text result
+                  const ql   = q.toLowerCase();
+                  const hits = products.filter(
+                    (p) => p.name.toLowerCase().includes(ql) || p.sku.toLowerCase().includes(ql)
+                  );
+                  if (hits.length === 1) {
+                    e.preventDefault();
+                    addToCart(hits[0]!, hits[0]!.presentations.find((p) => p.is_default) ?? null);
+                    setSearchQuery("");
+                  }
+                }}
+                placeholder="Buscar producto (F4) · Enter para añadir..."
                 className="h-11 pl-10"
                 autoComplete="off"
               />
@@ -528,109 +491,18 @@ export function PosTerminal({
           ) : (
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
               {pageProducts.map((product) => {
-                const defaultPres = product.presentations.find((p) => p.is_default) ?? null;
-                const cartLines   = cart.filter((l) => l.product_id === product.id);
-                const totalInCart = cartLines.reduce((s, l) => s + l.quantity, 0);
-                const baseInCart  = cartLines.reduce((s, l) => s + l.quantity * l.base_qty, 0);
-                const isConfiguredKit = product.is_kit && product.kit_components.length > 0;
-                const noStock     = warehouseId != null && (product.track_inventory || isConfiguredKit) && product.stock - baseInCart <= 0;
-                const noPrice     = product.price === 0 && !product.presentations.some((p) => p.unit_price);
-                const isFlashing  = cartLines.some((l) => flashKeys.has(l.key));
-
-                // Card is a <div role="button"> (not <button>) so we can nest the
-                // secondary "Fracción" <button> inside it — valid HTML, no hydration error.
-                const hasFractions = product.presentations.length >= 1;
-
+                const summary = cartSummaryByProductId.get(product.id) ?? { totalInCart: 0, baseInCart: 0 };
                 return (
-                  <div
+                  <ProductCard
                     key={product.id}
-                    role="button"
-                    tabIndex={noStock ? -1 : 0}
-                    onClick={() => !noStock && addToCart(product, defaultPres)}
-                    onKeyDown={(e) => {
-                      if (!noStock && (e.key === "Enter" || e.key === " ")) {
-                        e.preventDefault();
-                        addToCart(product, defaultPres);
-                      }
-                    }}
-                    className={[
-                      "group relative flex min-h-[96px] select-none flex-col rounded-sm border-2 p-3 text-left transition-all duration-150",
-                      noStock
-                        ? "cursor-not-allowed border-steel-800 bg-steel-900/20 opacity-50"
-                        : isFlashing
-                          ? "scale-[0.97] border-safety-500 bg-safety-500/10 cursor-pointer"
-                          : totalInCart > 0
-                            ? "cursor-pointer border-safety-500/40 bg-safety-500/5 hover:border-safety-500/70 hover:bg-safety-500/10"
-                            : "cursor-pointer border-steel-700 bg-steel-900 hover:border-safety-500/50 hover:bg-steel-800 active:scale-[0.97]",
-                    ].join(" ")}
-                  >
-                    {/* Cart badge */}
-                    {totalInCart > 0 ? (
-                      <span className="absolute right-2 top-2 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-safety-500 px-1 font-mono text-[10px] font-bold tabular-nums text-steel-950">
-                        {totalInCart}
-                      </span>
-                    ) : null}
-
-                    <div className="flex-1 space-y-0.5 pr-6">
-                      <div className="line-clamp-2 text-[13px] font-semibold leading-tight text-foreground">
-                        {product.name}
-                      </div>
-                      <div className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground/60">
-                        <span>{product.sku}</span>
-                        {product.is_kit ? (
-                          <span className="rounded-sm border border-sky-600/50 bg-sky-700/15 px-1 py-px font-mono text-[8px] font-bold uppercase tracking-[0.06em] text-sky-400">
-                            {product.product_kind === "bundle" ? "BUNDLE" : "KIT"}
-                          </span>
-                        ) : null}
-                      </div>
-                    </div>
-
-                    <div className="mt-2 flex items-end justify-between gap-1">
-                      <span
-                        className={
-                          "font-display text-[17px] leading-none tabular-nums " +
-                          (noPrice ? "text-muted-foreground/50" : "text-safety-500")
-                        }
-                      >
-                        {noPrice ? "—" : moneyFmt.format(defaultPres?.unit_price ?? product.price)}
-                      </span>
-                      {product.is_kit && product.kit_components.length === 0 ? (
-                        <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-amber-500/70">
-                          Sin configurar
-                        </span>
-                      ) : (product.track_inventory || (isConfiguredKit && warehouseId != null)) ? (
-                        <span
-                          className={
-                            "font-mono text-[10px] uppercase tracking-[0.08em] " +
-                            (noStock
-                              ? "font-bold text-red-400"
-                              : product.stock <= 3 * (defaultPres?.base_qty ?? 1)
-                                ? "text-safety-500/80"
-                                : "text-muted-foreground/50")
-                          }
-                        >
-                          {noStock
-                            ? "Sin stock"
-                            : `${stockForPresentation(product.stock, defaultPres?.base_qty ?? 1)} disp.`}
-                        </span>
-                      ) : null}
-                    </div>
-
-                    {/* Secondary action: pick a fraction. Valid here because the card
-                        is a <div role="button">, not a <button>. stopPropagation
-                        prevents triggering the card's own click (add default). */}
-                    {hasFractions ? (
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); setPickingProduct(product); }}
-                        onKeyDown={(e) => e.stopPropagation()}
-                        className="mt-2 flex w-full items-center justify-center gap-1 rounded-sm border border-steel-600/40 bg-steel-800/30 py-1 font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-muted-foreground/40 transition-colors hover:border-safety-500/40 hover:bg-safety-500/5 hover:text-safety-500/70"
-                      >
-                        <LayersIcon className="h-2.5 w-2.5" />
-                        Fracción
-                      </button>
-                    ) : null}
-                  </div>
+                    product={product}
+                    warehouseId={warehouseId}
+                    totalInCart={summary.totalInCart}
+                    baseInCart={summary.baseInCart}
+                    isFlashing={flashProductIds.has(product.id)}
+                    onAdd={addToCart}
+                    onPickFraction={handlePickFraction}
+                  />
                 );
               })}
             </div>
@@ -662,14 +534,17 @@ export function PosTerminal({
             hasStockIssue={hasStockIssue}
             hasBelowCostItems={hasBelowCostItems}
             canCheckout={canCheckout}
-            onSetQty={setQty}
-            onRemove={removeFromCart}
-            onOverride={applyOverride}
+            onSetQty={storeSetQty}
+            onRemove={storeRemoveLine}
+            onOverride={storeApplyOverride}
             onClear={clearCart}
             onCheckout={() => openCheckout("normal")}
-            onCourtesy={applyCourtesy}
-            onGlobalDiscount={applyGlobalDiscount}
+            onCourtesy={storeApplyCourtesy}
+            onGlobalDiscount={storeApplyDiscount}
             onFiado={() => openCheckout("credit")}
+            onPark={handlePark}
+            parkLoading={parkLoading}
+            parkError={parkError}
             productNameById={productNameById}
           />
         </div>
@@ -707,14 +582,17 @@ export function PosTerminal({
             hasStockIssue={hasStockIssue}
             hasBelowCostItems={hasBelowCostItems}
             canCheckout={canCheckout}
-            onSetQty={setQty}
-            onRemove={removeFromCart}
-            onOverride={applyOverride}
+            onSetQty={storeSetQty}
+            onRemove={storeRemoveLine}
+            onOverride={storeApplyOverride}
             onClear={clearCart}
             onCheckout={() => { setMobileCartOpen(false); setTimeout(() => openCheckout("normal"), 200); }}
-            onCourtesy={applyCourtesy}
-            onGlobalDiscount={applyGlobalDiscount}
+            onCourtesy={storeApplyCourtesy}
+            onGlobalDiscount={storeApplyDiscount}
             onFiado={() => { setMobileCartOpen(false); setTimeout(() => openCheckout("credit"), 200); }}
+            onPark={handlePark}
+            parkLoading={parkLoading}
+            parkError={parkError}
             productNameById={productNameById}
           />
         </div>
@@ -764,6 +642,13 @@ export function PosTerminal({
         onAdd={addManualToCart}
       />
 
+      <HoldsPanel
+        open={holdsOpen}
+        currentCartHasItems={cart.length > 0}
+        onClose={() => setHoldsOpen(false)}
+        onResumed={handleResumed}
+      />
+
       {/* Presentation picker — opens when clicking a product that has presentations */}
       {pickingProduct ? (
         <PresentationPickerDialog
@@ -778,160 +663,126 @@ export function PosTerminal({
   );
 }
 
-// ── ExchangeBanner ────────────────────────────────────────────────────────
-// Shown at the top of the POS when opened with exchange_return_id params.
+// ── ProductCard ────────────────────────────────────────────────────────────
+// Memoized so only the card(s) whose cart-dependent props actually changed
+// re-render when the cart updates.  Default comparison is sufficient because:
+//   product        — stable server-prop reference
+//   totalInCart/baseInCart/isFlashing — primitives, change only for the
+//                                       affected product
+//   onAdd/onPickFraction — stable useCallback refs
 
-function ExchangeBanner({ credit }: { credit: number }) {
-  const fmt = new Intl.NumberFormat("es-EC", {
-    style: "currency", currency: "USD", minimumFractionDigits: 2,
-  });
-  return (
-    <div className="flex items-center gap-3 rounded-sm border-2 border-safety-500/40 bg-safety-500/5 px-4 py-3">
-      <ExchangeIcon className="h-5 w-5 shrink-0 text-safety-500" />
-      <div className="flex-1 min-w-0">
-        <p className="font-mono text-[11px] font-bold uppercase tracking-[0.12em] text-safety-500">
-          Cambio de producto
-        </p>
-        <p className="font-mono text-[10.5px] text-muted-foreground/80">
-          Crédito disponible:{" "}
-          <strong className="text-safety-500">{fmt.format(credit)}</strong>
-          {" "}— agrega los productos de reemplazo y el cajero calculará la diferencia.
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function ExchangeIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M8 3 4 7l4 4" />
-      <path d="M4 7h16" />
-      <path d="m16 21 4-4-4-4" />
-      <path d="M20 17H4" />
-    </svg>
-  );
-}
-
-// ── PresentationPickerDialog ───────────────────────────────────────────────
-// Opens when the user taps a product card that has presentations configured.
-// Lives OUTSIDE the product <button>, so there are no nested interactive elements.
-
-const numFmtPres = new Intl.NumberFormat("es-EC", {
-  minimumFractionDigits: 0,
-  maximumFractionDigits: 4,
-});
-
-function PresentationPickerDialog({
+const ProductCard = React.memo(function ProductCard({
   product,
   warehouseId,
-  cart,
-  onPick,
-  onClose,
+  totalInCart,
+  baseInCart,
+  isFlashing,
+  onAdd,
+  onPickFraction,
 }: {
-  product:     PosProduct;
-  warehouseId: string | null;
-  cart:        CartLine[];
-  onPick:      (product: PosProduct, pres: PosPresentation) => void;
-  onClose:     () => void;
+  product:        PosProduct;
+  warehouseId:    string | null;
+  totalInCart:    number;
+  baseInCart:     number;
+  isFlashing:     boolean;
+  onAdd:          (product: PosProduct, pres: PosPresentation | null) => void;
+  onPickFraction: (product: PosProduct) => void;
 }) {
+  const defaultPres     = product.presentations.find((p) => p.is_default) ?? null;
+  const isConfiguredKit = product.is_kit && product.kit_components.length > 0;
+  const noStock         = warehouseId != null && (product.track_inventory || isConfiguredKit) && product.stock - baseInCart <= 0;
+  const noPrice         = product.price === 0 && !product.presentations.some((p) => p.unit_price);
+  // Card is a <div role="button"> (not <button>) so we can nest the
+  // secondary "Fracción" <button> inside it — valid HTML, no hydration error.
+  const hasFractions    = product.presentations.length >= 1;
+
   return (
-    <Dialog
-      open
-      onClose={onClose}
-      title={product.name}
-      description={`SKU ${product.sku} · Selecciona la presentación a vender`}
-      className="max-w-[460px]"
+    <div
+      role="button"
+      tabIndex={noStock ? -1 : 0}
+      onClick={() => !noStock && onAdd(product, defaultPres)}
+      onKeyDown={(e) => {
+        if (!noStock && (e.key === "Enter" || e.key === " ")) {
+          e.preventDefault();
+          onAdd(product, defaultPres);
+        }
+      }}
+      className={[
+        "group relative flex min-h-[96px] select-none flex-col rounded-sm border-2 p-3 text-left transition-all duration-150",
+        noStock
+          ? "cursor-not-allowed border-steel-800 bg-steel-900/20 opacity-50"
+          : isFlashing
+            ? "scale-[0.97] border-safety-500 bg-safety-500/10 cursor-pointer"
+            : totalInCart > 0
+              ? "cursor-pointer border-safety-500/40 bg-safety-500/5 hover:border-safety-500/70 hover:bg-safety-500/10"
+              : "cursor-pointer border-steel-700 bg-steel-900 hover:border-safety-500/50 hover:bg-steel-800 active:scale-[0.97]",
+      ].join(" ")}
     >
-      <div className="space-y-2 px-6 pb-6 pt-4">
-        {product.presentations.map((pres) => {
-          const presStock   = stockForPresentation(product.stock, pres.base_qty);
-          const presNoStock = warehouseId != null && product.track_inventory && presStock <= 0;
-          const presPrice   = pres.unit_price ?? product.price;
-          const inCart      = cart.find(
-            (l) => l.product_id === product.id && l.presentation_id === pres.id
-          );
+      {totalInCart > 0 ? (
+        <span className="absolute right-2 top-2 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-safety-500 px-1 font-mono text-[10px] font-bold tabular-nums text-steel-950">
+          {totalInCart}
+        </span>
+      ) : null}
 
-          return (
-            <button
-              key={pres.id}
-              type="button"
-              disabled={presNoStock}
-              onClick={() => { onPick(product, pres); onClose(); }}
-              className={[
-                "flex w-full items-center justify-between rounded-sm border-2 px-5 py-4 text-left transition-all active:scale-[0.99]",
-                presNoStock
-                  ? "cursor-not-allowed border-steel-800 opacity-40"
-                  : inCart
-                    ? "border-safety-500 bg-safety-500/8"
-                    : "border-steel-700 bg-steel-800/40 hover:border-safety-500/60 hover:bg-safety-500/5",
-              ].join(" ")}
-            >
-              {/* Left: label + equivalence */}
-              <div className="min-w-0">
-                <p className={[
-                  "text-[17px] font-bold leading-tight",
-                  inCart ? "text-safety-400" : "text-foreground",
-                ].join(" ")}>
-                  {pres.unit_label}
-                  {pres.is_default ? (
-                    <span className="ml-2 font-mono text-[9px] font-normal uppercase tracking-[0.1em] text-muted-foreground/40">
-                      predeterminada
-                    </span>
-                  ) : null}
-                </p>
-                <p className="mt-0.5 font-mono text-[10px] text-muted-foreground/50">
-                  = {numFmtPres.format(pres.base_qty)} {product.unit} del inventario
-                </p>
-                {inCart ? (
-                  <p className="mt-0.5 font-mono text-[9.5px] text-safety-500/70">
-                    {inCart.quantity} en carrito → toca para sumar 1 más
-                  </p>
-                ) : null}
-              </div>
+      <div className="flex-1 space-y-0.5 pr-6">
+        <div className="line-clamp-2 text-[13px] font-semibold leading-tight text-foreground">
+          {product.name}
+        </div>
+        <div className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground/60">
+          <span>{product.sku}</span>
+          {product.is_kit ? (
+            <span className="rounded-sm border border-sky-600/50 bg-sky-700/15 px-1 py-px font-mono text-[8px] font-bold uppercase tracking-[0.06em] text-sky-400">
+              {product.product_kind === "bundle" ? "BUNDLE" : "KIT"}
+            </span>
+          ) : null}
+        </div>
+      </div>
 
-              {/* Right: stock + price */}
-              <div className="flex shrink-0 items-center gap-5 pl-4">
-                {product.track_inventory ? (
-                  <div className="text-right">
-                    <p className={[
-                      "font-mono text-[15px] font-bold tabular-nums",
-                      presNoStock   ? "text-red-400"
-                      : presStock <= 3 ? "text-signal-400"
-                      : "text-muted-foreground/60",
-                    ].join(" ")}>
-                      {presNoStock ? "0" : presStock}
-                    </p>
-                    <p className="font-mono text-[8.5px] text-muted-foreground/35">disp.</p>
-                  </div>
-                ) : null}
-                <div className="text-right">
-                  <p className={[
-                    "font-display text-[22px] leading-none tabular-nums",
-                    inCart ? "text-safety-400" : "text-safety-500",
-                  ].join(" ")}>
-                    {moneyFmt.format(presPrice)}
-                  </p>
-                  <p className="mt-0.5 font-mono text-[8.5px] text-muted-foreground/35">
-                    precio sugerido
-                  </p>
-                </div>
-              </div>
-            </button>
-          );
-        })}
+      <div className="mt-2 flex items-end justify-between gap-1">
+        <span
+          className={
+            "font-display text-[17px] leading-none tabular-nums " +
+            (noPrice ? "text-muted-foreground/50" : "text-safety-500")
+          }
+        >
+          {noPrice ? "—" : moneyFmt.format(defaultPres?.unit_price ?? product.price)}
+        </span>
+        {product.is_kit && product.kit_components.length === 0 ? (
+          <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-amber-500/70">
+            Sin configurar
+          </span>
+        ) : (product.track_inventory || (isConfiguredKit && warehouseId != null)) ? (
+          <span
+            className={
+              "font-mono text-[10px] uppercase tracking-[0.08em] " +
+              (noStock
+                ? "font-bold text-red-400"
+                : product.stock <= 3 * (defaultPres?.base_qty ?? 1)
+                  ? "text-safety-500/80"
+                  : "text-muted-foreground/50")
+            }
+          >
+            {noStock
+              ? "Sin stock"
+              : `${stockForPresentation(product.stock, defaultPres?.base_qty ?? 1)} disp.`}
+          </span>
+        ) : null}
+      </div>
 
+      {hasFractions ? (
         <button
           type="button"
-          onClick={onClose}
-          className="mt-1 w-full rounded-sm border border-steel-700/60 py-2.5 font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground/50 transition-colors hover:border-steel-600 hover:text-muted-foreground/80"
+          onClick={(e) => { e.stopPropagation(); onPickFraction(product); }}
+          onKeyDown={(e) => e.stopPropagation()}
+          className="mt-2 flex w-full items-center justify-center gap-1 rounded-sm border border-steel-600/40 bg-steel-800/30 py-1 font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-muted-foreground/40 transition-colors hover:border-safety-500/40 hover:bg-safety-500/5 hover:text-safety-500/70"
         >
-          Cancelar
+          <LayersIcon className="h-2.5 w-2.5" />
+          Fracción
         </button>
-      </div>
-    </Dialog>
+      ) : null}
+    </div>
   );
-}
+});
 
 // ── CartPanel ──────────────────────────────────────────────────────────────
 
@@ -953,6 +804,9 @@ function CartPanel({
   onCourtesy,
   onGlobalDiscount,
   onFiado,
+  onPark,
+  parkLoading,
+  parkError,
   productNameById,
 }: {
   cart:               CartLine[];
@@ -970,12 +824,17 @@ function CartPanel({
   onCourtesy:       (reason: string) => void;
   onGlobalDiscount: (pct: number) => void;
   onFiado:          () => void;
+  /** Called with the optional note when the cashier confirms the park. */
+  onPark:           (note: string) => void;
+  parkLoading:      boolean;
+  parkError:        string | null;
   productNameById:  Map<string, string>;
 }) {
   const [editingKey, setEditingKey]     = React.useState<string | null>(null);
-  const [quickAction, setQuickAction]   = React.useState<QuickAction>(null);
+  const [quickAction, setQuickAction]   = React.useState<QuickAction | "park">(null);
   const [courtesyReason, setCourtesyReason] = React.useState("");
   const [discountPctStr, setDiscountPctStr] = React.useState("");
+  const [parkNoteLocal, setParkNoteLocal]   = React.useState("");
 
   const overrideCount = cart.filter((l) => l.override_unit_price != null).length;
 
@@ -998,6 +857,12 @@ function CartPanel({
     setQuickAction(null);
     setCourtesyReason("");
     setDiscountPctStr("");
+    setParkNoteLocal("");
+  }
+
+  function commitPark() {
+    onPark(parkNoteLocal.trim());
+    // don't reset yet — parent clears cart; if error, user can retry
   }
 
   return (
@@ -1052,191 +917,19 @@ function CartPanel({
           </div>
         ) : (
           <ul className="divide-y divide-steel-800/50">
-            {cart.map((line) => {
-              const gross      = Number(lineGross(line).round(2).toString());
-              const stockWarn  = (line.track_inventory || (line.is_kit && line.kit_components.length > 0)) && line.quantity * line.base_qty > line.stock_base;
-              const hasOverride = line.override_unit_price != null;
-              const isEditing  = editingKey === line.key;
-              const discountPct = hasOverride && line.unit_price > 0
-                ? (100 * (1 - (line.override_unit_price as number) / line.unit_price))
-                : 0;
-
-              return (
-                <li key={line.key} className="px-4 py-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5">
-                        <span className="truncate text-[12.5px] font-semibold leading-tight text-foreground">
-                          {line.name}
-                        </span>
-                        {line.product_id === null ? (
-                          <span className="shrink-0 rounded-sm border border-sky-700/50 bg-sky-900/20 px-1 py-0.5 font-mono text-[8px] font-bold uppercase tracking-[0.08em] text-sky-400/80">
-                            Manual
-                          </span>
-                        ) : null}
-                        {hasOverride ? (
-                          line.price_override_type === "combo" ? (
-                            <span className="shrink-0 rounded-sm border border-emerald-600/50 bg-emerald-700/15 px-1 py-0.5 font-mono text-[8.5px] font-bold uppercase tracking-[0.08em] text-emerald-400">
-                              COMBO
-                            </span>
-                          ) : line.price_override_type === "courtesy" ? (
-                            <span className="shrink-0 rounded-sm border border-safety-500/40 bg-safety-500/10 px-1 py-0.5 font-mono text-[8.5px] font-bold uppercase tracking-[0.08em] text-safety-500">
-                              CORT.
-                            </span>
-                          ) : (
-                            <span className="shrink-0 rounded-sm border border-signal-600/50 bg-signal-700/15 px-1 py-0.5 font-mono text-[8.5px] font-bold uppercase tracking-[0.08em] text-signal-400">
-                              −{discountPct.toFixed(0)}%
-                            </span>
-                          )
-                        ) : null}
-                      </div>
-
-                      <div className="mt-0.5 flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground/70">
-                        {hasOverride ? (
-                          <>
-                            <span className="line-through text-muted-foreground/40">
-                              {moneyFmt.format(line.unit_price)}
-                            </span>
-                            <span className="text-signal-400 font-semibold">
-                              {moneyFmt.format(line.override_unit_price as number)}
-                            </span>
-                          </>
-                        ) : (
-                          <span>{moneyFmt.format(line.unit_price)}</span>
-                        )}
-                        <span>/</span>
-                        <span>{line.unit_label}</span>
-                        {line.base_qty !== 1 ? (
-                          <span className="text-muted-foreground/50">({line.base_qty} u.b.)</span>
-                        ) : null}
-                      </div>
-
-                      {stockWarn ? (
-                        <div className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.08em] text-red-400">
-                          Stock insuficiente
-                        </div>
-                      ) : null}
-                    </div>
-                    <span className="shrink-0 font-mono text-[13px] font-bold tabular-nums text-foreground">
-                      {moneyFmt.format(gross)}
-                    </span>
-                  </div>
-
-                  {/* Kit/bundle component sub-items — visual only, no fiscal impact */}
-                  {line.is_kit && line.kit_components.length > 0 ? (
-                    <ul className="mt-1 space-y-px border-l-2 border-sky-700/40 pl-2">
-                      {[...line.kit_components]
-                        .sort((a, b) => a.sort_order - b.sort_order)
-                        .slice(0, 3)
-                        .map((c) => {
-                          const totalQty = c.quantity * c.base_qty;
-                          const display  = totalQty % 1 === 0 ? String(totalQty) : totalQty.toFixed(2);
-                          return (
-                            <li key={c.product_id} className="flex items-center justify-between gap-1.5 min-w-0">
-                              <span className="truncate font-mono text-[9px] leading-4 text-muted-foreground/55">
-                                {productNameById.get(c.product_id) ?? "—"}
-                              </span>
-                              <span className="shrink-0 font-mono text-[9px] tabular-nums text-muted-foreground/40">
-                                ×{display}
-                              </span>
-                            </li>
-                          );
-                        })}
-                      {line.kit_components.length > 3 ? (
-                        <li className="font-mono text-[9px] leading-4 text-muted-foreground/35">
-                          +{line.kit_components.length - 3} componente{line.kit_components.length - 3 !== 1 ? "s" : ""}
-                        </li>
-                      ) : null}
-                    </ul>
-                  ) : null}
-
-                  {/* Qty controls + override toggle + remove */}
-                  <div className="mt-2 flex items-center gap-1.5">
-                    <div className="flex overflow-hidden rounded-sm border border-steel-700">
-                      <button
-                        type="button"
-                        onClick={() => onSetQty(line.key, line.quantity - 1)}
-                        className="h-7 w-7 grid place-items-center font-bold text-muted-foreground transition-colors hover:bg-steel-800 hover:text-foreground"
-                        aria-label="Disminuir"
-                      >
-                        −
-                      </button>
-                      <span className="w-8 border-x border-steel-700/70 text-center font-mono text-[12px] font-bold tabular-nums text-foreground py-1">
-                        {line.quantity}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => onSetQty(line.key, line.quantity + 1)}
-                        className="h-7 w-7 grid place-items-center font-bold text-muted-foreground transition-colors hover:bg-steel-800 hover:text-foreground"
-                        aria-label="Aumentar"
-                      >
-                        +
-                      </button>
-                    </div>
-
-                    <div className="flex-1" />
-
-                    {permissions.canEditLinePrice ? (
-                      hasOverride ? (
-                        <button
-                          type="button"
-                          onClick={() => setEditingKey(isEditing ? null : line.key)}
-                          title="Editar ajuste de precio"
-                          className={[
-                            "flex h-7 items-center gap-1 rounded-sm border px-1.5 font-mono text-[9px] font-bold uppercase tracking-[0.08em] transition-colors",
-                            isEditing
-                              ? "border-signal-500 bg-signal-700/20 text-signal-400"
-                              : "border-signal-600/40 bg-signal-700/10 text-signal-400 hover:border-signal-500/60",
-                          ].join(" ")}
-                        >
-                          <PencilIcon className="h-2.5 w-2.5" />
-                          Ajustado
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => setEditingKey(isEditing ? null : line.key)}
-                          title="Ajustar precio"
-                          className={[
-                            "flex h-7 w-7 items-center justify-center rounded-sm border transition-colors",
-                            isEditing
-                              ? "border-safety-500/60 bg-safety-500/10 text-safety-500"
-                              : "border-steel-700 text-muted-foreground/50 hover:border-steel-600 hover:text-foreground",
-                          ].join(" ")}
-                        >
-                          <PencilIcon className="h-3 w-3" />
-                        </button>
-                      )
-                    ) : null}
-
-                    <button
-                      type="button"
-                      onClick={() => onRemove(line.key)}
-                      className="flex h-7 w-7 items-center justify-center rounded-sm text-muted-foreground/50 transition-colors hover:text-hazard-500"
-                      aria-label="Quitar"
-                    >
-                      <XSmallIcon className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-
-                  {/* Override editor */}
-                  {isEditing ? (
-                    <OverrideEditor
-                      line={line}
-                      onSave={(payload) => {
-                        onOverride(line.key, payload);
-                        setEditingKey(null);
-                      }}
-                      onClear={() => {
-                        onOverride(line.key, null);
-                        setEditingKey(null);
-                      }}
-                      onCancel={() => setEditingKey(null)}
-                    />
-                  ) : null}
-                </li>
-              );
-            })}
+            {cart.map((line) => (
+              <CartLineItem
+                key={line.key}
+                line={line}
+                isEditing={editingKey === line.key}
+                permissions={permissions}
+                productNameById={productNameById}
+                onSetQty={onSetQty}
+                onRemove={onRemove}
+                onOverride={onOverride}
+                onEditToggle={setEditingKey}
+              />
+            ))}
           </ul>
         )}
       </div>
@@ -1262,7 +955,7 @@ function CartPanel({
           {/* ── Quick actions ──────────────────────────────── */}
           <div className="space-y-2 rounded-sm border border-steel-700/60 bg-steel-900/40 p-2">
             {/* Pills row */}
-            <div className="grid grid-cols-3 gap-1.5">
+            <div className="grid grid-cols-4 gap-1.5">
               <QuickActionPill
                 label="Cortesía"
                 active={quickAction === "courtesy"}
@@ -1272,6 +965,11 @@ function CartPanel({
                 label="Dto. %"
                 active={quickAction === "discount"}
                 onClick={() => setQuickAction(quickAction === "discount" ? null : "discount")}
+              />
+              <QuickActionPill
+                label="Aparcar"
+                active={quickAction === "park"}
+                onClick={() => setQuickAction(quickAction === "park" ? null : "park")}
               />
               <QuickActionPill
                 label="Fiado ▶"
@@ -1330,7 +1028,7 @@ function CartPanel({
                   </div>
                   {discountPctStr && isFinite(parseFloat(discountPctStr)) ? (
                     <span className="shrink-0 font-mono text-[10px] text-signal-400">
-                      → {moneyFmt.format(Number(Big(totals.gross).times(Big(parseFloat(discountPctStr)).div(100)).round(2).toString()))} dto.
+                      → {moneyFmt.format(Number(totals.gross.times(parseFloat(discountPctStr)).div(100).round(2).toString()))} dto.
                     </span>
                   ) : null}
                 </div>
@@ -1342,6 +1040,39 @@ function CartPanel({
                     className="flex-1 h-7 rounded-sm border border-safety-500 bg-safety-500/10 font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-safety-500 disabled:cursor-not-allowed disabled:opacity-40 hover:bg-safety-500/20"
                   >
                     Aplicar a todos
+                  </button>
+                  <button type="button" onClick={cancelQuickAction}
+                    className="h-7 w-7 grid place-items-center rounded-sm border border-steel-700 text-muted-foreground hover:text-foreground">
+                    <XSmallIcon className="h-3 w-3" />
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            {/* Aparcar inline form */}
+            {quickAction === "park" ? (
+              <div className="space-y-1.5">
+                <input
+                  type="text"
+                  value={parkNoteLocal}
+                  onChange={(e) => setParkNoteLocal(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") commitPark(); if (e.key === "Escape") cancelQuickAction(); }}
+                  placeholder="Nota (opcional)"
+                  maxLength={200}
+                  autoFocus
+                  className="h-8 w-full rounded-sm border border-steel-700 bg-steel-900 px-2.5 font-mono text-[11px] text-foreground placeholder:text-muted-foreground/40 focus:border-signal-500 focus:outline-none"
+                />
+                {parkError ? (
+                  <p className="font-mono text-[10px] text-hazard-400">{parkError}</p>
+                ) : null}
+                <div className="flex gap-1.5">
+                  <button
+                    type="button"
+                    disabled={parkLoading}
+                    onClick={commitPark}
+                    className="flex-1 h-7 rounded-sm border border-signal-500 bg-signal-700/10 font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-signal-400 transition-colors hover:bg-signal-700/20 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {parkLoading ? "Aparcando..." : "Aparcar venta"}
                   </button>
                   <button type="button" onClick={cancelQuickAction}
                     className="h-7 w-7 grid place-items-center rounded-sm border border-steel-700 text-muted-foreground hover:text-foreground">
@@ -1380,210 +1111,17 @@ function CartPanel({
   );
 }
 
-// ── OverrideEditor ─────────────────────────────────────────────────────────
+// ── Icons ──────────────────────────────────────────────────────────────────
 
-function OverrideEditor({
-  line,
-  onSave,
-  onClear,
-  onCancel,
-}: {
-  line:     CartLine;
-  onSave:   (payload: OverridePayload) => void;
-  onClear:  () => void;
-  onCancel: () => void;
-}) {
-  const effective = line.override_unit_price ?? line.unit_price;
-  const [inputMode, setInputMode] = React.useState<"price" | "pct">("price");
-  const [priceStr, setPriceStr] = React.useState(effective.toFixed(2));
-  const [pctStr, setPctStr]     = React.useState(
-    line.override_unit_price != null && line.unit_price > 0
-      ? (100 * (1 - line.override_unit_price / line.unit_price)).toFixed(1)
-      : ""
-  );
-  const [type, setType]         = React.useState<string>(line.price_override_type ?? "price_set");
-  const [reason, setReason]     = React.useState<string>(
-    line.price_override_reason ??
-    PRICE_OVERRIDE_LABELS[(line.price_override_type ?? "price_set") as PriceOverrideType] ??
-    ""
-  );
-  const [note, setNote] = React.useState<string>(line.price_override_note ?? "");
-
-  const priceNum    = parseFloat(priceStr.replace(",", "."));
-  const pctNum      = parseFloat(pctStr.replace(",", "."));
-  const pctValid    = isFinite(pctNum) && pctNum >= 0 && pctNum <= 100;
-  const priceValid  = isFinite(priceNum) && priceNum >= 0;
-
-  // Computed price when in % mode
-  const effectivePriceNum = inputMode === "pct" && pctValid
-    ? Math.max(0, Number(Big(line.unit_price).times(Big(100 - pctNum).div(100)).round(2, Big.roundHalfUp).toString()))
-    : priceNum;
-  const effectivePriceValid = inputMode === "pct" ? pctValid : priceValid;
-  const canSave = effectivePriceValid && reason.trim().length > 0;
-
-  const discountPct =
-    effectivePriceValid && line.unit_price > 0 && effectivePriceNum < line.unit_price
-      ? (100 * (1 - effectivePriceNum / line.unit_price))
-      : null;
-
-  const handleTypeChange = (val: string) => {
-    setType(val);
-    const label = PRICE_OVERRIDE_LABELS[val as PriceOverrideType] ?? "";
-    if (!reason.trim() || OVERRIDE_OPTIONS.some((o) => o.label === reason)) {
-      setReason(label);
-    }
-  };
-
+function PauseCircleIcon({ className }: { className?: string }) {
   return (
-    <div className="mt-2.5 space-y-2 rounded-sm border border-steel-700/80 bg-steel-950/70 p-2.5">
-      {/* Mode toggle: Precio / % */}
-      <div className="flex overflow-hidden rounded-sm border border-steel-700">
-        {(["price", "pct"] as const).map((m) => (
-          <button
-            key={m} type="button"
-            onClick={() => setInputMode(m)}
-            className={[
-              "flex-1 py-1 font-mono text-[9.5px] font-bold uppercase tracking-[0.1em] transition-colors",
-              inputMode === m ? "bg-steel-700 text-foreground" : "text-muted-foreground/60 hover:text-muted-foreground",
-            ].join(" ")}
-          >
-            {m === "price" ? "Precio $" : "Descuento %"}
-          </button>
-        ))}
-      </div>
-
-      {/* Price input */}
-      <div className="space-y-0.5">
-        <label className="block font-mono text-[9.5px] uppercase tracking-[0.12em] text-muted-foreground/60">
-          {inputMode === "price" ? "Precio ajustado (USD)" : "Descuento (%)"}
-        </label>
-        {inputMode === "pct" ? (
-          <>
-            <div className="relative">
-              <input
-                type="number" min={0} max={100} step="any"
-                value={pctStr}
-                onChange={(e) => setPctStr(e.target.value)}
-                onFocus={(e) => e.target.select()}
-                autoFocus
-                className="h-8 w-full rounded-sm border border-steel-700 bg-steel-900 pr-8 pl-2.5 text-right font-mono text-[13px] tabular-nums text-foreground focus:border-safety-500 focus:outline-none"
-              />
-              <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 font-mono text-[11px] font-bold text-muted-foreground/60">%</span>
-            </div>
-            {pctValid && line.unit_price > 0 ? (
-              <p className="font-mono text-[10px] text-signal-400">
-                Precio resultante: {moneyFmt.format(effectivePriceNum)} (−{pctNum.toFixed(1)}%)
-              </p>
-            ) : null}
-          </>
-        ) : (
-          <>
-            <div className="relative">
-              <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 font-mono text-[10px] font-bold text-muted-foreground/60">$</span>
-              <input
-                type="number" min={0} step="any"
-                value={priceStr}
-                onChange={(e) => setPriceStr(e.target.value)}
-                onFocus={(e) => e.target.select()}
-                autoFocus
-                className="h-8 w-full rounded-sm border border-steel-700 bg-steel-900 pl-6 pr-2 text-right font-mono text-[13px] tabular-nums text-foreground focus:border-safety-500 focus:outline-none"
-              />
-            </div>
-            {discountPct !== null ? (
-              <p className="font-mono text-[10px] text-signal-400">
-                −{discountPct.toFixed(1)}% del precio de lista
-              </p>
-            ) : null}
-          </>
-        )}
-      </div>
-
-      {/* Type select */}
-      <div className="space-y-0.5">
-        <label className="block font-mono text-[9.5px] uppercase tracking-[0.12em] text-muted-foreground/60">
-          Categoría
-        </label>
-        <select
-          value={type}
-          onChange={(e) => handleTypeChange(e.target.value)}
-          className="h-8 w-full rounded-sm border border-steel-700 bg-steel-900 px-2 font-mono text-[11px] text-foreground focus:border-safety-500 focus:outline-none"
-        >
-          {OVERRIDE_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>{o.label}</option>
-          ))}
-        </select>
-      </div>
-
-      {/* Reason */}
-      <div className="space-y-0.5">
-        <label className="block font-mono text-[9.5px] uppercase tracking-[0.12em] text-muted-foreground/60">
-          Motivo <span className="text-red-400">*</span>
-        </label>
-        <input
-          type="text"
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-          maxLength={200}
-          placeholder="Descripción del ajuste..."
-          className="h-8 w-full rounded-sm border border-steel-700 bg-steel-900 px-2.5 font-mono text-[11px] text-foreground placeholder:text-muted-foreground/40 focus:border-safety-500 focus:outline-none"
-        />
-      </div>
-
-      {/* Note (optional) */}
-      <div className="space-y-0.5">
-        <label className="block font-mono text-[9.5px] uppercase tracking-[0.12em] text-muted-foreground/60">
-          Nota interna <span className="text-muted-foreground/40">(opcional)</span>
-        </label>
-        <textarea
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          maxLength={500}
-          rows={2}
-          placeholder="Para registros internos..."
-          className="w-full resize-none rounded-sm border border-steel-700 bg-steel-900 px-2.5 py-1.5 font-mono text-[11px] text-foreground placeholder:text-muted-foreground/40 focus:border-safety-500 focus:outline-none"
-        />
-      </div>
-
-      {/* Actions */}
-      <div className="flex gap-1.5">
-        <button
-          type="button"
-          onClick={() =>
-            canSave &&
-            onSave({
-              override_unit_price:   effectivePriceNum,
-              price_override_type:   type || null,
-              price_override_reason: reason.trim(),
-              price_override_note:   note.trim() || null,
-            })
-          }
-          disabled={!canSave}
-          className="flex-1 h-7 rounded-sm border border-safety-500 bg-safety-500/10 font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-safety-500 transition-colors hover:bg-safety-500/20 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          Guardar
-        </button>
-        {line.override_unit_price != null ? (
-          <button
-            type="button"
-            onClick={onClear}
-            className="flex-1 h-7 rounded-sm border border-hazard-500/40 font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground transition-colors hover:border-hazard-500/60 hover:text-hazard-500"
-          >
-            Quitar
-          </button>
-        ) : null}
-        <button
-          type="button"
-          onClick={onCancel}
-          className="flex-1 h-7 rounded-sm border border-steel-700 font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground transition-colors hover:border-steel-600 hover:text-foreground"
-        >
-          Cancelar
-        </button>
-      </div>
-    </div>
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <circle cx="12" cy="12" r="10" />
+      <rect x="9" y="8" width="2" height="8" rx="0.5" />
+      <rect x="13" y="8" width="2" height="8" rx="0.5" />
+    </svg>
   );
 }
-
-// ── Icons ──────────────────────────────────────────────────────────────────
 
 function LayersIcon({ className }: { className?: string }) {
   return (
@@ -1656,13 +1194,6 @@ function CashIcon({ className }: { className?: string }) {
   );
 }
 
-function PencilIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
-    </svg>
-  );
-}
 
 function CashRegisterIcon({ className }: { className?: string }) {
   return (
@@ -1700,131 +1231,3 @@ function QuickActionPill({
   );
 }
 
-function ManualItemModal({
-  open,
-  onClose,
-  onAdd,
-}: {
-  open:    boolean;
-  onClose: () => void;
-  onAdd:   (item: { name: string; unit_price: number; quantity: number; has_tax: boolean; average_cost: number }) => void;
-}) {
-  const [name, setName]               = React.useState("");
-  const [priceStr, setPriceStr]       = React.useState("");
-  const [qtyStr, setQtyStr]           = React.useState("1");
-  const [costStr, setCostStr]         = React.useState("");
-  const [hasTax, setHasTax]           = React.useState(true);
-
-  React.useEffect(() => {
-    if (open) {
-      setName("");
-      setPriceStr("");
-      setQtyStr("1");
-      setCostStr("");
-      setHasTax(true);
-    }
-  }, [open]);
-
-  const price = parseFloat(priceStr.replace(",", "."));
-  const qty   = parseFloat(qtyStr.replace(",", "."));
-  const cost  = costStr.trim() ? parseFloat(costStr.replace(",", ".")) : 0;
-  
-  const isValid = name.trim().length > 0 && isFinite(price) && price >= 0 && isFinite(qty) && qty > 0 && isFinite(cost) && cost >= 0;
-
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!isValid) return;
-    onAdd({
-      name:         name.trim(),
-      unit_price:   price,
-      quantity:     qty,
-      has_tax:      hasTax,
-      average_cost: cost,
-    });
-    onClose();
-  }
-
-  return (
-    <Sheet open={open} onClose={onClose} side="right" title="Agregar Ítem Manual" className="w-full max-w-sm">
-      <div className="p-5">
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          <div className="space-y-1">
-            <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground/80">Descripción *</label>
-            <Input
-              autoFocus
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Ej: Filtro de aire especial..."
-              className="font-sans text-sm"
-              required
-            />
-          </div>
-
-          <div className="flex gap-3">
-            <div className="space-y-1 flex-1">
-              <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground/80">Cantidad *</label>
-              <Input
-                type="number"
-                step="0.01"
-                min="0.01"
-                value={qtyStr}
-                onChange={(e) => setQtyStr(e.target.value)}
-                className="font-mono text-sm"
-                required
-              />
-            </div>
-            <div className="space-y-1 flex-1">
-              <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground/80">PVP (con IVA) *</label>
-              <Input
-                type="number"
-                step="0.01"
-                min="0"
-                value={priceStr}
-                onChange={(e) => setPriceStr(e.target.value)}
-                placeholder="0.00"
-                className="font-mono text-sm"
-                required
-              />
-            </div>
-          </div>
-
-          <div className="flex gap-3 items-end">
-            <div className="space-y-1 flex-1">
-              <label className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground/80">Costo (Rentabilidad)</label>
-              <Input
-                type="number"
-                step="0.01"
-                min="0"
-                value={costStr}
-                onChange={(e) => setCostStr(e.target.value)}
-                placeholder="0.00 (Opcional)"
-                className="font-mono text-sm text-amber-500/80 focus:text-amber-500"
-              />
-            </div>
-            <div className="mb-2 flex items-center gap-2 flex-1 justify-center">
-              <input
-                type="checkbox"
-                id="manual-tax"
-                checked={hasTax}
-                onChange={(e) => setHasTax(e.target.checked)}
-                className="h-4 w-4 rounded border-steel-700 bg-steel-900 text-safety-500 focus:ring-safety-500 focus:ring-offset-steel-950"
-              />
-              <label htmlFor="manual-tax" className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground cursor-pointer select-none">
-                Grava IVA (15%)
-              </label>
-            </div>
-          </div>
-
-          <div className="mt-2 flex gap-2">
-            <Button type="button" variant="outline" onClick={onClose} className="flex-1">
-              Cancelar
-            </Button>
-            <Button type="submit" disabled={!isValid} className="flex-1 bg-safety-500 text-steel-950 hover:bg-safety-400">
-              Añadir
-            </Button>
-          </div>
-        </form>
-      </div>
-    </Sheet>
-  );
-}

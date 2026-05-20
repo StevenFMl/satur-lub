@@ -11,6 +11,11 @@ import { todayEC } from "@/lib/date-ec";
 type CostSource = "snapshot" | "cpp" | "last" | "zero";
 
 export type ProductProfitRow = {
+  /** Stable unique key per logical row: UUID for catalogued products,
+   *  "manual::<item_name>" for manual items.  Use this as the React key,
+   *  NOT product_id — multiple manual-item rows legitimately share the same
+   *  product_id value ("manual"). */
+  row_key:        string;
   product_id:     string;
   name:           string;
   sku:            string;
@@ -440,7 +445,7 @@ export function RentabilidadTable({
                         : 0;
                       const marginClamped = Math.min(100, Math.max(0, r.margin));
                       return (
-                        <tr key={r.product_id} className="border-b border-steel-800/50 transition-colors hover:bg-steel-900/40">
+                        <tr key={r.row_key} className="border-b border-steel-800/50 transition-colors hover:bg-steel-900/40">
                           <Td>
                             <div className="font-semibold text-[13px] text-foreground">{r.name}</div>
                             <div className="mt-0.5 flex flex-wrap items-center gap-1.5">

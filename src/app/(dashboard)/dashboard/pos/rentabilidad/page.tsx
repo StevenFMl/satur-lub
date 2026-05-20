@@ -167,6 +167,7 @@ export default async function RentabilidadPage({
 
   // ── Per-product aggregation ──────────────────────────────────────────────
   type ProdAcc = {
+    row_key:        string;   // mapKey — stable, unique per logical product/manual-item
     product_id:     string;
     name:           string;
     sku:            string;
@@ -238,6 +239,7 @@ export default async function RentabilidadPage({
       const mapKey   = pid ?? `manual::${itemName}`;
 
       const existing = prodMap.get(mapKey) ?? {
+        row_key:        mapKey,
         product_id:     pid ?? "manual",
         name:           itemName,
         sku:            pid ? (p?.sku ?? "—") : "MANUAL",
