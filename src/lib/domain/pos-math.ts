@@ -136,7 +136,7 @@ export function lineGross(line: CartLine): Big {
  * For taxable lines: net = gross / (1 + tax_rate/100).
  */
 export function lineNet(line: CartLine): Big {
-  const gross = lineGross(line);
+  const gross = lineGross(line).round(2, Big.roundHalfUp);
   if (!line.has_tax || line.tax_rate <= 0) return gross;
   return gross.div(Big(1).plus(Big(line.tax_rate).div(100)));
 }
@@ -242,7 +242,7 @@ export function applyPctDiscount(listPrice: number, pctOff: number): number {
  *   (both are per-presentation quantities, accounting for size).
  */
 export function isBelowCost(line: CartLine): boolean {
-  if (line.average_cost <= 0 || line.is_kit) return false;
+  if (line.average_cost <= 0) return false;
   if (line.quantity <= 0) return false;
 
   // Distribute the flat line discount across units before stripping IVA.

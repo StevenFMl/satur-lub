@@ -32,6 +32,7 @@ type CartItem = {
   average_cost: number;   // CPP o 0 si no aplica
   has_tax:      boolean;
   tax_rate:     number;
+  components?:  any[] | null;
 };
 
 type Props = {
@@ -125,6 +126,32 @@ export function CheckoutDialog({
 
   const hasBelowCost = belowCostItems.length > 0;
 
+  // Deterministic fingerprint of the cart items and purchase intention
+  const cartFingerprint = React.useMemo(() => {
+    const itemsStr = cart
+      .map((l) =>
+        `${l.product_id ?? "manual"}:${l.presentation_id ?? "base"}:${l.quantity}:${l.unit_price}:${l.discount_amount}:${l.override_unit_price ?? ""}`
+      )
+      .sort()
+      .join("|");
+    return `${customerId}:${warehouseId ?? "none"}:${mode}:${initialPayment}:${creditMethod}:${creditRef}:${dueDate}:${creditNotes}:${itemsStr}`;
+  }, [cart, customerId, warehouseId, mode, initialPayment, creditMethod, creditRef, dueDate, creditNotes]);
+
+  // Keep track of the last fingerprint to reset the key if purchase intention changes or dialog closes.
+  const lastFingerprintRef = React.useRef<string>("");
+
+  React.useEffect(() => {
+    if (open) {
+      if (lastFingerprintRef.current !== cartFingerprint) {
+        checkoutKeyRef.current = crypto.randomUUID();
+        lastFingerprintRef.current = cartFingerprint;
+      }
+    } else {
+      lastFingerprintRef.current = "";
+      checkoutKeyRef.current = null;
+    }
+  }, [open, cartFingerprint]);
+
   React.useEffect(() => {
     if (open) {
       setMode(initialMode ?? "normal"); setMethod("cash"); setCashReceived(""); setReference("");
@@ -134,11 +161,6 @@ export function CheckoutDialog({
       setDueDate(""); setCreditNotes("");
       setBelowCostAcknowledged(false);
       setExchangeRefundInCash(!!cashSessionId);
-      // Generate a fresh key only for a new checkout session (key is null
-      // after success or on first mount).  Retries reuse the same key.
-      if (!checkoutKeyRef.current) {
-        checkoutKeyRef.current = crypto.randomUUID();
-      }
     }
   }, [open, initialMode, cashSessionId]);
 
@@ -209,6 +231,7 @@ export function CheckoutDialog({
         price_override_type:   (l.price_override_type as PriceOverrideType | undefined) ?? undefined,
         price_override_reason: l.price_override_reason ?? undefined,
         price_override_note:   l.price_override_note   ?? undefined,
+        components:            l.components ?? undefined,
       })),
       document_kind: "ticket" as const,
       sale_date:     isHistorical ? saleDate : null,

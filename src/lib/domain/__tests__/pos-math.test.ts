@@ -257,6 +257,26 @@ describe("calcTotals", () => {
     expect(t.iva.toFixed(2)).toBe("3.90");
     expect(t.gross.minus(t.net).minus(t.iva).toFixed(2)).toBe("0.00");
   });
+
+  it("per-line rounding matches DB exactly for conflictive decimals (e.g. gross 11.5533 with 15% IVA)", () => {
+    // gross unrounded = 1.0503 * 11 = 11.5533.
+    // gross rounded = 11.55.
+    // DB net = ROUND(11.55 / 1.15, 2) = 10.04.
+    // DB IVA = 11.55 - 10.04 = 1.51.
+    const line = makeLine({
+      key: "conflictive",
+      has_tax: true,
+      tax_rate: 15,
+      unit_price: 11.00,
+      quantity: 1.0503,
+      discount_amount: 0,
+    });
+    const t = calcTotals([line]);
+    expect(t.gross.toFixed(2)).toBe("11.55");
+    expect(t.net.toFixed(2)).toBe("10.04"); // and not 10.05
+    expect(t.iva.toFixed(2)).toBe("1.51"); // and not 1.50
+    expect(t.gross.minus(t.net).minus(t.iva).toFixed(2)).toBe("0.00");
+  });
 });
 
 // ── resolvePresentation ────────────────────────────────────────────────────
@@ -372,9 +392,10 @@ describe("isBelowCost", () => {
     expect(isBelowCost(line)).toBe(false);
   });
 
-  it("is_kit=true → never below cost (kit cost is composite)", () => {
-    const line = makeLine({ is_kit: true, average_cost: 5.00, unit_price: 1.00 });
-    expect(isBelowCost(line)).toBe(false);
+  it("is_kit=true → checks cost correctly using consolidated average_cost", () => {
+    const line = makeLine({ is_kit: true, average_cost: 5.00, unit_price: 1.15, has_tax: true, tax_rate: 15 });
+    // net = 1.00, cost = 5.00 -> below cost!
+    expect(isBelowCost(line)).toBe(true);
   });
 
   it("selling above cost → false", () => {

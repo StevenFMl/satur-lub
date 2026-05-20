@@ -73,6 +73,23 @@ export async function createSaleAction(
 
   if (error) {
     console.error("createSaleAction RPC error:", error.message, error.code);
+    if (error.code === "23505" && idempotencyKey && idempotencyKey.trim() !== "") {
+      const { data: existingSale, error: fetchError } = await supabase
+        .from("sales")
+        .select("id")
+        .eq("tenant_id", membership.tenant_id)
+        .eq("idempotency_key", idempotencyKey)
+        .maybeSingle();
+
+      if (!fetchError && existingSale) {
+        revalidateTag("products");
+        revalidatePath("/dashboard/pos");
+        revalidatePath("/dashboard/pos/ventas");
+        revalidatePath("/dashboard/pos/caja");
+        revalidatePath("/dashboard/pos/auditoria");
+        return { ok: true, saleId: existingSale.id };
+      }
+    }
     const msg = error.message ?? "";
     if (
       msg.startsWith("Stock insuficiente") ||
@@ -86,7 +103,12 @@ export async function createSaleAction(
       msg.startsWith("Precio de ajuste") ||
       msg.startsWith("Se requiere una razón") ||
       msg.startsWith("Descuento máximo") ||
-      msg.startsWith("Sesión de caja")
+      msg.startsWith("Sesión de caja") ||
+      msg.startsWith("La sesión de caja") ||
+      msg.startsWith("El kit/bundle") ||
+      msg.startsWith("Pago inicial") ||
+      msg.startsWith("Método de pago") ||
+      msg.startsWith("El pago inicial")
     ) {
       return { error: msg };
     }

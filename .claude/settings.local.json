@@ -56,7 +56,9 @@
       "Bash(node -e \"const p = require\\('./package.json'\\); console.log\\('zustand:', p.dependencies?.zustand ?? p.devDependencies?.zustand ?? 'NOT INSTALLED'\\)\")",
       "Bash(node -e \"const p = require\\('./package.json'\\); console.log\\('next:', p.dependencies?.next\\); console.log\\('react:', p.dependencies?.react\\)\")",
       "Bash(node -e \"const p = require\\('./package.json'\\); console.log\\('zustand:', p.dependencies?.zustand\\)\")",
-      "Bash(node --input-type=module)"
+      "Bash(node --input-type=module)",
+      "Bash(Get-ChildItem -Path \"d:\\\\Saturlink\\\\satur-lub\\\\supabase\\\\migrations\" -Filter \"*.sql\")",
+      "Bash(Select-Object Name)"
     ]
   }
 }

@@ -156,6 +156,12 @@ export default async function PosPage({
     }
   }
 
+  // Pre-index product costs to resolve kit component cost without nested O(N^2) searches
+  const costMap = new Map<string, number>();
+  for (const p of rawProducts ?? []) {
+    costMap.set(p.id as string, Number((p as { average_cost?: number | null }).average_cost ?? 0));
+  }
+
   // ── Build PosProduct list ───────────────────────────────────
   const products: PosProduct[] = (rawProducts ?? []).map((p) => {
     const pid        = p.id as string;
@@ -176,6 +182,15 @@ export default async function PosPage({
       );
     }
 
+    // Kit composite cost = SUM( component.quantity × component.base_qty × component.average_cost )
+    let kitCost = 0;
+    if (isKit && components.length > 0) {
+      kitCost = components.reduce((sum, c) => {
+        const compCost = costMap.get(c.product_id) ?? 0;
+        return sum + (c.quantity * c.base_qty * compCost);
+      }, 0);
+    }
+
     return {
       id:              pid,
       name:            p.name as string,
@@ -190,7 +205,7 @@ export default async function PosPage({
       presentations:   presByProduct.get(pid) ?? [],
       is_kit:          isKit,
       kit_components:  components,
-      average_cost:    Number((p as { average_cost?: number | null }).average_cost ?? 0),
+      average_cost:    isKit ? kitCost : Number((p as { average_cost?: number | null }).average_cost ?? 0),
     };
   });
 
