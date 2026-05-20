@@ -231,15 +231,31 @@ describe("calcTotals", () => {
     expect(t.gross.minus(t.net).minus(t.iva).abs().lt(Big("0.01"))).toBe(true);
   });
 
-  it("gross − net − iva should be zero (rounding invariant) for large cart", () => {
+  it("gross − net − iva = 0.00 exactly for large cart (per-line rounding invariant)", () => {
     const lines = Array.from({ length: 10 }, (_, i) =>
       makeLine({ key: String(i), quantity: i + 1, unit_price: 1.11 * (i + 1), discount_amount: 0 })
     );
     const t = calcTotals(lines);
-    // Due to independent HALF_UP rounding on gross and net, iva is a derived value,
-    // so gross - net - iva should be within 1 cent.
-    const drift = t.gross.minus(t.net).minus(t.iva).abs();
-    expect(drift.lte(Big("0.01"))).toBe(true);
+    // iva = SUM(lGross_i − lNet_i) = SUM(lGross_i) − SUM(lNet_i) = gross − net.
+    // Therefore gross − net − iva is always exactly 0, not merely "within 1 cent".
+    expect(t.gross.minus(t.net).minus(t.iva).toFixed(2)).toBe("0.00");
+  });
+
+  it("per-line rounding matches DB: 3 × $10 at 15% IVA gives net=26.10 not 26.09", () => {
+    // Each line: net = ROUND(10.00 / 1.15, 2) = 8.70.
+    // Sum of rounded-per-line:  3 × 8.70 = 26.10.
+    // Sum-then-round (old bug):  ROUND(3 × 8.69565…, 2) = ROUND(26.08695…, 2) = 26.09.
+    // The DB applies row-level ROUND(), so 26.10 is the correct figure.
+    const lines = [
+      makeLine({ key: "a", has_tax: true, tax_rate: 15, unit_price: 10.00, quantity: 1, discount_amount: 0 }),
+      makeLine({ key: "b", has_tax: true, tax_rate: 15, unit_price: 10.00, quantity: 1, discount_amount: 0 }),
+      makeLine({ key: "c", has_tax: true, tax_rate: 15, unit_price: 10.00, quantity: 1, discount_amount: 0 }),
+    ];
+    const t = calcTotals(lines);
+    expect(t.gross.toFixed(2)).toBe("30.00");
+    expect(t.net.toFixed(2)).toBe("26.10");   // 3 × 8.70, not 26.09
+    expect(t.iva.toFixed(2)).toBe("3.90");
+    expect(t.gross.minus(t.net).minus(t.iva).toFixed(2)).toBe("0.00");
   });
 });
 

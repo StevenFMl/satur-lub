@@ -150,25 +150,31 @@ export function lineBaseUnits(line: CartLine): number {
 
 /**
  * Aggregate GROSS / NET / IVA for the whole cart.
- * All monetary results rounded to 2 decimals (HALF_UP).
+ *
+ * Rounding strategy: each line's gross and net are rounded to 2 decimals
+ * (HALF_UP) individually before being accumulated.  IVA for each line is
+ * derived as (rounded gross − rounded net) so the three totals satisfy
+ * gross − net − iva = 0 exactly, matching the row-level ROUND() the DB
+ * applies inside create_sale.  This eliminates the ±$0.01 discrepancy that
+ * arose from rounding the accumulated (unrounded) sums only at the end.
  */
 export function calcTotals(cart: CartLine[]): CartTotals {
   let gross = Big(0);
   let net   = Big(0);
+  let iva   = Big(0);
   let items = 0;
 
   for (const line of cart) {
-    gross = gross.plus(lineGross(line));
-    net   = net.plus(lineNet(line));
+    const lGross = lineGross(line).round(2, Big.roundHalfUp);
+    const lNet   = lineNet(line).round(2, Big.roundHalfUp);
+    gross = gross.plus(lGross);
+    net   = net.plus(lNet);
+    iva   = iva.plus(lGross.minus(lNet));
     items += line.quantity;
   }
 
-  return {
-    gross: gross.round(2, Big.roundHalfUp),
-    net:   net.round(2, Big.roundHalfUp),
-    iva:   gross.minus(net).round(2, Big.roundHalfUp),
-    items,
-  };
+  // No final round: sums of 2-decimal Big values are exact in decimal arithmetic.
+  return { gross, net, iva, items };
 }
 
 // ── Presentation helpers ───────────────────────────────────────────────────
@@ -237,8 +243,12 @@ export function applyPctDiscount(listPrice: number, pctOff: number): number {
  */
 export function isBelowCost(line: CartLine): boolean {
   if (line.average_cost <= 0 || line.is_kit) return false;
+  if (line.quantity <= 0) return false;
 
-  const grossUnit = Big(effectivePrice(line));
+  // Distribute the flat line discount across units before stripping IVA.
+  // grossUnit = (effectivePrice × qty − discount_amount) / qty
+  // lineGross() already computes the numerator exactly via Big.js.
+  const grossUnit = lineGross(line).div(Big(line.quantity));
   const netUnit   = line.has_tax && line.tax_rate > 0
     ? grossUnit.div(Big(1).plus(Big(line.tax_rate).div(100)))
     : grossUnit;

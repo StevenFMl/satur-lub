@@ -33,7 +33,8 @@ export async function createSaleAction(
   input: SaleInput,
   cashSessionId?: string | null,
   belowCostOverride?: boolean,
-  belowCostLossEstimated?: number
+  belowCostLossEstimated?: number,
+  idempotencyKey?: string | null,
 ): Promise<CreateSaleResult> {
   const { user, membership } = await getActiveMembership();
   if (!user || !membership) return { error: "Sesión expirada." };
@@ -61,8 +62,13 @@ export async function createSaleAction(
     p_initial_payment:        data.initial_payment ?? null,
     p_initial_payment_method: data.initial_payment_method ?? null,
     p_initial_payment_ref:    data.initial_payment_ref ?? null,
-    p_due_date:               data.due_date ?? null,
-    p_credit_notes:           data.credit_notes ?? null,
+    p_due_date:                      data.due_date ?? null,
+    p_credit_notes:                  data.credit_notes ?? null,
+    p_below_cost_override:           belowCostOverride ?? false,
+    p_below_cost_loss_estimated:     typeof belowCostLossEstimated === "number"
+                                       ? Number(belowCostLossEstimated.toFixed(2))
+                                       : null,
+    p_idempotency_key:               idempotencyKey ?? null,
   } as never);
 
   if (error) {
@@ -85,20 +91,6 @@ export async function createSaleAction(
       return { error: msg };
     }
     return { error: "No se pudo registrar la venta. Intenta de nuevo." };
-  }
-
-  // ── Below-cost audit flag ────────────────────────────────────────────────
-  // Post-RPC UPDATE: no modifica el RPC ni requiere parámetros nuevos en él.
-  if (belowCostOverride && saleId && typeof saleId === "string") {
-    await supabase
-      .from("sales")
-      .update({
-        below_cost_override:       true,
-        below_cost_loss_estimated: Number((belowCostLossEstimated ?? 0).toFixed(2)),
-      })
-      .eq("id", saleId)
-      .eq("tenant_id", membership.tenant_id);
-    // Non-fatal: if this UPDATE fails we still have the sale. Log but don't surface to user.
   }
 
   revalidateTag("products");

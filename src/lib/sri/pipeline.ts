@@ -31,6 +31,8 @@ export type PipelineInput = {
   accessKey:    string;
   xmlUnsigned:  string;
   environment:  "pruebas" | "produccion";
+  /** Tenant UUID — used to resolve the correct signing certificate. */
+  tenantId:     string;
 };
 
 export type PipelineOutput = {
@@ -64,10 +66,10 @@ function sleep(ms: number): Promise<void> {
 export async function runInvoicePipeline(
   input: PipelineInput
 ): Promise<PipelineOutput> {
-  const { xmlUnsigned, environment } = input;
+  const { xmlUnsigned, environment, tenantId } = input;
 
   // ── Phase 1: Sign ──────────────────────────────────────────────────────
-  const certResult = loadCertificate();
+  const certResult = await loadCertificate(tenantId);
   if (!certResult.ok) {
     return {
       ok: false, finalStatus: "draft",

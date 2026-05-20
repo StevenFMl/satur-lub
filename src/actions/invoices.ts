@@ -411,6 +411,7 @@ export async function processInvoiceAction(
     accessKey,
     xmlUnsigned,
     environment,
+    tenantId,
   });
 
   // ── Persist result to DB ──────────────────────────────────────────────

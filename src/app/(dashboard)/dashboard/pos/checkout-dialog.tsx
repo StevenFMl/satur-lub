@@ -78,6 +78,14 @@ export function CheckoutDialog({
   const [creditNotes, setCreditNotes]       = React.useState("");
 
   const [submitting, setSubmitting]           = React.useState(false);
+  // Synchronous guard against rapid double-clicks.  React state updates are
+  // async — setSubmitting(true) doesn't block a second click before the next
+  // render.  A ref is mutated immediately and prevents concurrent submissions.
+  const isSubmittingRef = React.useRef(false);
+  // Idempotency key for this checkout session.  Generated on first open and
+  // kept alive through retries.  Cleared after a successful commit so the
+  // next checkout gets a fresh key.
+  const checkoutKeyRef = React.useRef<string | null>(null);
   const [error, setError]                     = React.useState<string | null>(null);
   const [confirmed, setConfirmed]             = React.useState(false);
   const [saleId, setSaleId]                   = React.useState<string | null>(null);
@@ -121,11 +129,16 @@ export function CheckoutDialog({
     if (open) {
       setMode(initialMode ?? "normal"); setMethod("cash"); setCashReceived(""); setReference("");
       setSaleDate(today()); setIsHistorical(false); setError(null);
-      setConfirmed(false); setSaleId(null); setSubmitting(false);
+      setConfirmed(false); setSaleId(null); isSubmittingRef.current = false; setSubmitting(false);
       setInitialPayment(""); setCreditMethod("cash"); setCreditRef("");
       setDueDate(""); setCreditNotes("");
       setBelowCostAcknowledged(false);
       setExchangeRefundInCash(!!cashSessionId);
+      // Generate a fresh key only for a new checkout session (key is null
+      // after success or on first mount).  Retries reuse the same key.
+      if (!checkoutKeyRef.current) {
+        checkoutKeyRef.current = crypto.randomUUID();
+      }
     }
   }, [open, initialMode, cashSessionId]);
 
@@ -174,6 +187,8 @@ export function CheckoutDialog({
   }, [initialPaymentNum, amountDue, creditMethod]);
 
   const handleConfirm = async () => {
+    if (isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
     setSubmitting(true); setError(null);
 
     const basePayload = {
@@ -205,9 +220,10 @@ export function CheckoutDialog({
         { ...basePayload, payments: [], is_credit: false },
         cashSessionId,
         hasBelowCost && belowCostAcknowledged,
-        belowCostTotalLoss
+        belowCostTotalLoss,
+        checkoutKeyRef.current,
       );
-      setSubmitting(false);
+      isSubmittingRef.current = false; setSubmitting(false);
       if (result?.error) { setError(result.error); return; }
       const newSaleId = result?.saleId ?? null;
       if (exchangeReturnId && newSaleId) {
@@ -218,17 +234,18 @@ export function CheckoutDialog({
           cashSessionId
         );
       }
+      checkoutKeyRef.current = null;
       setSaleId(newSaleId);
       setConfirmed(true);
       return;
     }
 
     if (mode === "normal" && !cashValid) {
-      setSubmitting(false);
+      isSubmittingRef.current = false; setSubmitting(false);
       setError("El monto recibido es menor al total."); return;
     }
     if (mode === "credit" && !creditValid) {
-      setSubmitting(false);
+      isSubmittingRef.current = false; setSubmitting(false);
       setError("El pago inicial no puede superar el total de la venta."); return;
     }
 
@@ -243,14 +260,14 @@ export function CheckoutDialog({
           initial_payment_ref:    creditRef || null,
           due_date:               dueDate || null,
           credit_notes:           creditNotes || null,
-        }, cashSessionId, isBelowCost, belowCostTotalLoss)
+        }, cashSessionId, isBelowCost, belowCostTotalLoss, checkoutKeyRef.current)
       : await createSaleAction({
           ...basePayload,
-          payments: [{ method, amount: method === "cash" ? Math.max(cashReceivedNum, amountDue) : amountDue, reference: reference || undefined }],
+          payments: [{ method, amount: amountDue, reference: reference || undefined }],
           is_credit: false,
-        }, cashSessionId, isBelowCost, belowCostTotalLoss);
+        }, cashSessionId, isBelowCost, belowCostTotalLoss, checkoutKeyRef.current);
 
-    setSubmitting(false);
+    isSubmittingRef.current = false; setSubmitting(false);
     if (result?.error) { setError(result.error); return; }
     const newSaleId = result?.saleId ?? null;
     if (exchangeReturnId && newSaleId) {
@@ -260,6 +277,7 @@ export function CheckoutDialog({
         false, cashSessionId
       );
     }
+    checkoutKeyRef.current = null;
     setSaleId(newSaleId);
     setConfirmed(true);
   };
