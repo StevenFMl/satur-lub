@@ -35,6 +35,7 @@ export async function createSaleAction(
   belowCostOverride?: boolean,
   belowCostLossEstimated?: number,
   idempotencyKey?: string | null,
+  vehicleId?: string | null,
 ): Promise<CreateSaleResult> {
   const { user, membership } = await getActiveMembership();
   if (!user || !membership) return { error: "Sesión expirada." };
@@ -69,6 +70,7 @@ export async function createSaleAction(
                                        ? Number(belowCostLossEstimated.toFixed(2))
                                        : null,
     p_idempotency_key:               idempotencyKey ?? null,
+    p_vehicle_id:                    vehicleId ?? null,
   } as never);
 
   if (error) {

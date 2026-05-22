@@ -121,8 +121,8 @@ export default async function RentabilidadPage({
           sale_items ( id, product_id, item_name, quantity, base_qty, line_total, tax_rate, is_taxable, unit_cost )
         `)
         .eq("status", "confirmed")
-        .gte("created_at", `${from}T00:00:00`)
-        .lte("created_at", `${to}T23:59:59`)
+        .gte("sale_date", from)
+        .lte("sale_date", to)
         .order("created_at", { ascending: false })
         .limit(1000),
 

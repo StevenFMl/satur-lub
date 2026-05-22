@@ -33,6 +33,12 @@ import { usePosStore } from "@/lib/stores/pos-store";
 import { useShallow } from "zustand/react/shallow";
 import { holdCart, getHeldCarts } from "@/actions/holds";
 import { HoldsPanel } from "./holds-panel";
+import { QuickCustomerDialog } from "@/components/dashboard/quick-customer-dialog";
+import { QuickVehicleDialog } from "@/components/dashboard/quick-vehicle-dialog";
+import {
+  listVehiclesByCustomerAction,
+  type PickedVehicle,
+} from "@/actions/vehicles";
 
 // ── Local types (UI-only, not domain math) ─────────────────────────────────
 
@@ -87,9 +93,10 @@ export function PosTerminal({
   exchangeReturnId?: string | null;
   exchangeCredit?:   number;
 }) {
-  // ── Persistent store (cart + customer survive same-tab navigation) ────────
+  // ── Persistent store (cart + customer + vehicle survive same-tab navigation)
   const cart     = usePosStore((s) => s.cart);
   const customer = usePosStore((s) => s.customer);
+  const vehicle  = usePosStore((s) => s.vehicle);
   const {
     addToCart:           storeAddLine,
     removeFromCart:      storeRemoveLine,
@@ -100,6 +107,7 @@ export function PosTerminal({
     clearCart:           storeClearCart,
     replaceCart:         storeReplaceCart,
     setCustomer:         storeSetCustomer,
+    setVehicle:          storeSetVehicle,
   } = usePosStore(
     useShallow((s) => ({
       addToCart:           s.addToCart,
@@ -111,6 +119,7 @@ export function PosTerminal({
       clearCart:           s.clearCart,
       replaceCart:         s.replaceCart,
       setCustomer:         s.setCustomer,
+      setVehicle:          s.setVehicle,
     }))
   );
 
@@ -223,6 +232,38 @@ export function PosTerminal({
     storeClearCart();
     storeSetCustomer(defaultCustomer);
   };
+
+  // ── Quick customer creation ───────────────────────────────────────────────
+  const [quickCreateOpen, setQuickCreateOpen] = React.useState(false);
+
+  // ── Vehicle list + quick vehicle creation ─────────────────────────────────
+  const [vehicleList,     setVehicleList]     = React.useState<PickedVehicle[]>([]);
+  const [vehiclesLoading, setVehiclesLoading] = React.useState(false);
+  const [quickVehicleOpen, setQuickVehicleOpen] = React.useState(false);
+
+  // Reload vehicles when customer changes; clear vehicle on customer switch
+  // (store.setCustomer already clears vehicle for a different customer)
+  React.useEffect(() => {
+    const cid = customer?.id;
+    const isCF = customer?.document_type === "CONSUMIDOR_FINAL";
+    if (!cid || isCF) {
+      setVehicleList([]);
+      return;
+    }
+    let cancelled = false;
+    setVehiclesLoading(true);
+    listVehiclesByCustomerAction(cid).then((res) => {
+      if (cancelled) return;
+      setVehicleList(res.data);
+      setVehiclesLoading(false);
+      // If stored vehicle no longer belongs to new customer list, clear it
+      const stored = usePosStore.getState().vehicle;
+      if (stored && !res.data.find((v) => v.id === stored.id)) {
+        storeSetVehicle(null);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [customer?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Holds (aparcados) ────────────────────────────────────────────────────
   const [holdsOpen, setHoldsOpen]     = React.useState(false);
@@ -344,7 +385,11 @@ export function PosTerminal({
       {/* ── Header ────────────────────────────────────────── */}
       <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:gap-3">
         <div className="flex-1 min-w-0">
-          <CustomerPicker selected={customer} onSelect={storeSetCustomer} />
+          <CustomerPicker
+            selected={customer}
+            onSelect={storeSetCustomer}
+            onQuickCreate={() => setQuickCreateOpen(true)}
+          />
         </div>
 
         {warehouses.length > 1 ? (
@@ -406,6 +451,17 @@ export function PosTerminal({
           </span>
         </div>
       </div>
+
+      {/* ── Vehicle strip (real customers only) ──────────────── */}
+      {customer && customer.document_type !== "CONSUMIDOR_FINAL" ? (
+        <VehicleSelectorStrip
+          vehicles={vehicleList}
+          selected={vehicle}
+          loading={vehiclesLoading}
+          onSelect={storeSetVehicle}
+          onNewVehicle={() => setQuickVehicleOpen(true)}
+        />
+      ) : null}
 
       {warehouses.length > 0 && !warehouseId ? (
         <Alert tone="warning">Sin bodega — las ventas no descontarán inventario.</Alert>
@@ -629,6 +685,7 @@ export function PosTerminal({
           }))}
           totals={{ gross: Number(totals.gross), net: Number(totals.net), iva: Number(totals.iva) }}
           customerId={customer?.id ?? ""}
+          vehicleId={vehicle?.id ?? null}
           warehouseId={warehouseId}
           exchangeReturnId={exchangeReturnId ?? undefined}
           exchangeCredit={exchangeCredit}
@@ -659,6 +716,94 @@ export function PosTerminal({
           onClose={() => setPickingProduct(null)}
         />
       ) : null}
+
+      <QuickCustomerDialog
+        open={quickCreateOpen}
+        onClose={() => setQuickCreateOpen(false)}
+        onCreated={(c) => {
+          storeSetCustomer(c);
+          setQuickCreateOpen(false);
+        }}
+      />
+
+      {customer && customer.document_type !== "CONSUMIDOR_FINAL" ? (
+        <QuickVehicleDialog
+          open={quickVehicleOpen}
+          onClose={() => setQuickVehicleOpen(false)}
+          partnerId={customer.id}
+          onCreated={(v) => {
+            storeSetVehicle(v);
+            setVehicleList((prev) => [v, ...prev]);
+            setQuickVehicleOpen(false);
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+// ── VehicleSelectorStrip ──────────────────────────────────────────────────
+// Compact inline strip shown below the header when a real customer is selected.
+// Plates act as toggle buttons; "+ Nuevo" / "+ Registrar" opens creation dialog.
+
+function VehicleSelectorStrip({
+  vehicles,
+  selected,
+  loading,
+  onSelect,
+  onNewVehicle,
+}: {
+  vehicles:    PickedVehicle[];
+  selected:    PickedVehicle | null;
+  loading:     boolean;
+  onSelect:    (v: PickedVehicle | null) => void;
+  onNewVehicle: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-2.5 overflow-x-auto rounded-sm border border-steel-700 bg-steel-950/50 px-3 py-2">
+      <CarIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground/40" />
+      {loading ? (
+        <span className="font-mono text-[10.5px] text-muted-foreground/40">Cargando vehículos...</span>
+      ) : (
+        <>
+          {vehicles.length === 0 ? (
+            <span className="font-mono text-[10.5px] text-muted-foreground/40">Sin vehículos —</span>
+          ) : null}
+
+          {vehicles.map((v) => {
+            const hint = [v.make, v.model].filter(Boolean).join(" ");
+            return (
+              <button
+                key={v.id}
+                type="button"
+                onClick={() => onSelect(selected?.id === v.id ? null : v)}
+                className={[
+                  "shrink-0 rounded-sm border-2 px-2 py-0.5 font-mono text-[10px] font-bold uppercase tracking-[0.1em] transition-all",
+                  selected?.id === v.id
+                    ? "border-safety-500 bg-safety-500/10 text-safety-500"
+                    : "border-steel-700 bg-steel-900 text-muted-foreground hover:border-steel-600 hover:text-foreground",
+                ].join(" ")}
+              >
+                {v.plate}
+                {hint ? (
+                  <span className="ml-1.5 font-normal normal-case tracking-normal opacity-50">
+                    {hint}
+                  </span>
+                ) : null}
+              </button>
+            );
+          })}
+
+          <button
+            type="button"
+            onClick={onNewVehicle}
+            className="shrink-0 flex items-center gap-1 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-safety-500 transition-colors hover:text-safety-400"
+          >
+            <PlusIcon className="h-3 w-3" />
+            {vehicles.length === 0 ? "Registrar vehículo" : "Nuevo"}
+          </button>
+        </>
+      )}
     </div>
   );
 }
@@ -1194,6 +1339,23 @@ function CashIcon({ className }: { className?: string }) {
   );
 }
 
+
+function PlusIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M12 5v14" /><path d="M5 12h14" />
+    </svg>
+  );
+}
+
+function CarIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M5 17H3a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1l2-4h10l2 4h1a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-2" />
+      <circle cx="7.5" cy="17" r="1.5" /><circle cx="16.5" cy="17" r="1.5" />
+    </svg>
+  );
+}
 
 function CashRegisterIcon({ className }: { className?: string }) {
   return (

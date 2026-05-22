@@ -41,6 +41,7 @@ type Props = {
   cart:             CartItem[];
   totals:           { gross: number; net: number; iva: number };
   customerId:       string;
+  vehicleId?:       string | null;
   warehouseId:      string | null;
   cashSessionId:    string | null;
   onSuccess:        () => void;
@@ -62,7 +63,7 @@ const METHODS: { method: PaymentMethod; label: string }[] = [
 ];
 
 export function CheckoutDialog({
-  open, onClose, cart, totals, customerId, warehouseId, cashSessionId, onSuccess,
+  open, onClose, cart, totals, customerId, vehicleId, warehouseId, cashSessionId, onSuccess,
   initialMode, exchangeReturnId, exchangeCredit = 0,
 }: Props) {
   const [mode, setMode]                   = React.useState<CheckoutMode>(initialMode ?? "normal");
@@ -245,6 +246,7 @@ export function CheckoutDialog({
         hasBelowCost && belowCostAcknowledged,
         belowCostTotalLoss,
         checkoutKeyRef.current,
+        vehicleId ?? null,
       );
       isSubmittingRef.current = false; setSubmitting(false);
       if (result?.error) { setError(result.error); return; }
@@ -283,12 +285,12 @@ export function CheckoutDialog({
           initial_payment_ref:    creditRef || null,
           due_date:               dueDate || null,
           credit_notes:           creditNotes || null,
-        }, cashSessionId, isBelowCost, belowCostTotalLoss, checkoutKeyRef.current)
+        }, cashSessionId, isBelowCost, belowCostTotalLoss, checkoutKeyRef.current, vehicleId ?? null)
       : await createSaleAction({
           ...basePayload,
           payments: [{ method, amount: amountDue, reference: reference || undefined }],
           is_credit: false,
-        }, cashSessionId, isBelowCost, belowCostTotalLoss, checkoutKeyRef.current);
+        }, cashSessionId, isBelowCost, belowCostTotalLoss, checkoutKeyRef.current, vehicleId ?? null);
 
     isSubmittingRef.current = false; setSubmitting(false);
     if (result?.error) { setError(result.error); return; }

@@ -212,6 +212,79 @@ export async function toggleCustomerActiveAction(
 }
 
 /* ------------------------------------------------------------------ */
+/* Creación rápida desde POS                                          */
+/* ------------------------------------------------------------------ */
+
+export type QuickCustomerResult =
+  | { data: PickedCustomer }
+  | { error: string; field?: "full_name" | "document_number" | "phone" };
+
+/**
+ * Crea un cliente nuevo desde el POS en un solo round-trip.
+ * Acepta un objeto plano (no FormData) para uso inline en dialogs.
+ */
+export async function createQuickCustomerAction(input: {
+  full_name:       string;
+  document_type:   "CEDULA" | "RUC" | "PASAPORTE";
+  document_number: string;
+  phone?:          string | null;
+}): Promise<QuickCustomerResult> {
+  const { user, membership } = await getActiveMembership();
+  if (!user || !membership) return { error: "Sesión expirada." };
+
+  const name   = input.full_name?.trim() ?? "";
+  const docNum = (input.document_number ?? "").trim().replace(/\s/g, "");
+
+  if (name.length < 2) {
+    return { error: "Nombre requerido (mínimo 2 caracteres).", field: "full_name" };
+  }
+  if (!docNum) {
+    return { error: "Número de documento requerido.", field: "document_number" };
+  }
+  if (input.document_type === "CEDULA" && docNum.length !== 10) {
+    return { error: "La cédula debe tener exactamente 10 dígitos.", field: "document_number" };
+  }
+  if (input.document_type === "RUC" && docNum.length !== 13) {
+    return { error: "El RUC debe tener exactamente 13 dígitos.", field: "document_number" };
+  }
+  if (!["CEDULA", "RUC", "PASAPORTE"].includes(input.document_type)) {
+    return { error: "Tipo de documento inválido.", field: "document_number" };
+  }
+
+  const supabase = await createClient();
+
+  const { data: row, error } = await supabase
+    .from("business_partners")
+    .insert({
+      tenant_id:         membership.tenant_id,
+      partner_type:      "customer",
+      document_type:     input.document_type,
+      document_number:   docNum,
+      full_name:         name,
+      phone:             input.phone?.trim() || null,
+      customer_category: "minorista",
+      is_active:         true,
+    })
+    .select("id, full_name, document_type, document_number, phone")
+    .single();
+
+  if (error) {
+    const m = error.message.toLowerCase();
+    if (m.includes("duplicate") || m.includes("unique")) {
+      return {
+        error: "Ya existe un cliente con esa identificación.",
+        field: "document_number",
+      };
+    }
+    console.error("createQuickCustomerAction:", error);
+    return { error: "No se pudo crear el cliente. Intenta de nuevo." };
+  }
+
+  revalidatePath("/dashboard/clientes");
+  return { data: row as PickedCustomer };
+}
+
+/* ------------------------------------------------------------------ */
 /* Búsqueda ligera para POS picker                                     */
 /* ------------------------------------------------------------------ */
 

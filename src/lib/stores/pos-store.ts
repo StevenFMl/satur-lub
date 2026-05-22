@@ -16,12 +16,14 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { applyPctDiscount, type CartLine, type OverridePayload } from "@/lib/domain/pos-math";
 import type { PickedCustomer } from "@/actions/customers";
+import type { PickedVehicle } from "@/actions/vehicles";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
 type PosState = {
   cart:     CartLine[];
   customer: PickedCustomer | null;
+  vehicle:  PickedVehicle  | null;
 };
 
 type PosActions = {
@@ -33,6 +35,7 @@ type PosActions = {
   /**
    * Replace the entire cart and customer atomically.
    * Used when resuming a held cart so the active session is swapped in one shot.
+   * Vehicle is cleared on resume — holds do not persist the selected vehicle.
    */
   replaceCart:         (lines: CartLine[], customer: PickedCustomer | null) => void;
   /** Set every cart line to price 0 (courtesy) with the given reason. */
@@ -42,6 +45,8 @@ type PosActions = {
   clearCart:           () => void;
   setCustomer:         (customer: PickedCustomer | null) => void;
   clearCustomer:       () => void;
+  setVehicle:          (vehicle: PickedVehicle | null) => void;
+  clearVehicle:        () => void;
 };
 
 export type PosStore = PosState & PosActions;
@@ -54,6 +59,7 @@ export const usePosStore = create<PosStore>()(
       // ── Initial state ──────────────────────────────────
       cart:     [],
       customer: null,
+      vehicle:  null,
 
       // ── Cart actions ───────────────────────────────────
       addToCart: (line) =>
@@ -114,19 +120,30 @@ export const usePosStore = create<PosStore>()(
           })),
         })),
 
-      replaceCart: (lines, customer) => set({ cart: lines, customer }),
+      // Vehicle cleared on resume — holds don't store vehicle
+      replaceCart: (lines, customer) => set({ cart: lines, customer, vehicle: null }),
 
-      clearCart: () => set({ cart: [] }),
+      // clearCart also resets vehicle — new sale starts without a vehicle pre-selected
+      clearCart: () => set({ cart: [], vehicle: null }),
 
       // ── Customer actions ───────────────────────────────
-      setCustomer:   (customer) => set({ customer }),
-      clearCustomer: ()         => set({ customer: null }),
+      // Switching customer clears the vehicle — prevent stale vehicle<>customer mismatch
+      setCustomer: (customer) =>
+        set((state) => ({
+          customer,
+          vehicle: state.customer?.id === customer?.id ? state.vehicle : null,
+        })),
+      clearCustomer: () => set({ customer: null, vehicle: null }),
+
+      // ── Vehicle actions ────────────────────────────────
+      setVehicle:   (vehicle) => set({ vehicle }),
+      clearVehicle: ()        => set({ vehicle: null }),
     }),
     {
       name: "satur-lub-pos",
       storage: createJSONStorage(() => sessionStorage),
-      // Only persist cart + customer; skip ephemeral UI state.
-      partialize: (state): PosState => ({ cart: state.cart, customer: state.customer }),
+      // Persist cart, customer, and vehicle across same-tab navigation.
+      partialize: (state): PosState => ({ cart: state.cart, customer: state.customer, vehicle: state.vehicle }),
       // Defer hydration to a useEffect in the component to avoid SSR mismatch.
       skipHydration: true,
     }
