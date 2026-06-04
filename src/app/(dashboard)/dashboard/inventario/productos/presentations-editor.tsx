@@ -128,9 +128,9 @@ function PresDialog({
         {/* Row 2: Base qty + preview */}
         <div className="space-y-1.5">
           <label className="block font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground/70">
-            Equivalencia en {baseUnit}s *{" "}
+            Unidades de {baseUnit} que descuenta *{" "}
             <span className="normal-case tracking-normal text-muted-foreground/40 font-normal">
-              (cuánto descuenta del inventario base)
+              al vender 1 de esta presentación
             </span>
           </label>
           <div className="flex items-center gap-3">
@@ -140,7 +140,7 @@ function PresDialog({
               step="any"
               value={baseQty}
               onChange={(e) => setBaseQty(e.target.value)}
-              placeholder="0.20"
+              placeholder="1"
               mono
               className="h-10 w-32 text-right"
               onFocus={(e) => e.target.select()}
@@ -148,10 +148,15 @@ function PresDialog({
             <div className="flex h-10 flex-1 items-center rounded-sm border border-steel-700/40 bg-steel-950/40 px-3">
               {bqValid ? (
                 <p className="font-mono text-[11px] text-muted-foreground/70">
-                  1 {label || "presentación"} →{" "}
-                  <span className="font-bold text-safety-400">
-                    {numFmt.format(bqNum)} {baseUnit}
-                  </span>
+                  {bqNum < 1 ? (() => {
+                    const inv = 1 / bqNum;
+                    const rounded = Math.round(inv);
+                    return Math.abs(inv - rounded) < 0.02
+                      ? <>1 {baseUnit} = <span className="font-bold text-safety-400">{rounded} {label || "presentaciones"}</span></>
+                      : <>1 {label || "presentación"} descuenta <span className="font-bold text-safety-400">{numFmt.format(bqNum)} {baseUnit}</span></>;
+                  })() : (
+                    <>1 {label || "presentación"} = <span className="font-bold text-safety-400">{numFmt.format(bqNum)} {baseUnit}{bqNum !== 1 ? "s" : ""}</span></>
+                  )}
                 </p>
               ) : (
                 <p className="font-mono text-[10px] text-muted-foreground/25">
@@ -161,7 +166,7 @@ function PresDialog({
             </div>
           </div>
           <p className="font-mono text-[9px] leading-3.5 text-muted-foreground/35">
-            Caneca 5 gal → Galón = 0.20 · Litro = 0.264 · Cuarto = 0.05
+            Cuarto de galón → 0.25 · Galón completo → 1 · Caneca (5 gal) → 5
           </p>
         </div>
 
@@ -427,12 +432,29 @@ export function PresentationsEditor({
 
                   {/* Equiv */}
                   <div className="text-right pr-2">
-                    <span className="font-mono text-[12px] font-bold tabular-nums text-safety-400">
-                      {numFmt.format(bqNum)}
-                    </span>
-                    <span className="ml-0.5 font-mono text-[9px] text-muted-foreground/35">
-                      {baseUnit}
-                    </span>
+                    {bqNum === 1 ? (
+                      <span className="font-mono text-[10px] text-muted-foreground/25">base</span>
+                    ) : bqNum < 1 ? (() => {
+                      const inv     = 1 / bqNum;
+                      const rounded = Math.round(inv);
+                      const isClean = Math.abs(inv - rounded) < 0.02;
+                      return isClean ? (
+                        <>
+                          <span className="font-mono text-[12px] font-bold tabular-nums text-safety-400">{rounded}</span>
+                          <span className="ml-0.5 font-mono text-[9px] text-muted-foreground/35">/{baseUnit}</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="font-mono text-[10px] text-muted-foreground/40">×{numFmt.format(bqNum)}</span>
+                          <span className="ml-0.5 font-mono text-[9px] text-muted-foreground/35">{baseUnit}</span>
+                        </>
+                      );
+                    })() : (
+                      <>
+                        <span className="font-mono text-[12px] font-bold tabular-nums text-safety-400">{numFmt.format(bqNum)}</span>
+                        <span className="ml-0.5 font-mono text-[9px] text-muted-foreground/35">{baseUnit}s</span>
+                      </>
+                    )}
                   </div>
 
                   {/* Price */}

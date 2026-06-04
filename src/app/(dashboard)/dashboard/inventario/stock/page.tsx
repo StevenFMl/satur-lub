@@ -36,6 +36,22 @@ export default async function StockPage() {
     console.error("StockPage · inventory_balances query:", error);
   }
 
+  const { data: rawPresentations } = await supabase
+    .from("product_presentations")
+    .select("product_id, unit_label, base_qty, sort_order")
+    .eq("is_active", true)
+    .order("sort_order", { ascending: true });
+
+  const presentationsByProduct = new Map<string, { unit_label: string; base_qty: number }[]>();
+  for (const p of rawPresentations ?? []) {
+    const key = p.product_id as string;
+    if (!presentationsByProduct.has(key)) presentationsByProduct.set(key, []);
+    presentationsByProduct.get(key)!.push({
+      unit_label: p.unit_label as string,
+      base_qty: Number(p.base_qty),
+    });
+  }
+
   const { data: rawProducts } = await supabase
     .from("products")
     .select("id, name, sku, cost_price")
@@ -81,6 +97,7 @@ export default async function StockPage() {
         tax_rate:      Number(p?.tax_rate ?? 15),
         has_tax:       p?.has_tax ?? true,
         reorder_point: Number(p?.reorder_point ?? 0),
+        presentations: presentationsByProduct.get(b.product_id) ?? [],
       };
     }
   );

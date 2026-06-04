@@ -60,7 +60,11 @@
       "Bash(Get-ChildItem -Path \"d:\\\\Saturlink\\\\satur-lub\\\\supabase\\\\migrations\" -Filter \"*.sql\")",
       "Bash(Select-Object Name)",
       "Bash(grep -r \"vehicle\" supabase/migrations/ --include=\"*.sql\" -l)",
-      "Bash(grep -r \"vehicle\" src/ --include=\"*.ts\" --include=\"*.tsx\" -l)"
+      "Bash(grep -r \"vehicle\" src/ --include=\"*.ts\" --include=\"*.tsx\" -l)",
+      "Bash(Get-ChildItem -Path \"d:\\\\Saturlink\\\\satur-lub\" -Recurse -ErrorAction SilentlyContinue)",
+      "Bash(Select-Object FullName)",
+      "PowerShell(head -30)",
+      "Bash(python -c ' *)"
     ]
   }
 }

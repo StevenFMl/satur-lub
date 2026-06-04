@@ -28,6 +28,7 @@ export type StockRow = {
   tax_rate: number;
   has_tax: boolean;
   reorder_point: number;        // 0 = sin mínimo configurado
+  presentations?: { unit_label: string; base_qty: number }[];
 };
 
 type StockStatus = "all" | "reorder" | "zero";
@@ -46,6 +47,79 @@ const moneyFmt = new Intl.NumberFormat("es-EC", {
 
 function downloadCsv(filename: string, headers: string[], rows: string[][]): void {
   downloadCsvFile(filename, headers, rows);
+}
+
+const fracFmt = new Intl.NumberFormat("es-EC", { minimumFractionDigits: 0, maximumFractionDigits: 3 });
+
+type StockBreakdown = {
+  primary: string;
+  derivatives: string | null;
+  superEquiv: string | null;
+};
+
+function getStockBreakdown(
+  qty: number,
+  unit: string,
+  presentations: { unit_label: string; base_qty: number }[],
+): StockBreakdown | null {
+  if (presentations.length === 0 || qty <= 0) return null;
+
+  const subUnits = presentations
+    .filter((p) => p.base_qty > 0 && p.base_qty < 1 - 1e-9)
+    .sort((a, b) => b.base_qty - a.base_qty);
+
+  const superUnits = presentations
+    .filter((p) => p.base_qty > 1 + 1e-9)
+    .sort((a, b) => b.base_qty - a.base_qty);
+
+  if (subUnits.length === 0 && superUnits.length === 0) return null;
+
+  const primary = `${numberFmt.format(qty)} ${unit}`;
+
+  if (subUnits.length > 0) {
+    const wholeBase = Math.floor(qty + 1e-9);
+    let rem = Math.round((qty - wholeBase) * 1000000) / 1000000;
+
+    const derivParts: string[] = [];
+    for (const pres of subUnits) {
+      if (rem < pres.base_qty - 1e-9) continue;
+      const whole = Math.floor(rem / pres.base_qty + 1e-9);
+      if (whole > 0) {
+        derivParts.push(`${whole} ${pres.unit_label}`);
+        rem = Math.round((rem - whole * pres.base_qty) * 1000000) / 1000000;
+      }
+      if (rem < 1e-9) break;
+    }
+    if (rem > 1e-9) {
+      derivParts.push(`${fracFmt.format(rem)} ${unit}`);
+    }
+
+    if (derivParts.length === 0) return null;
+
+    return { primary, derivatives: derivParts.join(" + "), superEquiv: null };
+  }
+
+  if (superUnits.length > 0) {
+    let rem = Math.round(qty * 1000000) / 1000000;
+    const parts: string[] = [];
+
+    for (const pres of superUnits) {
+      const whole = Math.floor(rem / pres.base_qty + 1e-9);
+      if (whole > 0) {
+        parts.push(`${whole} ${pres.unit_label}`);
+        rem = Math.round((rem - whole * pres.base_qty) * 1000000) / 1000000;
+      }
+    }
+
+    const wholeRem = Math.floor(rem + 1e-9);
+    if (wholeRem > 0) parts.push(`${wholeRem} ${unit}`);
+
+    if (parts.length === 0) return null;
+
+    return { primary, derivatives: null, superEquiv: parts.join(" + ") };
+  }
+
+  return null;
 }
 
 export function StockTable({ 
@@ -341,16 +415,35 @@ export function StockTable({
                         </div>
                       </Td>
                       <Td className="text-right">
-                        <span
-                          className={
+                        {(() => {
+                          const colorClass =
                             "font-mono text-[15px] font-bold tabular-nums " +
-                            (isZero ? "text-red-400" : isReorder ? "text-safety-500" : "text-foreground")
-                          }
-                        >
-                          {numberFmt.format(displayQty)}
-                        </span>
+                            (isZero ? "text-red-400" : isReorder ? "text-safety-500" : "text-foreground");
+                          const bd = getStockBreakdown(displayQty, r.unit, r.presentations ?? []);
+                          return bd ? (
+                            <>
+                              <p className={colorClass}>{bd.primary}</p>
+                              {bd.derivatives ? (
+                                <p className="mt-1 font-mono text-[9.5px] text-muted-foreground/55">
+                                  <span className="uppercase tracking-[0.07em] text-muted-foreground/35">Derivados:</span>{" "}
+                                  {bd.derivatives}
+                                </p>
+                              ) : null}
+                              {bd.superEquiv ? (
+                                <p className="mt-1 font-mono text-[9.5px] text-muted-foreground/55">
+                                  <span className="uppercase tracking-[0.07em] text-muted-foreground/35">Equiv.:</span>{" "}
+                                  {bd.superEquiv}
+                                </p>
+                              ) : null}
+                            </>
+                          ) : (
+                            <span className={colorClass}>
+                              {numberFmt.format(displayQty)}
+                            </span>
+                          );
+                        })()}
                         {r.reorder_point > 0 ? (
-                          <div className="mt-0.5 font-mono text-[9.5px] tabular-nums text-muted-foreground/50">
+                          <div className="mt-1 font-mono text-[9.5px] tabular-nums text-muted-foreground/50">
                             mín. {numberFmt.format(r.reorder_point)}
                           </div>
                         ) : null}

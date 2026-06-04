@@ -20,6 +20,39 @@ const numFmtPres = new Intl.NumberFormat("es-EC", {
   maximumFractionDigits: 4,
 });
 
+function PresEquivalence({
+  base_qty,
+  baseUnit,
+  unitLabel,
+}: {
+  base_qty:  number;
+  baseUnit:  string;
+  unitLabel: string;
+}) {
+  if (base_qty === 1) return null;
+
+  let text: string;
+  if (base_qty < 1) {
+    const inv     = 1 / base_qty;
+    const rounded = Math.round(inv);
+    if (Math.abs(inv - rounded) < 0.02) {
+      // Clean integer ratio — "1 galón = 4 cuartos"
+      text = `1 ${baseUnit} = ${rounded} ${unitLabel.toLowerCase()}`;
+    } else {
+      text = `Descuenta ${numFmtPres.format(base_qty)} ${baseUnit} del stock`;
+    }
+  } else {
+    // base_qty > 1 — "Equivale a 5 galones"
+    text = `Equivale a ${numFmtPres.format(base_qty)} ${baseUnit}s`;
+  }
+
+  return (
+    <p className="mt-0.5 font-mono text-[10px] text-muted-foreground/50">
+      {text}
+    </p>
+  );
+}
+
 export function PresentationPickerDialog({
   product,
   warehouseId,
@@ -78,9 +111,11 @@ export function PresentationPickerDialog({
                     </span>
                   ) : null}
                 </p>
-                <p className="mt-0.5 font-mono text-[10px] text-muted-foreground/50">
-                  = {numFmtPres.format(pres.base_qty)} {product.unit} del inventario
-                </p>
+                <PresEquivalence
+                  base_qty={pres.base_qty}
+                  baseUnit={product.unit}
+                  unitLabel={pres.unit_label}
+                />
                 {inCart ? (
                   <p className="mt-0.5 font-mono text-[9.5px] text-safety-500/70">
                     {inCart.quantity} en carrito → toca para sumar 1 más
