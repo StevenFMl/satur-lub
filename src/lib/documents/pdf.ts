@@ -63,7 +63,6 @@ export async function generateRidePdf(
 }
 
 async function _render(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   puppeteer: any,
   html:      string,
   opts:      PdfOptions,

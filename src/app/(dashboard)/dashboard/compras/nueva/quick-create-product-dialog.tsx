@@ -38,6 +38,14 @@ function toGross(val: string): string {
   return (n * IVA_MULT).toFixed(4);
 }
 
+/** Convierte bruto → neto. cost_price siempre se almacena sin IVA —
+ *  usado cuando el toggle "el costo ya incluye IVA" está activo. */
+function toNet(val: string): string {
+  const n = parseFloat(val.replace(",", "."));
+  if (!isFinite(n) || n <= 0) return "";
+  return (n / IVA_MULT).toFixed(4);
+}
+
 type Props = {
   open: boolean;
   onClose: () => void;
@@ -54,8 +62,11 @@ export function QuickCreateProductDialog({ open, onClose, onCreated, editProduct
   // CREACIÓN → toggle arranca OFF (usuario ingresa precio neto por defecto).
   const [priceIncludesIva, setPriceIncludesIva] = useState(editProduct != null);
 
-  // cost_price: la DB siempre almacena NETO. El campo se muestra y envía
-  // siempre en neto, independientemente del toggle de precios de venta.
+  // costIncludesIva: si está activo, el número escrito en "Costo proveedor"
+  // ya lleva IVA (algunos proveedores facturan así). cost_price SIEMPRE se
+  // persiste en NETO — con el toggle activo convertimos antes de enviar.
+  // Arranca en false: cost_price en DB siempre es neto.
+  const [costIncludesIva, setCostIncludesIva] = useState(false);
   const [costPrice, setCostPrice] = useState(
     editProduct?.cost_price != null ? String(editProduct.cost_price) : ""
   );
@@ -63,12 +74,13 @@ export function QuickCreateProductDialog({ open, onClose, onCreated, editProduct
     editProduct?.default_price != null ? String(editProduct.default_price) : ""
   );
 
-  // Costo: preview siempre muestra "= $X c/IVA" (referencia del bruto equivalente).
-  const costPreview = useMemo(() => pricePreview(costPrice, false), [costPrice]);
+  // Costo: preview muestra el equivalente en el otro modo (igual patrón que precio venta).
+  const costPreview = useMemo(() => pricePreview(costPrice, costIncludesIva), [costPrice, costIncludesIva]);
   const publicoPreview = useMemo(() => pricePreview(pricePublico, priceIncludesIva), [pricePublico, priceIncludesIva]);
 
-  // cost_price → SIEMPRE NETO: el usuario ingresa neto, se envía tal cual.
-  const submittedCost = costPrice;
+  // cost_price → SIEMPRE NETO: si el toggle está activo, el usuario ingresó
+  // bruto y lo convertimos a neto antes de enviar.
+  const submittedCost = costIncludesIva ? toNet(costPrice) : costPrice;
   // price_publico → SIEMPRE BRUTO: toggle=ON ya es bruto; toggle=OFF se convierte ×1.15.
   const submittedPublico = priceIncludesIva ? pricePublico : toGross(pricePublico);
 
@@ -176,8 +188,29 @@ export function QuickCreateProductDialog({ open, onClose, onCreated, editProduct
             </div>
           </div>
 
-          {/* ── Costo proveedor — siempre neto ──────────────────── */}
+          {/* ── Costo proveedor — siempre se persiste neto ──────── */}
           <div className="space-y-1.5">
+            <div className="flex items-center gap-3 rounded-sm border border-steel-700/50 bg-steel-900/30 px-3 py-2">
+              <Switch
+                id="qc-cost-iva-mode"
+                checked={costIncludesIva}
+                onCheckedChange={setCostIncludesIva}
+              />
+              <div>
+                <Label
+                  htmlFor="qc-cost-iva-mode"
+                  className="cursor-pointer normal-case tracking-normal text-[13px] font-medium text-muted-foreground"
+                >
+                  El costo de compra ya incluye IVA ({IVA_RATE}%)
+                </Label>
+                <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.08em] text-muted-foreground/50">
+                  {costIncludesIva
+                    ? "Ingresa el costo final que pagas al proveedor · se guarda sin IVA"
+                    : "Ingresa costo sin IVA · se guarda tal cual"}
+                </p>
+              </div>
+            </div>
+
             <div className="flex items-baseline justify-between">
               <div className="flex items-center gap-2">
                 <Label htmlFor="qc-cost">
@@ -187,7 +220,7 @@ export function QuickCreateProductDialog({ open, onClose, onCreated, editProduct
                   </span>
                 </Label>
                 <span className="rounded-sm border border-steel-700 bg-steel-800 px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground/70">
-                  s/IVA
+                  {costIncludesIva ? "c/IVA" : "s/IVA"}
                 </span>
               </div>
               {costPreview ? (
@@ -215,7 +248,7 @@ export function QuickCreateProductDialog({ open, onClose, onCreated, editProduct
               />
             </div>
             <p className="field-hint">
-              El costo del proveedor se guarda sin IVA (neto). El valor con IVA se muestra como referencia de cuánto pagás en total.
+              El costo se guarda siempre sin IVA (neto), sin importar el modo de entrada.
             </p>
             {fieldErrors.cost_price ? (
               <p className="text-[12px] text-red-400">{fieldErrors.cost_price}</p>

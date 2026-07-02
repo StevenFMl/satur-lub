@@ -58,6 +58,7 @@ type RawProduct = {
   unit:               string;
   average_cost:       number | string | null;
   last_purchase_cost: number | string | null;
+  last_supplier_id:   string | null;
 };
 
 // ── Cost resolution ───────────────────────────────────────────────────────────
@@ -97,7 +98,7 @@ function resolveItemCost(
 export default async function RentabilidadPage({
   searchParams,
 }: {
-  searchParams: Promise<{ from?: string; to?: string }>;
+  searchParams: Promise<{ from?: string; to?: string; supplier_id?: string }>;
 }) {
   const { user, membership } = await getActiveMembership();
   if (!user)       redirect("/login");
@@ -107,37 +108,50 @@ export default async function RentabilidadPage({
   const def    = defaultRange();
   const from   = params.from ?? def.from;
   const to     = clampToTodayEC(params.to ?? def.to);
+  const supplier_id = params.supplier_id || null;
 
   const supabase = await createClient();
 
-  // ── Parallel queries: sales + products ─────────────────────────────────
-  const [{ data: salesData, error: saleErr }, { data: productsData, error: prodErr }] =
-    await Promise.all([
-      supabase
-        .from("sales")
-        .select(`
-          id, created_at, sale_date, document_kind, total,
-          business_partners ( full_name, document_number ),
-          sale_items ( id, product_id, item_name, quantity, base_qty, line_total, tax_rate, is_taxable, unit_cost )
-        `)
-        .eq("status", "confirmed")
-        .gte("sale_date", from)
-        .lte("sale_date", to)
-        .order("created_at", { ascending: false })
-        .limit(1000),
+  // ── Parallel queries: sales + products + suppliers ─────────────────────
+  const [
+    { data: salesData, error: saleErr },
+    { data: productsData, error: prodErr },
+    { data: suppliersData, error: suppErr }
+  ] = await Promise.all([
+    supabase
+      .from("sales")
+      .select(`
+        id, created_at, sale_date, document_kind, total,
+        business_partners ( full_name, document_number ),
+        sale_items ( id, product_id, item_name, quantity, base_qty, line_total, tax_rate, is_taxable, unit_cost )
+      `)
+      .eq("status", "confirmed")
+      .gte("sale_date", from)
+      .lte("sale_date", to)
+      .order("created_at", { ascending: false })
+      .limit(1000),
 
-      supabase
-        .from("products")
-        .select("id, name, sku, unit, average_cost, last_purchase_cost")
-        .eq("is_active", true)
-        .limit(3000),
-    ]);
+    supabase
+      .from("products")
+      .select("id, name, sku, unit, average_cost, last_purchase_cost, last_supplier_id")
+      .eq("is_active", true)
+      .limit(3000),
+
+    supabase
+      .from("business_partners")
+      .select("id, full_name")
+      .eq("is_active", true)
+      .or("partner_type.eq.supplier,partner_type.eq.distributor")
+      .order("full_name")
+  ]);
 
   if (saleErr) console.error("RentabilidadPage [sales]:", saleErr);
   if (prodErr) console.error("RentabilidadPage [products]:", prodErr);
+  if (suppErr) console.error("RentabilidadPage [suppliers]:", suppErr);
 
   const sales    = (salesData    ?? []) as unknown as RawSale[];
   const products = (productsData ?? []) as unknown as RawProduct[];
+  const suppliers = (suppliersData ?? []) as Array<{ id: string; full_name: string }>;
 
   const productById = new Map<string, RawProduct>(products.map((p) => [p.id, p]));
 
@@ -192,9 +206,18 @@ export default async function RentabilidadPage({
     let saleCostTotal     = 0;
     let saleReturnedGross = 0;  // total gross refunded across all items in this sale
     let saleCostSource: CostSource = "zero";
+    let itemsProcessed = 0;
 
     for (const item of s.sale_items ?? []) {
       const pid     = item.product_id;  // null for manual items
+      const p        = pid ? productById.get(pid) : undefined;
+
+      // Filter by supplier if requested
+      if (supplier_id && (!p || p.last_supplier_id !== supplier_id)) {
+        continue;
+      }
+      itemsProcessed++;
+
       const qty     = Number(item.quantity  ?? 0);
       // base_qty: how many base-unit (caneca) each presentation unit represents.
       // unit_cost is per BASE unit, so lineCost = qty × baseQty × unitCost.
@@ -204,7 +227,7 @@ export default async function RentabilidadPage({
       const taxable = item.is_taxable !== false;
       const lineNet = taxable && rate > 0 ? gross / (1 + rate / 100) : gross;
 
-      const { unitCost, source } = resolveItemCost(item.unit_cost, pid ? productById.get(pid) : undefined);
+      const { unitCost, source } = resolveItemCost(item.unit_cost, p);
       const lineCost = qty * baseQty * unitCost;
 
       // ── Returns netting ──────────────────────────────────────────────────
@@ -232,7 +255,6 @@ export default async function RentabilidadPage({
       else if (source === "last" && saleCostSource === "zero") saleCostSource = "last";
 
       // ── Per-product accumulation ─────────────────────────────────────────
-      const p        = pid ? productById.get(pid) : undefined;
       const itemName = pid
         ? (p?.name ?? "Producto eliminado")
         : (item.item_name ?? "Ítem manual");
@@ -262,23 +284,25 @@ export default async function RentabilidadPage({
       prodMap.set(mapKey, existing);
     }
 
-    const saleProfit = saleRevenueNet - saleCostTotal;
-    const saleMargin = saleRevenueNet > 0 ? (saleProfit / saleRevenueNet) * 100 : 0;
+    if (itemsProcessed > 0) {
+      const saleProfit = saleRevenueNet - saleCostTotal;
+      const saleMargin = saleRevenueNet > 0 ? (saleProfit / saleRevenueNet) * 100 : 0;
 
-    saleRows.push({
-      id:             s.id,
-      display_date:   s.sale_date ?? s.created_at.slice(0, 10),
-      document_kind:  s.document_kind,
-      customer_name:  s.business_partners?.full_name ?? "—",
-      revenue_net:    saleRevenueNet,
-      revenue_gross:  saleRevenueGross,
-      cost_total:     saleCostTotal,
-      profit:         saleProfit,
-      margin:         saleMargin,
-      cost_source:    saleCostSource,
-      returned_gross: saleReturnedGross,
-      has_returns:    saleReturnedGross > 0,
-    });
+      saleRows.push({
+        id:             s.id,
+        display_date:   s.sale_date ?? s.created_at.slice(0, 10),
+        document_kind:  s.document_kind,
+        customer_name:  s.business_partners?.full_name ?? "—",
+        revenue_net:    saleRevenueNet,
+        revenue_gross:  saleRevenueGross,
+        cost_total:     saleCostTotal,
+        profit:         saleProfit,
+        margin:         saleMargin,
+        cost_source:    saleCostSource,
+        returned_gross: saleReturnedGross,
+        has_returns:    saleReturnedGross > 0,
+      });
+    }
   }
 
   const productRows: ProductProfitRow[] = Array.from(prodMap.values()).map((acc) => {
@@ -331,6 +355,8 @@ export default async function RentabilidadPage({
       <RentabilidadTable
         from={from}
         to={to}
+        supplierId={supplier_id}
+        suppliers={suppliers}
         productRows={productRows}
         saleRows={saleRows}
         totalRevenueNet={totalRevenueNet}

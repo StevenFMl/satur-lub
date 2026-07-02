@@ -159,17 +159,25 @@ export function PurchaseForm({
   const [localProducts, setLocalProducts] = useState<LookupProduct[]>(products);
 
   // Convierte un costo NET de la DB al valor a mostrar según el toggle.
-  // toggle=false (neto): sin conversión; toggle=true (bruto): ×(1+rate).
+  // toggle=false (neto): sin conversión.
+  // toggle=true (bruto): ×(1+rate) — pero SOLO si el producto realmente
+  // lleva IVA. Productos exentos (has_tax=false) o con tasa ≤ 0 se
+  // muestran tal cual en neto: aplicarles la tasa global de la factura
+  // infla artificialmente su costo sugerido. Se usa la tasa propia del
+  // producto (tax_rate) cuando existe; si no, cae a la tasa de la factura.
   const netToDisplay = useCallback(
-    (net: number): number =>
-      isTaxInclusive
-        ? Number(
-            Big(net)
-              .times(Big(1).plus(Big(invoiceTaxRate).div(100)))
-              .round(4, Big.roundHalfUp)
-              .toString()
-          )
-        : net,
+    (net: number, product: LookupProduct): number => {
+      if (!isTaxInclusive) return net;
+      if (product.has_tax === false) return net;
+      const rate = product.tax_rate != null ? Number(product.tax_rate) : invoiceTaxRate;
+      if (!(rate > 0)) return net;
+      return Number(
+        Big(net)
+          .times(Big(1).plus(Big(rate).div(100)))
+          .round(4, Big.roundHalfUp)
+          .toString()
+      );
+    },
     [isTaxInclusive, invoiceTaxRate]
   );
 
@@ -261,7 +269,7 @@ export function PurchaseForm({
     setRows((prev) => {
       const existingIndex = prev.findIndex(r => r.product_id === product.id);
       const suggestedNet = suggestedUnitCost(product);
-      const displayCost = suggestedNet != null ? netToDisplay(suggestedNet) : null;
+      const displayCost = suggestedNet != null ? netToDisplay(suggestedNet, product) : null;
 
       if (existingIndex >= 0) {
         const newRows = [...prev];
@@ -311,7 +319,7 @@ export function PurchaseForm({
         if (!product) return r;
         const suggestedNet = suggestedUnitCost(product);
         if (suggestedNet == null) return r;
-        const displayCost = netToDisplay(suggestedNet);
+        const displayCost = netToDisplay(suggestedNet, product);
         const newTotal = toFixedStr(lineTotal(r.quantity || "0", displayCost), 2);
         if (newTotal === r.total_cost) return r;
         changed = true;
@@ -430,7 +438,7 @@ export function PurchaseForm({
     const suggestedNet = suggestedUnitCost(product);
     if (suggestedNet == null) return;
     if (manualTotalEdited.current.has(uid)) return;
-    const displayCost = netToDisplay(suggestedNet);
+    const displayCost = netToDisplay(suggestedNet, product);
     const tc = toFixedStr(lineTotal(qStr, displayCost), 2);
     updateRow(uid, { total_cost: tc });
   };

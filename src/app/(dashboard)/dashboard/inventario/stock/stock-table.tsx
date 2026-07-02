@@ -2,7 +2,7 @@
 import { downloadCsvFile } from "@/lib/export/format";
 
 import * as React from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import Link from "next/link";
@@ -133,6 +133,7 @@ export function StockTable({
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const pathname = usePathname();
   const [query, setQuery] = React.useState("");
   const [statusFilter, setStatusFilter] = React.useState<StockStatus>("all");
 
@@ -206,7 +207,7 @@ export function StockTable({
     const params = new URLSearchParams(searchParams.toString());
     params.set("productId", row.product_id);
     params.set("warehouseId", row.warehouse_id);
-    router.push(`/dashboard/inventario/stock?${params.toString()}`, {
+    router.push(`${pathname}?${params.toString()}`, {
       scroll: false,
     });
   };
@@ -217,7 +218,7 @@ export function StockTable({
     params.delete("warehouseId");
     const qs = params.toString();
     router.push(
-      `/dashboard/inventario/stock${qs ? `?${qs}` : ""}`,
+      `${pathname}${qs ? `?${qs}` : ""}`,
       { scroll: false }
     );
   };

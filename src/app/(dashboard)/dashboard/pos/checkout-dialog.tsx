@@ -101,7 +101,9 @@ export function CheckoutDialog({
   // We compare net_price per presentation against that scaled cost.
   type BelowCostItem = CartItem & {
     net_price:     number;
-    cost_per_pres: number;  // average_cost × base_qty
+    gross_price:   number;
+    cost_per_pres: number;  // average_cost × base_qty (neto)
+    gross_cost:    number;  // cost_per_pres × (1 + tax_rate/100)
     loss_per_unit: number;
     total_loss:    number;
   };
@@ -113,9 +115,20 @@ export function CheckoutDialog({
         ? gross / (1 + item.tax_rate / 100)
         : gross;
       const costPerPres  = item.average_cost * item.base_qty;
+      const grossCost    = item.has_tax && item.tax_rate > 0
+        ? costPerPres * (1 + item.tax_rate / 100)
+        : costPerPres;
       const lossPerUnit  = costPerPres - netPrice;
       if (lossPerUnit <= 0.001) return [];
-      return [{ ...item, net_price: netPrice, cost_per_pres: costPerPres, loss_per_unit: lossPerUnit, total_loss: lossPerUnit * item.quantity }];
+      return [{
+        ...item,
+        net_price: netPrice,
+        gross_price: gross,
+        cost_per_pres: costPerPres,
+        gross_cost: grossCost,
+        loss_per_unit: lossPerUnit,
+        total_loss: lossPerUnit * item.quantity
+      }];
     }),
     [cart]
   );
@@ -488,8 +501,8 @@ export function CheckoutDialog({
               <thead className="border-b border-steel-700 bg-steel-950/50">
                 <tr>
                   <th className="px-3 py-2 font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-muted-foreground/70">Producto</th>
-                  <th className="px-3 py-2 text-right font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-muted-foreground/70">Precio neto</th>
-                  <th className="px-3 py-2 text-right font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-muted-foreground/70">Costo unit.</th>
+                  <th className="px-3 py-2 text-right font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-muted-foreground/70">Precio (s/IVA / c/IVA)</th>
+                  <th className="px-3 py-2 text-right font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-muted-foreground/70">Costo (s/IVA / c/IVA)</th>
                   <th className="px-3 py-2 text-right font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-red-400/70">Pérdida est.</th>
                 </tr>
               </thead>
@@ -503,10 +516,12 @@ export function CheckoutDialog({
                       </div>
                     </td>
                     <td className="px-3 py-2.5 text-right font-mono text-[12px] tabular-nums text-muted-foreground">
-                      {moneyFmt.format(item.net_price)}
+                      <span className="block text-foreground">{moneyFmt.format(item.net_price)}</span>
+                      <span className="block text-[10px] text-muted-foreground/65">({moneyFmt.format(item.gross_price)})</span>
                     </td>
                     <td className="px-3 py-2.5 text-right font-mono text-[12px] tabular-nums text-muted-foreground/70">
-                      {moneyFmt.format(item.cost_per_pres)}
+                      <span className="block text-foreground/80">{moneyFmt.format(item.cost_per_pres)}</span>
+                      <span className="block text-[10px] text-muted-foreground/50">({moneyFmt.format(item.gross_cost)})</span>
                     </td>
                     <td className="px-3 py-2.5 text-right font-mono text-[13px] font-bold tabular-nums text-red-400">
                       −{moneyFmt.format(item.total_loss)}

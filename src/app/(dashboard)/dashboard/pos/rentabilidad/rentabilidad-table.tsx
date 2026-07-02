@@ -4,6 +4,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
 import { todayEC } from "@/lib/date-ec";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -54,6 +55,8 @@ type SortSale    = "profit" | "revenue" | "margin";
 type Props = {
   from:             string;
   to:               string;
+  supplierId:       string | null;
+  suppliers:        Array<{ id: string; full_name: string }>;
   productRows:      ProductProfitRow[];
   saleRows:         SaleProfitRow[];
   totalRevenueNet:  number;
@@ -152,6 +155,7 @@ function CostSourceBadge({ source }: { source: CostSource }) {
 
 export function RentabilidadTable({
   from, to,
+  supplierId, suppliers,
   productRows, saleRows,
   totalRevenueNet, totalCost, totalProfit, globalMargin,
   countSales, hasMissingCosts,
@@ -163,14 +167,22 @@ export function RentabilidadTable({
   const [fromInput, setFromInput] = React.useState(from);
   // Clamp: if the server somehow passed a future date, cap it to today
   const [toInput, setToInput] = React.useState(() => (to > today ? today : to));
+  const [supplierIdInput, setSupplierIdInput] = React.useState(supplierId ?? "");
   const [tab,         setTab]         = React.useState<Tab>("product");
   const [sortProduct, setSortProduct] = React.useState<SortProduct>("profit");
   const [sortSale,    setSortSale]    = React.useState<SortSale>("profit");
 
-  const applyFilter = () => {
+  const applyFilter = (suppId?: string) => {
     if (!fromInput || !toInput) return;
     const clampedTo = toInput > today ? today : toInput;
-    router.push(`/dashboard/pos/rentabilidad?from=${fromInput}&to=${clampedTo}`, { scroll: false });
+    const activeSupp = typeof suppId === "string" ? suppId : supplierIdInput;
+    const query = new URLSearchParams();
+    query.set("from", fromInput);
+    query.set("to", clampedTo);
+    if (activeSupp) {
+      query.set("supplier_id", activeSupp);
+    }
+    router.push(`/dashboard/pos/rentabilidad?${query.toString()}`, { scroll: false });
   };
 
   // ── Sorted product rows ──────────────────────────────────────────────────
@@ -254,7 +266,27 @@ export function RentabilidadTable({
             </label>
             <Input type="date" value={toInput} max={today} onChange={(e) => setToInput(e.target.value > today ? today : e.target.value)} mono className="h-9 w-full sm:w-40" />
           </div>
-          <Button type="button" size="md" onClick={applyFilter}>Aplicar</Button>
+          <div className="space-y-1">
+            <label className="font-mono text-[9px] font-bold uppercase tracking-[0.16em] text-muted-foreground/60">
+              Proveedor
+            </label>
+            <Select
+              value={supplierIdInput}
+              onChange={(e) => {
+                setSupplierIdInput(e.target.value);
+                applyFilter(e.target.value);
+              }}
+              className="h-9 py-1 text-[13px] sm:w-64"
+            >
+              <option value="" className="bg-steel-950 text-foreground">Todos los proveedores</option>
+              {suppliers.map((s) => (
+                <option key={s.id} value={s.id} className="bg-steel-950 text-foreground">
+                  {s.full_name}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <Button type="button" size="md" onClick={() => applyFilter()}>Aplicar</Button>
         </div>
         <div className="border-t border-steel-800/60 px-5 py-2">
           <p className="font-mono text-[10px] text-muted-foreground/50">

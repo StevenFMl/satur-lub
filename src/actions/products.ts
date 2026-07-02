@@ -139,12 +139,32 @@ export async function upsertProductAction(
 
   const sku = data.sku ?? makeSkuFromName(data.name);
 
+  // Revaluación condicional: si se edita un producto existente y cambia el cost_price,
+  // se actualizan también average_cost y last_purchase_cost para revaluar el stock actual.
+  let shouldUpdateAverageCost = false;
+  if (data.id) {
+    const { data: existing } = await supabase
+      .from("products")
+      .select("cost_price")
+      .eq("id", data.id)
+      .eq("tenant_id", tenantId)
+      .maybeSingle();
+
+    if (existing && existing.cost_price !== data.cost_price) {
+      shouldUpdateAverageCost = true;
+    }
+  }
+
   const payload = {
     tenant_id:    tenantId,
     name:         data.name,
     sku,
     unit:         data.unit,
     cost_price:   data.cost_price,
+    ...(shouldUpdateAverageCost ? {
+      average_cost:       data.cost_price,
+      last_purchase_cost: data.cost_price
+    } : {}),
     has_tax:      data.has_tax,
     product_kind:  data.product_kind,
     reorder_point: data.reorder_point,
@@ -248,12 +268,32 @@ export async function quickCreateProductAction(
   const supabase = await createClient();
   const sku = data.sku ?? makeSkuFromName(data.name);
 
+  // Revaluación condicional: si se edita un producto existente y cambia el cost_price,
+  // se actualizan también average_cost y last_purchase_cost para revaluar el stock actual.
+  let shouldUpdateAverageCost = false;
+  if (data.id) {
+    const { data: existing } = await supabase
+      .from("products")
+      .select("cost_price")
+      .eq("id", data.id)
+      .eq("tenant_id", tenantId)
+      .maybeSingle();
+
+    if (existing && existing.cost_price !== data.cost_price) {
+      shouldUpdateAverageCost = true;
+    }
+  }
+
   const payload = {
     tenant_id:    tenantId,
     name:         data.name,
     sku,
     unit:         data.unit,
     cost_price:   data.cost_price,
+    ...(shouldUpdateAverageCost ? {
+      average_cost:       data.cost_price,
+      last_purchase_cost: data.cost_price
+    } : {}),
     has_tax:      data.has_tax,
     product_kind:  data.product_kind,
     reorder_point: data.reorder_point,

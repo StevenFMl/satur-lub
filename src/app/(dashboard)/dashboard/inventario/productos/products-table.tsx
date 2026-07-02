@@ -74,6 +74,31 @@ export function ProductsTable({
   const [sessionKey, setSessionKey] = React.useState(0);
   const [isImporting, setIsImporting] = React.useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const [downloadingPdf, setDownloadingPdf] = React.useState(false);
+
+  const handleDownloadPdf = async () => {
+    if (downloadingPdf) return;
+    setDownloadingPdf(true);
+    try {
+      const res = await fetch("/api/reports/prices/pdf");
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(body.error ?? `Error ${res.status} al generar el PDF.`);
+      }
+      const blob = await res.blob();
+      const filename = `lista_precios_${new Date().toISOString().slice(0, 10)}.pdf`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err: unknown) {
+      window.alert(err instanceof Error ? err.message : "No se pudo descargar el PDF.");
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
 
   React.useEffect(() => { setPage(1); }, [debouncedQuery, statusFilter, priceFilter]);
 
@@ -218,29 +243,41 @@ export function ProductsTable({
             aria-label="Buscar producto"
           />
         </div>
-        {canManage ? (
-          <div className="flex items-center gap-2">
-            <input
-              type="file"
-              accept=".csv"
-              className="hidden"
-              ref={fileInputRef}
-              onChange={handleFileChange}
-            />
-            <Button
-              variant="outline"
-              size="md"
-              onClick={handleImportClick}
-              disabled={isImporting}
-            >
-              {isImporting ? "Importando..." : "Importar CSV"}
-            </Button>
-            <Button onClick={openNew} size="md" className="sm:min-w-[200px]">
-              <PlusIcon className="h-4 w-4" />
-              Nuevo producto
-            </Button>
-          </div>
-        ) : null}
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="md"
+            onClick={handleDownloadPdf}
+            disabled={downloadingPdf}
+          >
+            <DownloadIcon className="h-4 w-4" />
+            {downloadingPdf ? "Generando..." : "Descargar PDF"}
+          </Button>
+
+          {canManage ? (
+            <>
+              <input
+                type="file"
+                accept=".csv"
+                className="hidden"
+                ref={fileInputRef}
+                onChange={handleFileChange}
+              />
+              <Button
+                variant="outline"
+                size="md"
+                onClick={handleImportClick}
+                disabled={isImporting}
+              >
+                {isImporting ? "Importando..." : "Importar CSV"}
+              </Button>
+              <Button onClick={openNew} size="md" className="sm:min-w-[200px]">
+                <PlusIcon className="h-4 w-4" />
+                Nuevo producto
+              </Button>
+            </>
+          ) : null}
+        </div>
       </div>
 
       {/* ── Filters ─────────────────────────────────────────────── */}
@@ -698,3 +735,23 @@ function TrashIcon({ className }: { className?: string }) {
     </svg>
   );
 }
+
+function DownloadIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="7 10 12 15 17 10" />
+      <line x1="12" y1="15" x2="12" y2="3" />
+    </svg>
+  );
+}
+

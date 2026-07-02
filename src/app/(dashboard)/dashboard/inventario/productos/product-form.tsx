@@ -52,6 +52,17 @@ function toGross(val: string): string {
 }
 
 /**
+ * Convierte un valor BRUTO (con IVA) a NETO antes de persistir.
+ * cost_price siempre se almacena sin IVA — usado cuando el usuario
+ * activa "el costo ya incluye IVA" e ingresa el valor final pagado.
+ */
+function toNet(val: string): string {
+  const n = parseFloat(val.replace(",", "."));
+  if (!isFinite(n) || n <= 0) return "";
+  return (n / IVA_MULT).toFixed(4);
+}
+
+/**
  * Convierte el valor mostrado al cambiar de modo para que el precio
  * efectivo guardado no cambie al solo activar/desactivar el toggle.
  *
@@ -104,6 +115,28 @@ export function ProductForm({ initial, onSuccess }: Props) {
     setPriceDistribuidor((p) => p ? cvt(p) : p);
     setPriceIncludesIva(next);
   }, []);
+  // costIncludesIva: si es true, el número escrito en "Costo referencial"
+  // ya lleva IVA (algunos proveedores facturan así). cost_price SIEMPRE
+  // se persiste en NETO — con el toggle activo, convertimos a neto antes
+  // de enviar. Arranca en false porque cost_price en DB es siempre neto.
+  const [costIncludesIva, setCostIncludesIva] = useState(false);
+  const [costPrice, setCostPrice] = useState(
+    initial?.cost_price != null ? String(initial.cost_price) : ""
+  );
+
+  /** Igual que handleToggleIva, pero para el costo: conserva el valor neto
+   *  efectivo al cambiar de modo (el número mostrado se ajusta ×/÷ 1.15). */
+  const handleToggleCostIva = React.useCallback((next: boolean) => {
+    setCostPrice((p) => (p ? convertDisplayedPrice(p, next) : p));
+    setCostIncludesIva(next);
+  }, []);
+
+  const finalCostPrice = costIncludesIva ? toNet(costPrice) : costPrice;
+  const costPreview = useMemo(
+    () => pricePreview(costPrice, costIncludesIva),
+    [costPrice, costIncludesIva]
+  );
+
   const [productKind, setProductKind] = useState<"item" | "service" | "kit" | "bundle">(
     initial?.product_kind ?? "item"
   );
@@ -136,7 +169,8 @@ export function ProductForm({ initial, onSuccess }: Props) {
     if (keepOpen && !initial?.id) {
       setHasProcessedSuccess(true);
       // Limpia nombre, sku, costo y precios.
-      // Preserva: unit, priceIncludesIva (contexto útil en batch).
+      // Preserva: unit, priceIncludesIva, costIncludesIva (contexto útil en batch).
+      setCostPrice("");
       setPricePublico("");
       setPriceMayorista("");
       setPriceDistribuidor("");
@@ -183,6 +217,7 @@ export function ProductForm({ initial, onSuccess }: Props) {
           El checkbox visible controla el MODO DE ENTRADA (bruto vs neto),
           no la taxabilidad del producto. */}
       <input type="hidden" name="has_tax" value="on" />
+      <input type="hidden" name="cost_price" value={finalCostPrice} />
       <input type="hidden" name="unit" value={unit} />
       <input type="hidden" name="price_publico" value={grossPublico} />
       <input type="hidden" name="price_mayorista" value={grossMayorista} />
@@ -313,18 +348,33 @@ export function ProductForm({ initial, onSuccess }: Props) {
           <Label htmlFor="cost_price">
             Costo referencial{" "}
             <span className="font-normal normal-case tracking-normal text-muted-foreground/70">
-              (opcional · siempre sin IVA)
+              (opcional)
             </span>
           </Label>
+
+          <div className="flex items-center gap-3 rounded-sm border border-steel-700/60 bg-steel-900/40 px-3 py-2.5">
+            <Switch
+              id="cost_includes_iva"
+              checked={costIncludesIva}
+              onCheckedChange={handleToggleCostIva}
+            />
+            <Label
+              htmlFor="cost_includes_iva"
+              className="cursor-pointer normal-case tracking-normal text-[13px] font-medium text-muted-foreground"
+            >
+              El costo de compra ya incluye IVA ({IVA_RATE}%)
+            </Label>
+          </div>
+
           <div className="relative">
             <UsdPrefix />
             <Input
               id="cost_price"
-              name="cost_price"
               type="number"
               min="0"
               step="0.0001"
-              defaultValue={initial?.cost_price != null ? String(initial.cost_price) : ""}
+              value={costPrice}
+              onChange={(e) => setCostPrice(e.target.value)}
               placeholder="0.00"
               mono
               className="pl-14 text-right"
@@ -332,9 +382,17 @@ export function ProductForm({ initial, onSuccess }: Props) {
               onFocus={(e) => e.target.select()}
             />
           </div>
+          {costPreview ? (
+            <p className="text-right font-mono text-[12px] tabular-nums text-muted-foreground/60">
+              {costPreview}
+            </p>
+          ) : null}
           <p className="field-hint">
-            Ingresa el costo sin IVA (neto). Referencia para sugerencia de compras —
-            el sistema calcula el costo real (CPP) a partir de cada recepción de mercancía.
+            {costIncludesIva
+              ? "Ingresa el costo final que pagas al proveedor (con IVA incluido) — el sistema lo guarda sin IVA (neto)."
+              : "Ingresa el costo sin IVA (neto)."}
+            {" "}Referencia para sugerencia de compras — el sistema calcula el costo real (CPP)
+            a partir de cada recepción de mercancía.
           </p>
           <FieldError fieldId="cost_price" message={errors.cost_price} />
         </div>

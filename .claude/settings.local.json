@@ -64,7 +64,9 @@
       "Bash(Get-ChildItem -Path \"d:\\\\Saturlink\\\\satur-lub\" -Recurse -ErrorAction SilentlyContinue)",
       "Bash(Select-Object FullName)",
       "PowerShell(head -30)",
-      "Bash(python -c ' *)"
+      "Bash(python -c ' *)",
+      "Bash(grep -n \"cost_price\" \"src/lib/validations/product.ts\")",
+      "Bash(find . -path ./node_modules -prune -o -iname \"*product*\" -path \"*validations*\" -print)"
     ]
   }
 }

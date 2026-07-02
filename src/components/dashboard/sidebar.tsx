@@ -214,25 +214,6 @@ const NAV: NavEntry[] = [
           ),
         },
         {
-          href:  "/dashboard/inventario/stock",
-          label: "Existencias",
-          icon:  (
-            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M3 3v18h18" />
-              <rect x="7" y="10" width="3" height="8" rx="0.5" /><rect x="12" y="6" width="3" height="12" rx="0.5" /><rect x="17" y="3" width="3" height="15" rx="0.5" />
-            </svg>
-          ),
-        },
-        {
-          href:  "/dashboard/inventario/reposicion",
-          label: "Reposición",
-          icon:  (
-            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M3 9h18M3 15h18" /><path d="M8 3 2 9l6 6M16 21l6-6-6-6" />
-            </svg>
-          ),
-        },
-        {
           href:  "/dashboard/inventario/conteo",
           label: "Conteo físico",
           icon:  (
@@ -256,16 +237,6 @@ const NAV: NavEntry[] = [
           icon:  (
             <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6" />
-            </svg>
-          ),
-        },
-        {
-          href:  "/dashboard/inventario/valor",
-          label: "Valor inventario",
-          icon:  (
-            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="12" y1="1" x2="12" y2="23" />
-              <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
             </svg>
           ),
         },

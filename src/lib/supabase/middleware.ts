@@ -55,7 +55,16 @@ export async function updateSession(request: NextRequest) {
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value)
           );
-          response = NextResponse.next({ request });
+
+          // Sync request cookies to request headers so Server Components can read the refreshed session
+          const cookieStr = request.cookies.getAll().map((c) => `${c.name}=${c.value}`).join("; ");
+          request.headers.set("cookie", cookieStr);
+
+          response = NextResponse.next({
+            request: {
+              headers: request.headers,
+            },
+          });
           cookiesToSet.forEach(({ name, value, options }) =>
             response.cookies.set(name, value, options)
           );
@@ -88,62 +97,43 @@ export async function updateSession(request: NextRequest) {
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
   );
 
+  // Helper to clone cookies from response to redirects to avoid losing refreshed session tokens
+  const makeRedirect = (toUrl: string | URL) => {
+    const redirectResponse = NextResponse.redirect(toUrl);
+    response.cookies.getAll().forEach((c) => {
+      redirectResponse.cookies.set(c.name, c.value, {
+        path: c.path,
+        domain: c.domain,
+        maxAge: c.maxAge,
+        expires: c.expires,
+        secure: c.secure,
+        httpOnly: c.httpOnly,
+        sameSite: c.sameSite,
+      });
+    });
+    // Prevent the browser or any intermediary from caching this redirect
+    redirectResponse.headers.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    redirectResponse.headers.set("Pragma", "no-cache");
+    redirectResponse.headers.set("Expires", "0");
+    return redirectResponse;
+  };
+
   if (isProtected && !user) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("redirectTo", pathname);
-    return NextResponse.redirect(url);
+    return makeRedirect(url);
   }
 
   if (isAuthPage && user && request.method === "GET") {
     const url = request.nextUrl.clone();
     url.pathname = "/dashboard";
-    return NextResponse.redirect(url);
+    return makeRedirect(url);
   }
 
-  // Decisiones de tenant/trial — solo si tenemos claims del JWT.
-  if (user) {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    const claims = session?.access_token
-      ? decodeJwtPayload<AccessClaims>(session.access_token)
-      : null;
-
-    // Política conservadora: el middleware SOLO redirige cuando los claims
-    // afirman positivamente algo (tenant_id presente). La AUSENCIA de claims
-    // puede deberse a:
-    //   (a) hook todavía no activado en Supabase,
-    //   (b) JWT viejo emitido antes de completar el onboarding,
-    //   (c) refresh en vuelo durante la transición.
-    // En cualquier ausencia delegamos al server component (que consulta DB)
-    // — así jamás causamos un loop por claims temporalmente faltantes.
-    if (claims?.tenant_id) {
-      // /onboarding con tenant ya creado y onboarding finalizado → /dashboard
-      if (pathname === "/onboarding" && claims.onboarding_completed) {
-        const url = request.nextUrl.clone();
-        url.pathname = "/dashboard";
-        return NextResponse.redirect(url);
-      }
-
-      // Trial expirado o delinquent → /upgrade (solo en rutas locked)
-      if (isTrialLocked) {
-        const trial = evaluateTrial({
-          tenant_id: claims.tenant_id,
-          trial_ends_at: claims.trial_ends_at,
-          subscription_status: claims.subscription_status,
-        });
-        if (isTrialBlocked(trial)) {
-          const url = request.nextUrl.clone();
-          url.pathname = "/upgrade";
-          return NextResponse.redirect(url);
-        }
-      }
-    }
-    // Sin tenant_id en claims: NO redirigimos a /onboarding desde aquí.
-    // El layout del dashboard ya hace ese guard contra DB y evita el loop
-    // post-onboarding (cuando el JWT aún no propagó el claim nuevo).
-  }
+  // NOTE: Tenant onboarding and trial blocking redirects are completely delegated
+  // to the server components (layouts/pages) which read fresh state from the database.
+  // This avoids infinite loops caused by out-of-sync JWT custom claims.
 
   return response;
 }

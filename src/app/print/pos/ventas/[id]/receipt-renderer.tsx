@@ -876,7 +876,7 @@ function RideReceipt({ data }: { data: ReceiptData }) {
     return (
       <div className="ride-receipt bg-white text-black" style={{ fontFamily: "Arial, sans-serif", padding: "20px" }}>
         <p style={{ color: "#cc0000" }}>Este documento no tiene una factura electrónica emitida.</p>
-        <p style={{ fontSize: "9pt", color: "#666" }}>Use "A4 formal" para imprimir la nota de venta.</p>
+        <p style={{ fontSize: "9pt", color: "#666" }}>Use &quot;A4 formal&quot; para imprimir la nota de venta.</p>
       </div>
     );
   }
